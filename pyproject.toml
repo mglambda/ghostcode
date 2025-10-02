@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghostcode"
+version = '0.0.0'
+description = "Hybrid local/cloud LLM powered command line coding toolkit."
+authors = [
+    { name = "Marius Gerdes", email = "integr@gmail.com" }
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+dependencies = [
+    "pydantic",
+    "appdirs",
+    "shutils",
+    "ghostbox"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.7"
+
+[tool.setuptools]
+packages = ["ghostcode"]
+package-data = { "ghostcode" = ["data/**"] }
+script-files = ["scripts/ghostcode"]
+
+[project.urls]
+"Homepage" = "https://github.com/mglambda/ghostcode"
