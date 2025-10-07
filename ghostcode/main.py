@@ -1,8 +1,10 @@
 from typing import *
 from ghostcode import types
 import ghostbox
+import os
 from ghostbox import Ghostbox
-from dataclasses import dataclass
+from ghostbox.definitions import BrokenBackend
+from dataclasses import dataclass, field
 import argparse
 import logging
 import os
@@ -11,6 +13,9 @@ from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
 import sys
 import json # For parsing config values
+import yaml # For ProjectConfig
+import appdirs # Added for UserConfig path
+from ghostbox.definitions import LLMBackend # Added for API key checks
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -26,6 +31,74 @@ class Program:
     worker_box: Ghostbox
     coder_box: Ghostbox
 
+    user_config: types.UserConfig = field(
+        default_factory = types.UserConfig,
+        )
+    
+    def _has_api_keys(self) -> Dict[LLMBackend, bool]:
+        """
+        Compares the chosen backends to the user config and checks for required API keys.
+        
+        Returns:
+            Dict[LLMBackend, bool]: A dictionary where keys are LLMBackend enum members
+                                    and values are True if the API key is present, False otherwise.
+                                    Only includes backends that are actually used and require keys.
+        """
+        missing_keys: Dict[LLMBackend, bool] = {}
+
+        # Check Coder LLM backend
+        coder_backend_str = self.project.config.coder_backend
+        if coder_backend_str == LLMBackend.google.name:
+            if not self.user_config.google_api_key:
+                missing_keys[LLMBackend.google] = False
+            # else: # No need to add if key is present, we only care about missing ones
+            #     missing_keys[LLMBackend.google] = True
+        elif coder_backend_str == LLMBackend.openai.name:
+            if not self.user_config.openai_api_key:
+                missing_keys[LLMBackend.openai] = False
+            # else:
+            #     missing_keys[LLMBackend.openai] = True
+        elif coder_backend_str == LLMBackend.generic.name:
+            # For generic, if the endpoint is OpenAI or Google, we might need the general api_key
+            # This is a heuristic, as generic can point to anything.
+            # For now, we'll only check if the endpoint looks like OpenAI/Google official ones
+            if "openai.com" in self.project.config.coder_endpoint:
+                if not self.user_config.openai_api_key and not self.user_config.api_key:
+                    missing_keys[LLMBackend.openai] = False # Assume OpenAI key is preferred for OpenAI endpoints
+                # else:
+                #     missing_keys[LLMBackend.openai] = True
+            elif "googleapis.com" in self.project.config.coder_endpoint:
+                if not self.user_config.google_api_key and not self.user_config.api_key:
+                    missing_keys[LLMBackend.google] = False # Assume Google key is preferred for Google endpoints
+                # else:
+                #     missing_keys[LLMBackend.google] = True
+            # If generic points to a local server (e.g., localhost:8080), no API key is expected.
+
+        # Check Worker LLM backend
+        worker_backend_str = self.project.config.worker_backend
+        if worker_backend_str == LLMBackend.google.name:
+            if not self.user_config.google_api_key:
+                # Only add if not already marked as missing by coder_backend
+                if LLMBackend.google not in missing_keys:
+                    missing_keys[LLMBackend.google] = False
+        elif worker_backend_str == LLMBackend.openai.name:
+            if not self.user_config.openai_api_key:
+                # Only add if not already marked as missing by coder_backend
+                if LLMBackend.openai not in missing_keys:
+                    missing_keys[LLMBackend.openai] = False
+        elif worker_backend_str == LLMBackend.generic.name:
+            if "openai.com" in self.project.config.worker_endpoint:
+                if not self.user_config.openai_api_key and not self.user_config.api_key:
+                    if LLMBackend.openai not in missing_keys:
+                        missing_keys[LLMBackend.openai] = False
+            elif "googleapis.com" in self.project.config.worker_endpoint:
+                if not self.user_config.google_api_key and not self.user_config.api_key:
+                    if LLMBackend.google not in missing_keys:
+                        missing_keys[LLMBackend.google] = False
+        
+        # Filter out True entries, only return missing ones
+        return {k: v for k, v in missing_keys.items() if not v}
+
 
 # --- Command Interface and Implementations ---
 
@@ -39,7 +112,7 @@ class CommandOutput(BaseModel):
     def print(self, w: str, end: str = "\n") -> None:
         """Mimics print function by concatinating text."""
         self.text += w + end
-        
+
 class CommandInterface(ABC):
     """Abstract base class for all ghostcode commands."""
     @abstractmethod
@@ -61,11 +134,11 @@ class InitCommand(BaseModel, CommandInterface):
             sys.exit(1)
 
         return result
-    
+
 class ConfigCommand(BaseModel, CommandInterface):
     """Manages ghostcode project configuration."""
     subcommand: Literal["set", "get", "ls"]
-    key: Optional[str] = Field(default=None, description="The configuration key to retrieve or set (e.g., 'coder_llm_config.model').")
+    key: Optional[str] = Field(default=None, description="The configuration key to retrieve or set (e.g., 'coder_llm_config.model', 'config.coder_backend').")
     value: Optional[str] = Field(default=None, description="The new value for the configuration key.")
 
     def _get_config_value(self, project: types.Project, key: str) -> Any:
@@ -77,7 +150,7 @@ class ConfigCommand(BaseModel, CommandInterface):
             logger.warning(f"Config key '{key}' not found at top level of project metadata.")
             return None
 
-        # Nested key (e.g., 'coder_llm_config.model')
+        # Nested key (e.g., 'coder_llm_config.model', 'config.coder_backend')
         parent_key, sub_key = parts
         if parent_key == "coder_llm_config":
             return project.coder_llm_config.get(sub_key)
@@ -85,7 +158,13 @@ class ConfigCommand(BaseModel, CommandInterface):
             return project.worker_llm_config.get(sub_key)
         elif parent_key == "project_metadata" and project.project_metadata:
             return getattr(project.project_metadata, sub_key, None)
-        
+        elif parent_key == "config": # Handle ProjectConfig
+            if hasattr(project.config, sub_key):
+                # Now that backend fields are strings, just return the value directly
+                return getattr(project.config, sub_key)
+            logger.warning(f"Sub-key '{sub_key}' not found in project.config.")
+            return None
+
         logger.warning(f"Config key '{key}' not found or invalid parent key '{parent_key}'.")
         return None
 
@@ -115,6 +194,13 @@ class ConfigCommand(BaseModel, CommandInterface):
                 logger.debug(f"Set project_metadata.{sub_key} to {parsed_value}")
             else:
                 logger.warning(f"Sub-key '{sub_key}' not found in project_metadata for setting.")
+        elif parent_key == "config": # Handle ProjectConfig
+            if hasattr(project.config, sub_key):
+                # No special conversion needed here, as ProjectConfig fields are now strings
+                setattr(project.config, sub_key, parsed_value)
+                logger.debug(f"Set project.config.{sub_key} to {parsed_value}")
+            else:
+                logger.warning(f"Sub-key '{sub_key}' not found in project.config for setting.")
         else:
             logger.warning(f"Config key '{key}' not recognized for setting.")
 
@@ -134,34 +220,84 @@ class ConfigCommand(BaseModel, CommandInterface):
         project = prog.project
 
         if self.subcommand == "ls":
-            result.print("Current Coder LLM Config:")
+            result.print("Project Configuration (config.yaml):")
+            for k, v in project.config.model_dump().items():
+                # Now that backend fields are strings, just print them directly
+                result.print(f"  {k}: {v}")
+            result.print("\nCoder LLM Config (coder/config.json):")
             for k, v in project.coder_llm_config.items():
                 result.print(f"  {k}: {v}")
-            result.print("\nCurrent Worker LLM Config:")
+            result.print("\nWorker LLM Config (worker/config.json):")
             for k, v in project.worker_llm_config.items():
                 result.print(f"  {k}: {v}")
-            result.print("\nProject Metadata:")
+            result.print("\nProject Metadata (project_metadata.yaml):")
             if project.project_metadata:
                 for k, v in project.project_metadata.model_dump().items():
                     result.print(f"  {k}: {v}")
+            
+            # Also list user config
+            result.print("\nUser Configuration (.ghostcodeconfig):")
+            for k, v in prog.user_config.model_dump().items():
+                # Mask API keys for display
+                if "api_key" in k and v:
+                    result.print(f"  {k}: {v[:4]}...{v[-4:]}")
+                else:
+                    result.print(f"  {k}: {v}")
+
         elif self.subcommand == "get":
             if not self.key:
                 logger.error("Key required for 'config get'.")
                 sys.exit(1)
+            
+            # First try project config
             val = self._get_config_value(project, self.key)
             if val is not None:
                 result.print(f"{self.key}: {val}")
             else:
-                logger.warning(f"Config key '{self.key}' not found.")
+                # Then try user config
+                if hasattr(prog.user_config, self.key):
+                    val = getattr(prog.user_config, self.key)
+                    if "api_key" in self.key and val:
+                        result.print(f"{self.key}: {val[:4]}...{val[-4:]}")
+                    else:
+                        result.print(f"{self.key}: {val}")
+                else:
+                    logger.warning(f"Config key '{self.key}' not found in project or user configuration.")
         elif self.subcommand == "set":
             if not self.key or self.value is None:
                 logger.error("Key and value required for 'config set'.")
                 sys.exit(1)
+            
+            # Try setting in project config first
+            # This is a bit tricky as _set_config_value doesn't return success/failure
+            # We'll assume if it's not in project config, it might be user config
+            initial_project_config_dump = project.config.model_dump_json()
+            initial_coder_llm_config_dump = json.dumps(project.coder_llm_config)
+            initial_worker_llm_config_dump = json.dumps(project.worker_llm_config)
+            initial_project_metadata_dump = project.project_metadata.model_dump_json() if project.project_metadata else "{}"
+
             self._set_config_value(project, self.key, self.value)
-            project.save_to_root(prog.project_root)
-            result.print(f"Config key '{self.key}' set to '{self.value}' and saved.")
+            
+            # Check if any project config was actually changed
+            project_config_changed = (
+                project.config.model_dump_json() != initial_project_config_dump or
+                json.dumps(project.coder_llm_config) != initial_coder_llm_config_dump or
+                json.dumps(project.worker_llm_config) != initial_worker_llm_config_dump or
+                (project.project_metadata and project.project_metadata.model_dump_json() != initial_project_metadata_dump)
+            )
+
+            if project_config_changed:
+                project.save_to_root(prog.project_root)
+                result.print(f"Project config key '{self.key}' set to '{self.value}' and saved.")
+            elif hasattr(prog.user_config, self.key):
+                # If not a project config key, try user config
+                setattr(prog.user_config, self.key, self._parse_value(self.value))
+                prog.user_config.save()
+                result.print(f"User config key '{self.key}' set to '{self.value}' and saved.")
+            else:
+                logger.warning(f"Config key '{self.key}' not found in project or user configuration for setting.")
         return result
-    
+
 class ContextCommand(BaseModel, CommandInterface):
     """Manages files included in the project context."""
     subcommand: Literal["add", "rm", "remove", "ls"]
@@ -194,7 +330,7 @@ class ContextCommand(BaseModel, CommandInterface):
             for pattern in self.filepaths:
                 # Resolve relative to CWD, then convert to relative to project_root
                 abs_pattern = os.path.abspath(pattern)
-                
+
                 # Use glob to handle wildcards, recursive for '**'
                 for matched_path in glob.glob(abs_pattern, recursive=True):
                     if os.path.isfile(matched_path):
@@ -232,14 +368,74 @@ class ContextCommand(BaseModel, CommandInterface):
             result.print("Context files updated and saved.")
         return result
 
+class InteractCommand(BaseModel, CommandInterface):
+    """Launches an interactive session with the Coder LLM."""
+    # This is a placeholder for the actual interactive loop logic
+
+    def run(self, prog: Program) -> CommandOutput:
+        result = CommandOutput()
+        if not prog.project_root or not prog.project:
+            logger.error("Not a ghostcode project. Run 'ghostcode init' first.")
+            sys.exit(1)
+
+        # since interact queries the backend, we verify the keys
+        verify_result = VerifyCommand().run(prog)
+        if verify_result.data["error"]:
+            result.print(verify_result.text)
+            result.print("Aborting interaction.")
+            return result
+            
+        return result
+
+        result.print("Starting interactive session with Coder LLM (placeholder).")
+        result.print("API keys checked. If warnings were shown, please address them.")
+        # Placeholder for the actual interactive loop (e.g., ghostbox.regpl)
+        # For now, just print a message.
+        # prog.coder_box.interactBlocking("Hello, GhostCoder. What can I help you with?")
+        return result
+
+
 # --- Main CLI Logic ---
 
+class VerifyCommand(BaseModel):
+    """Command to verify program integrity and configuration.
+    This is currently only used internally to check for API keys."""
+
+    def run(self, prog: Program) -> CommandOutput:
+        result = CommandOutput()
+        result.data = {"error": False}
+        
+        missing_api_keys = prog._has_api_keys()
+        if missing_api_keys:
+            result.data["error"] = True
+            user_config_path = os.path.join(appdirs.user_config_dir('ghostcode'), types.UserConfig._GHOSTCODE_CONFIG_FILE)
+            result.print("\n--- WARNING: Missing API Keys for Cloud LLMs ---")
+            result.print(f"To use the configured cloud LLMs, please provide the necessary API keys in your user configuration file:")
+            result.print(f"  {user_config_path}")
+            result.print("You can edit this file directly or use 'ghostcode config set' for user-specific API keys.")
+            result.print("--------------------------------------------------")
+            for backend, _ in missing_api_keys.items():
+                if backend == LLMBackend.google:
+                    result.print(f"  - Google AI Studio API key is missing for backend '{prog.project.config.coder_backend}' or '{prog.project.config.worker_backend}'.")
+                    result.print("    Get your key at: https://aistudio.google.com/app/apikey")
+                elif backend == LLMBackend.openai:
+                    result.print(f"  - OpenAI API key is missing for backend '{prog.project.config.coder_backend}' or '{prog.project.config.worker_backend}'.")
+                    result.print("    Get your key at: https://platform.openai.com/account/api-keys")
+            result.print("--------------------------------------------------\n")
+        return result
+    
+    
 def main():
     parser = argparse.ArgumentParser(
         prog="ghostcode",
         description="A command line tool to help programmers code using LLMs.",
         formatter_class=argparse.RawTextHelpFormatter # For better help formatting
     )
+
+    # Add --user-config argument
+    parser.add_argument("-c", "--user-config", type=str, default=None,
+                        help=f"Path to a custom user configuration file (YAML format). "
+                             f"Defaults to {os.path.join(appdirs.user_config_dir('ghostcode'), types.UserConfig._GHOSTCODE_CONFIG_FILE)}.")
 
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
 
@@ -256,12 +452,12 @@ def main():
     config_ls_parser.set_defaults(func=lambda args: ConfigCommand(subcommand="ls"))
 
     config_get_parser = config_subparsers.add_parser("get", help="Get the value of a specific configuration option.")
-    config_get_parser.add_argument("key", help="The configuration key to retrieve (e.g., 'coder_llm_config.model').")
+    config_get_parser.add_argument("key", help="The configuration key to retrieve (e.g., 'coder_llm_config.model', 'config.coder_backend').")
     config_get_parser.set_defaults(func=lambda args: ConfigCommand(subcommand="get", key=args.key))
 
     config_set_parser = config_subparsers.add_parser("set", help="Set the value of a configuration option.")
-    config_set_parser.add_argument("key", help="The configuration key to set (e.g., 'coder_llm_config.model').")
-    config_set_parser.add_argument("value", help="The new value for the configuration key. Use JSON format for complex types (e.g., 'true', '123', '\"string\"', '[1,2]', '{\"key\":\"value\"}').")
+    config_set_parser.add_argument("key", help="The configuration key to set (e.g., 'coder_llm_config.model', 'config.coder_backend').")
+    config_set_parser.add_argument("value", help="The new value for the configuration key. Use JSON format for complex types (e.g., 'true', '123', '\"string\"', '[1,2]', '{\"key\":\"value\"}'). For backend types, use the string name (e.g., 'google', 'generic').")
     config_set_parser.set_defaults(func=lambda args: ConfigCommand(subcommand="set", key=args.key, value=args.value))
 
     # Context command
@@ -280,15 +476,33 @@ def main():
     context_rm_parser.add_argument("filepaths", nargs="+", help="One or more file paths (can include wildcards).")
     context_rm_parser.set_defaults(func=lambda args: ContextCommand(subcommand="rm", filepaths=args.filepaths))
 
+    # Interact command (placeholder)
+    interact_parser = subparsers.add_parser("interact", help="Launches an interactive session with the Coder LLM.")
+    interact_parser.set_defaults(func=lambda args: InteractCommand())
+
 
     args = parser.parse_args()
+
+    # Load UserConfig
+    user_config_path = args.user_config
+    user_config: types.UserConfig
+    try:
+        user_config = types.UserConfig.load(user_config_path)
+    except FileNotFoundError:
+        logger.info(f"User configuration file not found. Creating a default one.")
+        user_config = types.UserConfig()
+        user_config.save(user_config_path) # Save to the default or specified path
+    except Exception as e:
+        logger.error(f"Failed to load user configuration: {e}. Using default settings.", exc_info=True)
+        user_config = types.UserConfig()
+
 
     # Instantiate the command object
     command_obj: CommandInterface = args.func(args)
 
     # Special handling for 'init' command as it doesn't require an existing project
     if isinstance(command_obj, InitCommand):
-        out = command_obj.run(Program(project_root=None, project=None, worker_box=None, coder_box=None)) # Dummy boxes for init
+        out = command_obj.run(Program(project_root=None, project=None, worker_box=None, coder_box=None, user_config=user_config)) # Pass user_config
         print(out.text)
         sys.exit(0) # Exit after init
 
@@ -307,23 +521,54 @@ def main():
         logger.error(f"Failed to load ghostcode project from {project_root}: {e}", exc_info=True)
         sys.exit(1)
 
-    # Initialize Ghostbox instances (dummy for now, as AI interaction is not yet implemented)
-    # These would eventually be configured using project.worker_llm_config and project.coder_llm_config
-    worker_box = ghostbox.from_generic(endpoint="http://localhost:8080", quiet=True, stdout=False, stderr=False)
-    coder_box = ghostbox.from_generic(quiet=True, stdout=False, stderr=False)
+    # Initialize Ghostbox instances using project.config for endpoints and backends
+    # the quiet options have to be passed here or we will get a couple of stray messages until the project box configs are read
+    quiet_options = {
+        "quiet": True,
+        "stdout": False,
+        "stderr": False
+    }
+    
+    # Now directly use the string values from project.config
+    # Pass API keys from user_config to Ghostbox instances
+    # we catch missing API key and other backend initialization errors here, and inform the user later in commands that actually require backends
+    try:
+        worker_box = Ghostbox(endpoint=project.config.worker_endpoint,
+                              backend=project.config.worker_backend, # Use string directly
+                              character_folder=os.path.join(project_root, ".ghostcode", project._WORKER_CHARACTER_FOLDER),
+                              api_key=user_config.api_key, # General API key
+                              google_api_key=user_config.google_api_key,
+                              openai_api_key=user_config.openai_api_key,
+                              **quiet_options)
+    except Exception as e:
+        logging.error(f"Setting worker to dummy. Reason: {e}")
+        worker_box = ghostbox.from_dummy(**quiet_options)
+
+    try:
+        coder_box = Ghostbox(endpoint=project.config.coder_endpoint,
+                             backend=project.config.coder_backend, # Use string directly
+                             character_folder=os.path.join(project_root, ".ghostcode", project._CODER_CHARACTER_FOLDER),
+                             api_key=user_config.api_key, # General API key
+                             google_api_key=user_config.google_api_key,
+                             openai_api_key=user_config.openai_api_key,
+                             **quiet_options)
+    except Exception as e:
+        logging.error(f"Setting coder backend to dummy. Reason: {e}")
+        coder_box = ghostbox.from_dummy(**quiet_options)
 
     # Create the Program instance
     prog_instance = Program(
         project_root=project_root,
         project=project,
         worker_box=worker_box,
-        coder_box=coder_box
+        coder_box=coder_box,
+        user_config=user_config # Pass the loaded user_config
     )
 
     # Run the command
     out = command_obj.run(prog_instance)
     print(out.text)
-    
+
 
 if __name__ == "__main__":
     main()

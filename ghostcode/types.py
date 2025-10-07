@@ -5,6 +5,8 @@ import os
 import json
 import yaml
 import logging
+import ghostbox.definitions
+import appdirs # Added for platform-specific config directory
 
 # --- Logging Setup ---
 # Configure a basic logger for the ghostcode project
@@ -14,31 +16,31 @@ logger = logging.getLogger('ghostcode.types')
 # --- Default Configurations ---
 # Default configuration for the coder LLM (e.g., for planning, complex reasoning)
 DEFAULT_CODER_LLM_CONFIG = {
-    "backend": "google",
-    "model": "models/gemini-1.5-flash", # A good default for coding tasks
+    "model": "models/gemini-2.5-flash",
     "temperature": 0.2,
-    "max_length": 4096,
+    "max_length": -1,
     "top_p": 0.9,
-    "stop": ["```", "Action:", "Observation:"], # Common stop tokens for coding/tool use
     "use_tools": True, # Coder LLM will likely use tools
     "log_time": True,
     "verbose": False,
     "chat_ai": "GhostCoder",
-    "character_folder": ".ghostcode/coder" # Added for ghostbox to load the character folder
+    "stdout": False,
+    "stderr": False,
+    "quiet": True,
 }
 
 # Default configuration for the worker LLM (e.g., for generating code snippets, answering questions)
 DEFAULT_WORKER_LLM_CONFIG = {
-    "backend": "generic", # Compatible with many local/remote OpenAI-like endpoints
-    "endpoint": "http://localhost:8080", # Common default for local LLMs (e.g., llama.cpp)
     "model": "llama3", # Placeholder, user should configure their local model
     "temperature": 0.7,
-    "max_length": 1024,
+    "max_length": -1,
     "top_p": 0.95,
     "log_time": True,
     "verbose": False,
+    "stdout": False,
+    "stderr": False,
+    "quiet": True,    
     "chat_ai": "GhostWorker",
-    "character_folder": ".ghostcode/worker" # Added for ghostbox to load the character folder
 }
 
 # Default project metadata
@@ -46,6 +48,131 @@ DEFAULT_PROJECT_METADATA = {
     "name": "New Ghostcode Project",
     "description": "A new project initialized with ghostcode. Edit this description to provide an overview of your project.",
 }
+
+class UserConfig(BaseModel):
+    """Stores user specific data, like names, emails, and api keys.
+    Usually stored in a .ghostcodeconfig file, in a platform specific location. The user settings are used across multiple ghostcode projects, and so aren't stored in the .ghostcode project folder.
+    """
+    name: str = ""
+    email: str = ""
+    api_key: str = Field(
+        default = "",
+        description = "The most general API key. This is used for a LLM backend service that requires an API key if none of the specific API keys are set."
+    )
+
+    openai_api_key: str = Field(
+        default="",
+        description="Used with Chat-GPT and the OpenAI LLM backend. Get your API key at https://openai.com\nIf this key is set and you use openai as your backend, it will have precedence over the generic api_key."
+    )
+    
+    google_api_key: str = Field(
+        default="",
+        description="Use with Gemini and the Google AI Studio API. Get your API key at https://aistudio.google.com\nIf this key is set and you use google as your backend, it will have precedence over the generic api_key."
+    )
+
+    _GHOSTCODE_CONFIG_FILE: ClassVar[str] = ".ghostcodeconfig"
+
+    def save(self, user_config_path: Optional[str] = None) -> None:
+        """
+        Saves the UserConfig instance to a YAML file.
+
+        Args:
+            user_config_path (Optional[str]): The full path to save the config file.
+                                              If None, defaults to a platform-specific user config directory.
+        """
+        if user_config_path is None:
+            config_dir = appdirs.user_config_dir('ghostcode')
+            os.makedirs(config_dir, exist_ok=True)
+            save_path = os.path.join(config_dir, self._GHOSTCODE_CONFIG_FILE)
+        else:
+            save_path = os.path.abspath(user_config_path)
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        logger.info(f"Saving user configuration to {save_path}")
+
+        # Add helpful comments to the YAML output
+        config_data = self.model_dump()
+        yaml_content = f"""# Ghostcode User Configuration
+# This file stores your personal settings, including API keys,
+# which are used across all your ghostcode projects.
+#
+# API Keys:
+#   - 'api_key': General API key for LLM services if no specific key is provided.
+#   - 'openai_api_key': Specific API key for OpenAI (e.g., GPT-4o).
+#     Get it from https://platform.openai.com/account/api-keys
+#   - 'google_api_key': Specific API key for Google AI Studio (e.g., Gemini).
+#     Get it from https://aistudio.google.com/app/apikey
+#
+# To fill in an API key, replace the empty string "" with your actual key.
+# Example:
+# openai_api_key: "sk-YOUR_OPENAI_API_KEY_HERE"
+#
+"""
+        yaml_content += yaml.dump(config_data, indent=2, sort_keys=False)
+
+        try:
+            with open(save_path, 'w') as f:
+                f.write(yaml_content)
+            logger.debug(f"User configuration saved successfully to {save_path}")
+        except Exception as e:
+            logger.error(f"Failed to save user configuration to {save_path}: {e}", exc_info=True)
+            raise
+
+    @staticmethod
+    def load(user_config_path: Optional[str] = None) -> 'UserConfig':
+        """
+        Loads a UserConfig instance from a YAML file.
+
+        Args:
+            user_config_path (Optional[str]): The full path to load the config file from.
+                                              If None, defaults to a platform-specific user config directory.
+
+        Returns:
+            UserConfig: The loaded UserConfig instance.
+
+        Raises:
+            FileNotFoundError: If the config file does not exist at the specified or default path.
+            yaml.YAMLError: If there's an error parsing the YAML content.
+        """
+        if user_config_path is None:
+            config_dir = appdirs.user_config_dir('ghostcode')
+            load_path = os.path.join(config_dir, UserConfig._GHOSTCODE_CONFIG_FILE)
+        else:
+            load_path = os.path.abspath(user_config_path)
+
+        logger.info(f"Attempting to load user configuration from {load_path}")
+
+        if not os.path.isfile(load_path):
+            logger.debug(f"User configuration file not found at {load_path}")
+            raise FileNotFoundError(f"User configuration file not found at {load_path}")
+
+        try:
+            with open(load_path, 'r') as f:
+                config_data = yaml.safe_load(f)
+            if config_data is None:
+                logger.warning(f"User configuration file {load_path} is empty. Returning default UserConfig.")
+                return UserConfig()
+            
+            user_config = UserConfig(**config_data)
+            logger.debug(f"User configuration loaded successfully from {load_path}")
+            return user_config
+        except yaml.YAMLError as e:
+            logger.error(f"Error decoding YAML from {load_path}: {e}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"An unexpected error occurred loading {load_path}: {e}", exc_info=True)
+            raise
+
+class ProjectConfig(BaseModel):
+    """Contains project wide configuration obptions.
+    This is stored in project_root/config.yaml"""
+
+    # Changed these to str for easier human readability/editing in YAML
+    coder_backend: str = Field(default=ghostbox.definitions.LLMBackend.google.name, description="Backend for the Coder LLM (e.g., 'google', 'openai', 'generic').")
+    worker_backend: str = Field(default=ghostbox.definitions.LLMBackend.generic.name, description="Backend for the Worker LLM (e.g., 'llamacpp', 'generic').")
+    coder_endpoint: str = Field(default="https://generativelanguage.googleapis.com/v1beta", description="Endpoint for the Coder LLM.")
+    worker_endpoint: str = Field(default="http://localhost:8080", description="Endpoint for the Worker LLM.")
+
 
 # --- Type Definitions ---
 class ContextFile(BaseModel):
@@ -59,7 +186,7 @@ class ContextFile(BaseModel):
         default = False,
         description = "Whether to enable retrieval augmented generation for this file. Enabling RAG means the local LLM will retrieve only parts of the file if it deems it necessary with the given prompt. This is usually done for large text files or documentation, and helps to avoid huge token counts for the cloud LLM."
         )
-    
+
 class ContextFiles(BaseModel):
     """Encapsulates the files (both code and otherwise) that are tracked by the project. Tracked files are sent to the cloud LLM with the prompt.
     To keep it simple and human-readable, filepaths are stored in .ghostcode/context_files, one per line, all relative to the directory that the .ghostcode directory is in. This file may change frequently.
@@ -80,15 +207,17 @@ class ContextFiles(BaseModel):
         # A future enhancement might involve a separate file for options or a more complex format.
         context_files = [ContextFile(filepath=fp, rag=False) for fp in filepaths]
         return ContextFiles(data=context_files)
-    
+
 class ProjectMetadata(BaseModel):
     name: str
     description: str
-    
+
 class Project(BaseModel):
     """Basic context for a ghostcode project.
     By convention, all Fields of this type are found in the .ghostcode directory at the project root, with their Field names also being the filename.
     """
+
+    config: ProjectConfig = Field(default_factory=ProjectConfig, description="Project wide configuration options.")
 
     worker_llm_config: Dict[str, Any] = Field(
         default_factory = dict,
@@ -99,9 +228,9 @@ class Project(BaseModel):
         default_factory = dict,
         description = "Configuration options sent to ghostbox for the coder LLM. This is a json file stored in .ghostcode/coder_llm_config.json."
     )
-   
+
     context_files: ContextFiles = Field(default_factory=ContextFiles)
-    
+
     directory_file: str = Field(
         default = "",
         description = "A directory file is an automatically generated markdown file intended to keep LLMs from introducing changes that break the project. It usually contains a project overview and important information about the project, such as module dependencies, architectural limitations, technology choices, and much more. Stored in .ghostcode/directory_file.md."
@@ -110,13 +239,15 @@ class Project(BaseModel):
 
     # --- File names within the .ghostcode directory ---
     _GHOSTCODE_DIR: ClassVar[str] = ".ghostcode"
+    _WORKER_CHARACTER_FOLDER: ClassVar[str] = "worker"
     _WORKER_CONFIG_FILE: ClassVar[str] = "worker/config.json"
+    _CODER_CHARACTER_FOLDER: ClassVar[str] = "coder"
     _CODER_CONFIG_FILE: ClassVar[str] = "coder/config.json"
     _CONTEXT_FILES_FILE: ClassVar[str] = "context_files" # Plaintext list of filepaths
     _DIRECTORY_FILE: ClassVar[str] = "directory_file.md" # Plaintext markdown
     _PROJECT_METADATA_FILE: ClassVar[str] = "project_metadata.yaml" # YAML format
+    _PROJECT_CONFIG_FILE: ClassVar[str] = "config.yaml" # YAML format
 
-    # New class variables for default system messages
     _WORKER_SYSTEM_MSG: ClassVar[str] = "You are GhostWorker, a helpful AI assistant focused on executing specific, local programming tasks. Your primary role is to interact with the file system, run shell commands, and perform other environment-specific operations as instructed by GhostCoder. Be concise, precise, and report results clearly. Do not engage in high-level planning or code generation unless explicitly asked to generate a small snippet for a tool."
     _CODER_SYSTEM_MSG: ClassVar[str] = "You are GhostCoder, a highly intelligent and experienced AI programmer. Your role is to understand complex programming tasks, devise high-level plans, generate code, and review existing code. You will delegate specific environment interactions (like reading/writing files or running commands) to GhostWorker. Focus on architectural decisions, code quality, and problem-solving. When delegating, provide clear and unambiguous instructions to GhostWorker."
 
@@ -143,7 +274,7 @@ class Project(BaseModel):
             if os.path.isdir(ghostcode_path):
                 logger.debug(f"Found .ghostcode directory at {ghostcode_path}. Project root is {current_path}")
                 return current_path
-            
+
             parent_path = os.path.dirname(current_path)
             if parent_path == current_path: # Reached filesystem root
                 logger.debug(f"No .ghostcode directory found up to filesystem root from {start_path}")
@@ -214,6 +345,14 @@ class Project(BaseModel):
                 yaml.dump(DEFAULT_PROJECT_METADATA, f, indent=2, sort_keys=False)
             logger.info(f"Created default project metadata at {project_metadata_path}")
 
+            # 6. Create config.yaml (YAML, with default ProjectConfig)
+            project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
+            default_project_config = ProjectConfig()
+            with open(project_config_path, 'w') as f:
+                yaml.dump(default_project_config.model_dump(), f, indent=2, sort_keys=False)
+            logger.info(f"Created default project config at {project_config_path}")
+
+
             logger.info(f"Ghostcode project initialized successfully in {root}.")
 
         except OSError as e:
@@ -250,6 +389,7 @@ class Project(BaseModel):
         context_files = ContextFiles()
         directory_file_content = ""
         project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
+        project_config = ProjectConfig() # Initialize with defaults
 
         # 1. Load worker_llm_config.json (now from worker/config.json)
         worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
@@ -331,8 +471,32 @@ class Project(BaseModel):
             logger.error(f"An unexpected error occurred loading {project_metadata_path}: {e}. Using default metadata.", exc_info=True)
             project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
 
+        # 6. Load config.yaml
+        project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
+        try:
+            with open(project_config_path, 'r') as f:
+                config_dict = yaml.safe_load(f)
+                if config_dict:
+                    # Pydantic will handle validation and conversion for ProjectConfig
+                    project_config = ProjectConfig(**config_dict)
+                else:
+                    logger.warning(f"Project config file {project_config_path} is empty. Using default ProjectConfig.")
+                    project_config = ProjectConfig()
+            logger.debug(f"Loaded project config from {project_config_path}")
+        except FileNotFoundError:
+            logger.warning(f"Project config file not found at {project_config_path}. Using default ProjectConfig.")
+            project_config = ProjectConfig()
+        except yaml.YAMLError as e:
+            logger.error(f"Error decoding YAML from {project_config_path}: {e}. Using default ProjectConfig.", exc_info=True)
+            project_config = ProjectConfig()
+        except Exception as e:
+            logger.error(f"An unexpected error occurred loading {project_config_path}: {e}. Using default ProjectConfig.", exc_info=True)
+            project_config = ProjectConfig()
+
+
         logger.info(f"Ghostcode project loaded successfully from {root}.")
         return Project(
+            config=project_config, # Pass the loaded config
             worker_llm_config=worker_llm_config,
             coder_llm_config=coder_llm_config,
             context_files=context_files,
@@ -417,6 +581,16 @@ class Project(BaseModel):
                 raise
         else:
             logger.warning(f"No project metadata to save for {root}.")
+
+        # 6. Save config.yaml
+        project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
+        try:
+            with open(project_config_path, 'w') as f:
+                yaml.dump(self.config.model_dump(), f, indent=2, sort_keys=False)
+            logger.debug(f"Saved project config to {project_config_path}")
+        except Exception as e:
+            logger.error(f"Failed to save project config to {project_config_path}: {e}", exc_info=True)
+            raise
 
         logger.info(f"Ghostcode project saved successfully to {root}.")
 
