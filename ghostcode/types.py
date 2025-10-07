@@ -24,6 +24,7 @@ DEFAULT_CODER_LLM_CONFIG = {
     "log_time": True,
     "verbose": False,
     "chat_ai": "GhostCoder",
+    "character_folder": ".ghostcode/coder" # Added for ghostbox to load the character folder
 }
 
 # Default configuration for the worker LLM (e.g., for generating code snippets, answering questions)
@@ -37,6 +38,7 @@ DEFAULT_WORKER_LLM_CONFIG = {
     "log_time": True,
     "verbose": False,
     "chat_ai": "GhostWorker",
+    "character_folder": ".ghostcode/worker" # Added for ghostbox to load the character folder
 }
 
 # Default project metadata
@@ -108,11 +110,16 @@ class Project(BaseModel):
 
     # --- File names within the .ghostcode directory ---
     _GHOSTCODE_DIR: ClassVar[str] = ".ghostcode"
-    _WORKER_CONFIG_FILE: ClassVar[str] = "worker_llm_config.json"
-    _CODER_CONFIG_FILE: ClassVar[str] = "coder_llm_config.json"
+    _WORKER_CONFIG_FILE: ClassVar[str] = "worker/config.json"
+    _CODER_CONFIG_FILE: ClassVar[str] = "coder/config.json"
     _CONTEXT_FILES_FILE: ClassVar[str] = "context_files" # Plaintext list of filepaths
     _DIRECTORY_FILE: ClassVar[str] = "directory_file.md" # Plaintext markdown
     _PROJECT_METADATA_FILE: ClassVar[str] = "project_metadata.yaml" # YAML format
+
+    # New class variables for default system messages
+    _WORKER_SYSTEM_MSG: ClassVar[str] = "You are GhostWorker, a helpful AI assistant focused on executing specific, local programming tasks. Your primary role is to interact with the file system, run shell commands, and perform other environment-specific operations as instructed by GhostCoder. Be concise, precise, and report results clearly. Do not engage in high-level planning or code generation unless explicitly asked to generate a small snippet for a tool."
+    _CODER_SYSTEM_MSG: ClassVar[str] = "You are GhostCoder, a highly intelligent and experienced AI programmer. Your role is to understand complex programming tasks, devise high-level plans, generate code, and review existing code. You will delegate specific environment interactions (like reading/writing files or running commands) to GhostWorker. Focus on architectural decisions, code quality, and problem-solving. When delegating, provide clear and unambiguous instructions to GhostWorker."
+
 
     @staticmethod
     def _get_ghostcode_path(root: str) -> str:
@@ -158,13 +165,32 @@ class Project(BaseModel):
             os.makedirs(ghostcode_dir, exist_ok=True)
             logger.info(f"Ensured directory {ghostcode_dir} exists.")
 
-            # 1. Create worker_llm_config.json
+            # Create .ghostcode/worker and .ghostcode/coder directories
+            worker_char_dir = os.path.join(ghostcode_dir, "worker")
+            coder_char_dir = os.path.join(ghostcode_dir, "coder")
+            os.makedirs(worker_char_dir, exist_ok=True)
+            os.makedirs(coder_char_dir, exist_ok=True)
+            logger.info(f"Created worker character directory at {worker_char_dir}")
+            logger.info(f"Created coder character directory at {coder_char_dir}")
+
+            # Create system_msg files within character directories
+            worker_system_msg_path = os.path.join(worker_char_dir, "system_msg")
+            with open(worker_system_msg_path, 'w') as f:
+                f.write(Project._WORKER_SYSTEM_MSG)
+            logger.info(f"Created worker system_msg at {worker_system_msg_path}")
+
+            coder_system_msg_path = os.path.join(coder_char_dir, "system_msg")
+            with open(coder_system_msg_path, 'w') as f:
+                f.write(Project._CODER_SYSTEM_MSG)
+            logger.info(f"Created coder system_msg at {coder_system_msg_path}")
+
+            # 1. Create worker/config.json
             worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
             with open(worker_config_path, 'w') as f:
                 json.dump(DEFAULT_WORKER_LLM_CONFIG, f, indent=4)
             logger.info(f"Created default worker LLM config at {worker_config_path}")
 
-            # 2. Create coder_llm_config.json
+            # 2. Create coder/config.json
             coder_config_path = os.path.join(ghostcode_dir, Project._CODER_CONFIG_FILE)
             with open(coder_config_path, 'w') as f:
                 json.dump(DEFAULT_CODER_LLM_CONFIG, f, indent=4)
@@ -225,7 +251,7 @@ class Project(BaseModel):
         directory_file_content = ""
         project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
 
-        # 1. Load worker_llm_config.json
+        # 1. Load worker_llm_config.json (now from worker/config.json)
         worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
         try:
             with open(worker_config_path, 'r') as f:
@@ -241,7 +267,7 @@ class Project(BaseModel):
             logger.error(f"An unexpected error occurred loading {worker_config_path}: {e}. Using default configuration.", exc_info=True)
             worker_llm_config = DEFAULT_WORKER_LLM_CONFIG
 
-        # 2. Load coder_llm_config.json
+        # 2. Load coder_llm_config.json (now from coder/config.json)
         coder_config_path = os.path.join(ghostcode_dir, Project._CODER_CONFIG_FILE)
         try:
             with open(coder_config_path, 'r') as f:
@@ -333,7 +359,13 @@ class Project(BaseModel):
                 logger.error(f"Failed to create .ghostcode directory at {ghostcode_dir}: {e}")
                 raise
 
-        # 1. Save worker_llm_config.json
+        # Ensure worker and coder character directories exist before saving their configs
+        worker_char_dir = os.path.join(ghostcode_dir, "worker")
+        coder_char_dir = os.path.join(ghostcode_dir, "coder")
+        os.makedirs(worker_char_dir, exist_ok=True)
+        os.makedirs(coder_char_dir, exist_ok=True)
+
+        # 1. Save worker_llm_config.json (now to worker/config.json)
         worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
         try:
             with open(worker_config_path, 'w') as f:
@@ -343,7 +375,7 @@ class Project(BaseModel):
             logger.error(f"Failed to save worker LLM config to {worker_config_path}: {e}", exc_info=True)
             raise
 
-        # 2. Save coder_llm_config.json
+        # 2. Save coder_llm_config.json (now to coder/config.json)
         coder_config_path = os.path.join(ghostcode_dir, Project._CODER_CONFIG_FILE)
         try:
             with open(coder_config_path, 'w') as f:
@@ -387,3 +419,6 @@ class Project(BaseModel):
             logger.warning(f"No project metadata to save for {root}.")
 
         logger.info(f"Ghostcode project saved successfully to {root}.")
+
+
+
