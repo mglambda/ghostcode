@@ -6,6 +6,7 @@ import json
 import yaml
 import logging
 import ghostbox.definitions
+from ghostcode.utility import language_from_extension
 import appdirs # Added for platform-specific config directory
 
 # --- Logging Setup ---
@@ -20,13 +21,13 @@ DEFAULT_CODER_LLM_CONFIG = {
     "temperature": 0.2,
     "max_length": -1,
     "top_p": 0.9,
-    "use_tools": True, # Coder LLM will likely use tools
     "log_time": True,
     "verbose": False,
     "chat_ai": "GhostCoder",
     "stdout": False,
     "stderr": False,
     "quiet": True,
+    "stream": False,
 }
 
 # Default configuration for the worker LLM (e.g., for generating code snippets, answering questions)
@@ -39,7 +40,8 @@ DEFAULT_WORKER_LLM_CONFIG = {
     "verbose": False,
     "stdout": False,
     "stderr": False,
-    "quiet": True,    
+    "quiet": True,
+    "stream": False,
     "chat_ai": "GhostWorker",
 }
 
@@ -208,6 +210,26 @@ class ContextFiles(BaseModel):
         context_files = [ContextFile(filepath=fp, rag=False) for fp in filepaths]
         return ContextFiles(data=context_files)
 
+    def show(self) -> str:
+        """Renders file contents of the context files to a string, in a format that is suitable for an LLM."""
+        w = ""
+        for context_file in self.data:
+            try:
+                with open(context_file.filepath, "r") as f:
+                    contents = f.read()
+            except Exception as e:
+                logging.error(f"Could not read file {context_file.filepath}. Skipping. Reason: {e}")
+                continue
+
+            w += f"""# {context_file.filepath}
+
+```{language_from_extension(context_file.filepath)}
+{contents}
+```
+
+"""            
+        return w
+    
 class ProjectMetadata(BaseModel):
     name: str
     description: str
@@ -248,8 +270,8 @@ class Project(BaseModel):
     _PROJECT_METADATA_FILE: ClassVar[str] = "project_metadata.yaml" # YAML format
     _PROJECT_CONFIG_FILE: ClassVar[str] = "config.yaml" # YAML format
 
-    _WORKER_SYSTEM_MSG: ClassVar[str] = "You are GhostWorker, a helpful AI assistant focused on executing specific, local programming tasks. Your primary role is to interact with the file system, run shell commands, and perform other environment-specific operations as instructed by GhostCoder. Be concise, precise, and report results clearly. Do not engage in high-level planning or code generation unless explicitly asked to generate a small snippet for a tool."
-    _CODER_SYSTEM_MSG: ClassVar[str] = "You are GhostCoder, a highly intelligent and experienced AI programmer. Your role is to understand complex programming tasks, devise high-level plans, generate code, and review existing code. You will delegate specific environment interactions (like reading/writing files or running commands) to GhostWorker. Focus on architectural decisions, code quality, and problem-solving. When delegating, provide clear and unambiguous instructions to GhostWorker."
+    _WORKER_SYSTEM_MSG: ClassVar[str] = "You are GhostWorker, a helpful AI assistant focused on executing specific, local programming tasks. Your primary role is to interact with the file system, run shell commands, and perform other environment-specific operations as instructed by GhostCoder. Be concise, precise, and report results clearly. Do not engage in high-level planning or code generation unless explicitly asked to generate a small snippet for a tool.{{worker_injection}}"
+    _CODER_SYSTEM_MSG: ClassVar[str] = "You are GhostCoder, a highly intelligent and experienced AI programmer. Your role is to understand complex programming tasks, devise high-level plans, generate code, and review existing code. You will delegate specific environment interactions (like reading/writing files or running commands) to GhostWorker. Focus on architectural decisions, code quality, and problem-solving. When delegating, provide clear and unambiguous instructions to GhostWorker.\n\n# Project Overview\n{{project_metadata}}\n\n# Files\n{{context_files}}"
 
 
     @staticmethod
@@ -594,5 +616,70 @@ class Project(BaseModel):
 
         logger.info(f"Ghostcode project saved successfully to {root}.")
 
+class CodeResponsePart(BaseModel):
+    """Part of a LLM backend response that is programming code."""
+    type: Literal["full", "partial"] = Field(
+        default = "full",
+        description = "Indicates wether this code response part is a full or partial code block. Full code blocks are used to replace entire files, and don't require an original block to be provided. A partial response replaces only part of a file, and the original, to-be-replaced code block along with preceding and following blocks should be provided alongside the replacement."
+    )
+    
+    filepath: Optional[str] = Field(
+        default = None,
+        description = "The file that this code generation belongs to, the file that the code  should be saved in, or None if it is a free-standing code snippet."
+    )
+    
+    language: str = Field(
+        default = "",
+        description = "The language the code is written in."
+    )
 
+    original_code: Optional[str] = Field(
+        default = None,
+        description = "The original code that is to be replaced with this code response. It includes a couple of lines before and after the new code. Should only be provided if this is a partial response."
+    )
+    
+    new_code: str = Field(
+        default = "",
+        description = "The actual code as plaintext."
+    )
 
+    title: str = Field(
+        default = "",
+        description = "A short but descriptive title for the code block."
+    )
+
+    def show_cli(self) -> str:
+        """Return a (short) representation that is suitable for the CLI interface."""
+        filepath_str = f"({self.filepath})" if self.filepath else ""
+        return f" - {self.title} {filepath_str}"
+    
+class TextResponsePart(BaseModel):
+    """A text chunk that is part of a response by the LLM backend."""
+
+    text: str = Field(
+        default = "",
+        description = "The text payload."
+    )
+
+    filepath: Optional[str] = Field(
+        default = None,
+        description = "An optional filepath to indicate which file the text response part refers to."
+    )
+
+    def show_cli(self) -> str:
+        """A (short) CLI representation for the part."""
+        filepath_str = f"## {self.filepath}\n" if self.filepath else ""
+        return f"{filepath_str}{self.text}"
+    
+CoderResponsePart = CodeResponsePart | TextResponsePart
+    
+class CoderResponse(BaseModel):
+    """A response returned from the code generation backend.
+    Coder responses are conceptual in nature and contain code and text. THey are not intended to be tool-calls etc."""
+
+    contents: List[CoderResponsePart] = Field(
+        default_factory = lambda: [],
+        description = "A list of response parts returned by the backend coder LLM. This may contain code and/or text."
+    )
+
+    

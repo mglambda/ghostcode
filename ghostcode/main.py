@@ -1,4 +1,6 @@
 from typing import *
+import json
+import traceback
 from ghostcode import types
 import ghostbox
 import os
@@ -35,6 +37,12 @@ class Program:
         default_factory = types.UserConfig,
         )
     
+    def _get_cli_prompt(self) -> str:
+        """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
+        # some ghostbox internal magic to get the token count
+        coder_tokens = self.coder_box._plumbing._get_last_result_tokens()
+        worker_tokens = self.worker_box._plumbing._get_last_result_tokens()
+        return f" 👻{coder_tokens} 🔧{worker_tokens} >"
     def _has_api_keys(self) -> Dict[LLMBackend, bool]:
         """
         Compares the chosen backends to the user config and checks for required API keys.
@@ -370,7 +378,6 @@ class ContextCommand(BaseModel, CommandInterface):
 
 class InteractCommand(BaseModel, CommandInterface):
     """Launches an interactive session with the Coder LLM."""
-    # This is a placeholder for the actual interactive loop logic
 
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
@@ -384,16 +391,76 @@ class InteractCommand(BaseModel, CommandInterface):
             result.print(verify_result.text)
             result.print("Aborting interaction.")
             return result
-            
-        return result
 
         result.print("Starting interactive session with Coder LLM (placeholder).")
         result.print("API keys checked. If warnings were shown, please address them.")
-        # Placeholder for the actual interactive loop (e.g., ghostbox.regpl)
-        # For now, just print a message.
-        # prog.coder_box.interactBlocking("Hello, GhostCoder. What can I help you with?")
+
+        # start the actual loop in another method 
+        return self._interact_loop(result, prog)
+
+    # This code is unreachable but in the future error handling/control flow of this method might become more complicated and we may need it
         return result
 
+    def _print(self, w: str, end: str = "\n") -> None:
+        """Synonymous with print. Just aliases here as future-proofing."""
+        print(w, end=end)
+
+
+    def _make_user_prompt(self, prog: Program, prompt: str) -> str:
+        return f"""{prog.project.context_files.show()}
+
+# User Prompt
+
+{prompt}"""        
+    def _interact_loop(self, intermediate_result: CommandOutput, prog: Program) -> CommandOutput:
+        # since the interaction is blocking we can't wait with printing until we return the result
+        # so we print it here and return an empty result at the end
+        self._print(intermediate_result.text)
+        interacting = True
+        print("Multiline mode enabled. Type your prompt over multiple lines.\nType a single '\\' and hit enter to submit.\nType /quit or CTRL+D to quit.")
+        prompt = ""
+        while interacting:
+            try:
+                line = input(prog._get_cli_prompt())
+            except EOFError:
+                break
+            
+            if line == "/quit":
+                break
+            elif line == "/lastrequest":
+                print(json.dumps(prog.coder_box.get_last_request(), indent=4))
+            elif line != "\\":
+                prompt += "\n" + line
+                continue
+
+            # ok, process prompt
+            prog.coder_box.set_vars({
+                "project_metadata": "", # placeholder - should be filled in with textual representation of actual metadata
+                #"context_files": prog.project.context_files.show()
+            })
+
+            debug_options = {
+                "stderr":True,
+                "stdout":True,
+                "quiet":False,
+                "verbose":True
+            }
+            try:
+                response = prog.coder_box.new(types.CoderResponse,
+                                              self._make_user_prompt(prog, prompt),
+                                              #options=debug_options,
+                                              )
+
+                for part in response.contents:
+                    print(part.show_cli())
+            except:
+                print(f"error on ghostbox.new. See the full traceback:\n{traceback.format_exc()}")
+                print(f"\nAnd here is the last result:\n\n{prog.coder_box.get_last_result()}") 
+
+            prompt = ""            
+        
+
+        return CommandOutput(text="Finished interaction.")
 
 # --- Main CLI Logic ---
 
