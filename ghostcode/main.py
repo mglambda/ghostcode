@@ -721,6 +721,7 @@ def main():
     # Run the command
     out = command_obj.run(prog_instance)
     print(out.text)
+    project.save_to_root(prog_instance.project_root)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 # ghostcode/types.py
 from typing import *
+from datetime import datetime
 from pydantic import BaseModel, Field
 import os
 import json
@@ -233,387 +234,6 @@ class ProjectMetadata(BaseModel):
     name: str
     description: str
 
-class Project(BaseModel):
-    """Basic context for a ghostcode project.
-    By convention, all Fields of this type are found in the .ghostcode directory at the project root, with their Field names also being the filename.
-    """
-
-    config: ProjectConfig = Field(default_factory=ProjectConfig, description="Project wide configuration options.")
-
-    worker_llm_config: Dict[str, Any] = Field(
-        default_factory = dict,
-        description = "Configuration options sent to ghostbox for the worker LLM. This is a json file stored in .ghostcode/worker_llm_config.json."
-    )
-
-    coder_llm_config: Dict[str, Any] = Field(
-        default_factory = dict,
-        description = "Configuration options sent to ghostbox for the coder LLM. This is a json file stored in .ghostcode/coder_llm_config.json."
-    )
-
-    context_files: ContextFiles = Field(default_factory=ContextFiles)
-
-    directory_file: str = Field(
-        default = "",
-        description = "A directory file is an automatically generated markdown file intended to keep LLMs from introducing changes that break the project. It usually contains a project overview and important information about the project, such as module dependencies, architectural limitations, technology choices, and much more. Stored in .ghostcode/directory_file.md."
-    )
-    project_metadata: Optional[ProjectMetadata] = Field(default_factory=lambda: ProjectMetadata(**DEFAULT_PROJECT_METADATA))
-
-    # --- File names within the .ghostcode directory ---
-    _GHOSTCODE_DIR: ClassVar[str] = ".ghostcode"
-    _WORKER_CHARACTER_FOLDER: ClassVar[str] = "worker"
-    _WORKER_CONFIG_FILE: ClassVar[str] = "worker/config.json"
-    _CODER_CHARACTER_FOLDER: ClassVar[str] = "coder"
-    _CODER_CONFIG_FILE: ClassVar[str] = "coder/config.json"
-    _CONTEXT_FILES_FILE: ClassVar[str] = "context_files" # Plaintext list of filepaths
-    _DIRECTORY_FILE: ClassVar[str] = "directory_file.md" # Plaintext markdown
-    _PROJECT_METADATA_FILE: ClassVar[str] = "project_metadata.yaml" # YAML format
-    _PROJECT_CONFIG_FILE: ClassVar[str] = "config.yaml" # YAML format
-
-    _WORKER_SYSTEM_MSG: ClassVar[str] = "You are GhostWorker, a helpful AI assistant focused on executing specific, local programming tasks. Your primary role is to interact with the file system, run shell commands, and perform other environment-specific operations as instructed by GhostCoder. Be concise, precise, and report results clearly. Do not engage in high-level planning or code generation unless explicitly asked to generate a small snippet for a tool.{{worker_injection}}"
-    _CODER_SYSTEM_MSG: ClassVar[str] = "You are GhostCoder, a highly intelligent and experienced AI programmer. Your role is to understand complex programming tasks, devise high-level plans, generate code, and review existing code. You will delegate specific environment interactions (like reading/writing files or running commands) to GhostWorker. Focus on architectural decisions, code quality, and problem-solving. When delegating, provide clear and unambiguous instructions to GhostWorker.\n\n# Project Overview\n{{project_metadata}}\n\n# Files\n{{context_files}}"
-
-
-    @staticmethod
-    def _get_ghostcode_path(root: str) -> str:
-        """Helper to get the full path to the .ghostcode directory."""
-        return os.path.join(root, Project._GHOSTCODE_DIR)
-
-    @staticmethod
-    def find_project_root(start_path: str = '.') -> Optional[str]:
-        """
-        Traverses up the directory tree from start_path to find the .ghostcode directory.
-
-        Args:
-            start_path (str): The directory to start searching from.
-
-        Returns:
-            Optional[str]: The absolute path to the project root (parent of .ghostcode), or None if not found.
-        """
-        current_path = os.path.abspath(start_path)
-        while True:
-            ghostcode_path = os.path.join(current_path, Project._GHOSTCODE_DIR)
-            if os.path.isdir(ghostcode_path):
-                logger.debug(f"Found .ghostcode directory at {ghostcode_path}. Project root is {current_path}")
-                return current_path
-
-            parent_path = os.path.dirname(current_path)
-            if parent_path == current_path: # Reached filesystem root
-                logger.debug(f"No .ghostcode directory found up to filesystem root from {start_path}")
-                return None
-            current_path = parent_path
-
-    @staticmethod
-    def init(root: str) -> None:
-        """
-        Sets up a .ghostcode directory in the given root directory with all the necessary default files.
-
-        Args:
-            root (str): The root directory of the project where .ghostcode should be created.
-        """
-        ghostcode_dir = Project._get_ghostcode_path(root)
-        logger.info(f"Initializing .ghostcode directory at: {ghostcode_dir}")
-
-        try:
-            os.makedirs(ghostcode_dir, exist_ok=True)
-            logger.info(f"Ensured directory {ghostcode_dir} exists.")
-
-            # Create .ghostcode/worker and .ghostcode/coder directories
-            worker_char_dir = os.path.join(ghostcode_dir, "worker")
-            coder_char_dir = os.path.join(ghostcode_dir, "coder")
-            os.makedirs(worker_char_dir, exist_ok=True)
-            os.makedirs(coder_char_dir, exist_ok=True)
-            logger.info(f"Created worker character directory at {worker_char_dir}")
-            logger.info(f"Created coder character directory at {coder_char_dir}")
-
-            # Create system_msg files within character directories
-            worker_system_msg_path = os.path.join(worker_char_dir, "system_msg")
-            with open(worker_system_msg_path, 'w') as f:
-                f.write(Project._WORKER_SYSTEM_MSG)
-            logger.info(f"Created worker system_msg at {worker_system_msg_path}")
-
-            coder_system_msg_path = os.path.join(coder_char_dir, "system_msg")
-            with open(coder_system_msg_path, 'w') as f:
-                f.write(Project._CODER_SYSTEM_MSG)
-            logger.info(f"Created coder system_msg at {coder_system_msg_path}")
-
-            # 1. Create worker/config.json
-            worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
-            with open(worker_config_path, 'w') as f:
-                json.dump(DEFAULT_WORKER_LLM_CONFIG, f, indent=4)
-            logger.info(f"Created default worker LLM config at {worker_config_path}")
-
-            # 2. Create coder/config.json
-            coder_config_path = os.path.join(ghostcode_dir, Project._CODER_CONFIG_FILE)
-            with open(coder_config_path, 'w') as f:
-                json.dump(DEFAULT_CODER_LLM_CONFIG, f, indent=4)
-            logger.info(f"Created default coder LLM config at {coder_config_path}")
-
-            # 3. Create context_files (plaintext, initially empty)
-            context_files_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_FILE)
-            with open(context_files_path, 'w') as f:
-                f.write("") # Empty file
-            logger.info(f"Created empty context files list at {context_files_path}")
-
-            # 4. Create directory_file.md (plaintext, initially empty)
-            directory_file_path = os.path.join(ghostcode_dir, Project._DIRECTORY_FILE)
-            with open(directory_file_path, 'w') as f:
-                f.write("") # Empty file
-            logger.info(f"Created empty directory file at {directory_file_path}")
-
-            # 5. Create project_metadata.yaml (YAML, with default metadata)
-            project_metadata_path = os.path.join(ghostcode_dir, Project._PROJECT_METADATA_FILE)
-            with open(project_metadata_path, 'w') as f:
-                yaml.dump(DEFAULT_PROJECT_METADATA, f, indent=2, sort_keys=False)
-            logger.info(f"Created default project metadata at {project_metadata_path}")
-
-            # 6. Create config.yaml (YAML, with default ProjectConfig)
-            project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
-            default_project_config = ProjectConfig()
-            with open(project_config_path, 'w') as f:
-                yaml.dump(default_project_config.model_dump(), f, indent=2, sort_keys=False)
-            logger.info(f"Created default project config at {project_config_path}")
-
-
-            logger.info(f"Ghostcode project initialized successfully in {root}.")
-
-        except OSError as e:
-            logger.error(f"Failed to create .ghostcode directory or files in {root}: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"An unexpected error occurred during initialization in {root}: {e}", exc_info=True)
-            raise
-
-    @staticmethod
-    def from_root(root: str) -> 'Project':
-        """
-        Looks for a .ghostcode folder in the given root directory, loads all the necessary files,
-        constructs the respective types, and then returns a new Project instance.
-
-        Args:
-            root (str): The root directory of the project.
-
-        Returns:
-            Project: A new Project instance populated with data from the .ghostcode directory.
-
-        Raises:
-            FileNotFoundError: If the .ghostcode directory does not exist.
-        """
-        ghostcode_dir = Project._get_ghostcode_path(root)
-        logger.info(f"Loading ghostcode project from: {ghostcode_dir}")
-
-        if not os.path.isdir(ghostcode_dir):
-            logger.error(f"'.ghostcode' directory not found at {ghostcode_dir}. Please initialize the project first using `ghostcode init '{root}'`.")
-            raise FileNotFoundError(f"'.ghostcode' directory not found at {ghostcode_dir}")
-
-        worker_llm_config = {}
-        coder_llm_config = {}
-        context_files = ContextFiles()
-        directory_file_content = ""
-        project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
-        project_config = ProjectConfig() # Initialize with defaults
-
-        # 1. Load worker_llm_config.json (now from worker/config.json)
-        worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
-        try:
-            with open(worker_config_path, 'r') as f:
-                worker_llm_config = json.load(f)
-            logger.debug(f"Loaded worker LLM config from {worker_config_path}")
-        except FileNotFoundError:
-            logger.warning(f"Worker LLM config file not found at {worker_config_path}. Using default configuration.")
-            worker_llm_config = DEFAULT_WORKER_LLM_CONFIG
-        except json.JSONDecodeError as e:
-            logger.error(f"Error decoding JSON from {worker_config_path}: {e}. Using default configuration.", exc_info=True)
-            worker_llm_config = DEFAULT_WORKER_LLM_CONFIG
-        except Exception as e:
-            logger.error(f"An unexpected error occurred loading {worker_config_path}: {e}. Using default configuration.", exc_info=True)
-            worker_llm_config = DEFAULT_WORKER_LLM_CONFIG
-
-        # 2. Load coder_llm_config.json (now from coder/config.json)
-        coder_config_path = os.path.join(ghostcode_dir, Project._CODER_CONFIG_FILE)
-        try:
-            with open(coder_config_path, 'r') as f:
-                coder_llm_config = json.load(f)
-            logger.debug(f"Loaded coder LLM config from {coder_config_path}")
-        except FileNotFoundError:
-            logger.warning(f"Coder LLM config file not found at {coder_config_path}. Using default configuration.")
-            coder_llm_config = DEFAULT_CODER_LLM_CONFIG
-        except json.JSONDecodeError as e:
-            logger.error(f"Error decoding JSON from {coder_config_path}: {e}. Using default configuration.", exc_info=True)
-            coder_llm_config = DEFAULT_CODER_LLM_CONFIG
-        except Exception as e:
-            logger.error(f"An unexpected error occurred loading {coder_config_path}: {e}. Using default configuration.", exc_info=True)
-            coder_llm_config = DEFAULT_CODER_LLM_CONFIG
-
-        # 3. Load context_files
-        context_files_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_FILE)
-        try:
-            with open(context_files_path, 'r') as f:
-                content = f.read()
-                context_files = ContextFiles.from_plaintext(content)
-            logger.debug(f"Loaded context files from {context_files_path}")
-        except FileNotFoundError:
-            logger.warning(f"Context files list not found at {context_files_path}. Using empty list.")
-            context_files = ContextFiles(data=[])
-        except Exception as e:
-            logger.error(f"An unexpected error occurred loading {context_files_path}: {e}. Using empty list.", exc_info=True)
-            context_files = ContextFiles(data=[])
-
-        # 4. Load directory_file.md
-        directory_file_path = os.path.join(ghostcode_dir, Project._DIRECTORY_FILE)
-        try:
-            with open(directory_file_path, 'r') as f:
-                directory_file_content = f.read()
-            logger.debug(f"Loaded directory file from {directory_file_path}")
-        except FileNotFoundError:
-            logger.warning(f"Directory file not found at {directory_file_path}. Using empty content.")
-            directory_file_content = ""
-        except Exception as e:
-            logger.error(f"An unexpected error occurred loading {directory_file_path}: {e}. Using empty content.", exc_info=True)
-            directory_file_content = ""
-
-        # 5. Load project_metadata.yaml
-        project_metadata_path = os.path.join(ghostcode_dir, Project._PROJECT_METADATA_FILE)
-        try:
-            with open(project_metadata_path, 'r') as f:
-                metadata_dict = yaml.safe_load(f)
-                if metadata_dict:
-                    project_metadata = ProjectMetadata(**metadata_dict)
-                else:
-                    logger.warning(f"Project metadata file {project_metadata_path} is empty. Using default metadata.")
-                    project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
-            logger.debug(f"Loaded project metadata from {project_metadata_path}")
-        except FileNotFoundError:
-            logger.warning(f"Project metadata file not found at {project_metadata_path}. Using default metadata.")
-            project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
-        except yaml.YAMLError as e:
-            logger.error(f"Error decoding YAML from {project_metadata_path}: {e}. Using default metadata.", exc_info=True)
-            project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
-        except Exception as e:
-            logger.error(f"An unexpected error occurred loading {project_metadata_path}: {e}. Using default metadata.", exc_info=True)
-            project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
-
-        # 6. Load config.yaml
-        project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
-        try:
-            with open(project_config_path, 'r') as f:
-                config_dict = yaml.safe_load(f)
-                if config_dict:
-                    # Pydantic will handle validation and conversion for ProjectConfig
-                    project_config = ProjectConfig(**config_dict)
-                else:
-                    logger.warning(f"Project config file {project_config_path} is empty. Using default ProjectConfig.")
-                    project_config = ProjectConfig()
-            logger.debug(f"Loaded project config from {project_config_path}")
-        except FileNotFoundError:
-            logger.warning(f"Project config file not found at {project_config_path}. Using default ProjectConfig.")
-            project_config = ProjectConfig()
-        except yaml.YAMLError as e:
-            logger.error(f"Error decoding YAML from {project_config_path}: {e}. Using default ProjectConfig.", exc_info=True)
-            project_config = ProjectConfig()
-        except Exception as e:
-            logger.error(f"An unexpected error occurred loading {project_config_path}: {e}. Using default ProjectConfig.", exc_info=True)
-            project_config = ProjectConfig()
-
-
-        logger.info(f"Ghostcode project loaded successfully from {root}.")
-        return Project(
-            config=project_config, # Pass the loaded config
-            worker_llm_config=worker_llm_config,
-            coder_llm_config=coder_llm_config,
-            context_files=context_files,
-            directory_file=directory_file_content,
-            project_metadata=project_metadata,
-        )
-
-    def save_to_root(self, root: str) -> None:
-        """
-        Serializes all the contained types and saves them to the .ghostcode folder
-        within the given root directory.
-
-        Args:
-            root (str): The root directory of the project.
-        """
-        ghostcode_dir = Project._get_ghostcode_path(root)
-        logger.info(f"Saving ghostcode project to: {ghostcode_dir}")
-
-        if not os.path.isdir(ghostcode_dir):
-            logger.warning(f"'.ghostcode' directory not found at {ghostcode_dir}. Attempting to create it.")
-            try:
-                os.makedirs(ghostcode_dir)
-            except OSError as e:
-                logger.error(f"Failed to create .ghostcode directory at {ghostcode_dir}: {e}")
-                raise
-
-        # Ensure worker and coder character directories exist before saving their configs
-        worker_char_dir = os.path.join(ghostcode_dir, "worker")
-        coder_char_dir = os.path.join(ghostcode_dir, "coder")
-        os.makedirs(worker_char_dir, exist_ok=True)
-        os.makedirs(coder_char_dir, exist_ok=True)
-
-        # 1. Save worker_llm_config.json (now to worker/config.json)
-        worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
-        try:
-            with open(worker_config_path, 'w') as f:
-                json.dump(self.worker_llm_config, f, indent=4)
-            logger.debug(f"Saved worker LLM config to {worker_config_path}")
-        except Exception as e:
-            logger.error(f"Failed to save worker LLM config to {worker_config_path}: {e}", exc_info=True)
-            raise
-
-        # 2. Save coder_llm_config.json (now to coder/config.json)
-        coder_config_path = os.path.join(ghostcode_dir, Project._CODER_CONFIG_FILE)
-        try:
-            with open(coder_config_path, 'w') as f:
-                json.dump(self.coder_llm_config, f, indent=4)
-            logger.debug(f"Saved coder LLM config to {coder_config_path}")
-        except Exception as e:
-            logger.error(f"Failed to save coder LLM config to {coder_config_path}: {e}", exc_info=True)
-            raise
-
-        # 3. Save context_files
-        context_files_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_FILE)
-        try:
-            with open(context_files_path, 'w') as f:
-                f.write(self.context_files.to_plaintext())
-            logger.debug(f"Saved context files to {context_files_path}")
-        except Exception as e:
-            logger.error(f"Failed to save context files to {context_files_path}: {e}", exc_info=True)
-            raise
-
-        # 4. Save directory_file.md
-        directory_file_path = os.path.join(ghostcode_dir, Project._DIRECTORY_FILE)
-        try:
-            with open(directory_file_path, 'w') as f:
-                f.write(self.directory_file)
-            logger.debug(f"Saved directory file to {directory_file_path}")
-        except Exception as e:
-            logger.error(f"Failed to save directory file to {directory_file_path}: {e}", exc_info=True)
-            raise
-
-        # 5. Save project_metadata.yaml
-        project_metadata_path = os.path.join(ghostcode_dir, Project._PROJECT_METADATA_FILE)
-        if self.project_metadata:
-            try:
-                with open(project_metadata_path, 'w') as f:
-                    yaml.dump(self.project_metadata.model_dump(), f, indent=2, sort_keys=False)
-                logger.debug(f"Saved project metadata to {project_metadata_path}")
-            except Exception as e:
-                logger.error(f"Failed to save project metadata to {project_metadata_path}: {e}", exc_info=True)
-                raise
-        else:
-            logger.warning(f"No project metadata to save for {root}.")
-
-        # 6. Save config.yaml
-        project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
-        try:
-            with open(project_config_path, 'w') as f:
-                yaml.dump(self.config.model_dump(), f, indent=2, sort_keys=False)
-            logger.debug(f"Saved project config to {project_config_path}")
-        except Exception as e:
-            logger.error(f"Failed to save project config to {project_config_path}: {e}", exc_info=True)
-            raise
-
-        logger.info(f"Ghostcode project saved successfully to {root}.")
 
 class CodeResponsePart(BaseModel):
     """Part of a LLM backend response that is programming code."""
@@ -719,3 +339,487 @@ class CoderResponse(BaseModel):
 
     def show(self) -> str:
         return "\n".join([part.show() for part in self.contents])
+
+    
+class CoderInteractionHistoryItem(BaseModel):
+    """A LLM coder response that was generated during a user interaction."""
+
+    timestamp: datetime = Field(
+        default_factory=datetime.now
+    )
+    
+    context: ContextFiles = Field(
+        description = "The context that was current at the time the interaction was made."
+    )
+
+    backend: ghostbox.definitions.LLMBackend = Field(
+        description = "The LLM backend that was used at the time the interaction was made."
+    )
+
+    model: str = Field(
+        description = "The particular LLM model that was used by the backend at the time the interaction was made."
+    )
+    
+    response: CoderResponse = Field(
+        description = "The full response returned by the LLM. as aprt of this interaction."
+    )
+    
+class UserInteractionHistoryItem(BaseModel):
+    """Part of an AI/User interaction representing a user prompt."""
+
+    timestamp: datetime = Field(
+        default_factory=datetime.now
+    )
+    
+    context: ContextFiles = Field(
+        description = "The context that was current at the time the interaction was made."
+    )
+
+    preamble: str = Field(
+        default = "",
+        description = "The plaintext of the context that was added automatically before the user prompt."
+    )
+    
+    prompt: str = Field(
+        description = "The actual user prompt. This includes only the plain text created directly by the user at the time of the interaction."
+    )
+
+InteractionHistoryItem = UserInteractionHistoryItem | CoderInteractionHistoryItem
+    
+class InteractionHistory(BaseModel):
+    """Keeps track of past interactions.
+    This is usually saved to .ghostcode/interaction_history.json"""
+
+    contents: List[InteractionHistoryItem] = Field(
+        default_factory = lambda: [],
+        description = "List of past interactions in this ghostcode project."
+        )
+    
+class Project(BaseModel):
+    """Basic context for a ghostcode project.
+    By convention, all Fields of this type are found in the .ghostcode directory at the project root, with their Field names also being the filename.
+    """
+
+    config: ProjectConfig = Field(default_factory=ProjectConfig, description="Project wide configuration options.")
+
+    worker_llm_config: Dict[str, Any] = Field(
+        default_factory = dict,
+        description = "Configuration options sent to ghostbox for the worker LLM. This is a json file stored in .ghostcode/worker_llm_config.json."
+    )
+
+    coder_llm_config: Dict[str, Any] = Field(
+        default_factory = dict,
+        description = "Configuration options sent to ghostbox for the coder LLM. This is a json file stored in .ghostcode/coder_llm_config.json."
+    )
+
+    context_files: ContextFiles = Field(default_factory=ContextFiles)
+
+    directory_file: str = Field(
+        default = "",
+        description = "A directory file is an automatically generated markdown file intended to keep LLMs from introducing changes that break the project. It usually contains a project overview and important information about the project, such as module dependencies, architectural limitations, technology choices, and much more. Stored in .ghostcode/directory_file.md."
+    )
+    project_metadata: Optional[ProjectMetadata] = Field(default_factory=lambda: ProjectMetadata(**DEFAULT_PROJECT_METADATA))
+
+    interaction_history: InteractionHistory = Field(
+        default_factory = lambda: InteractionHistory(contents=[]),
+        description = "Log of interactions between user and LLMs."
+    )
+    
+    # --- File names within the .ghostcode directory ---
+    _GHOSTCODE_DIR: ClassVar[str] = ".ghostcode"
+    _WORKER_CHARACTER_FOLDER: ClassVar[str] = "worker"
+    _WORKER_CONFIG_FILE: ClassVar[str] = "worker/config.json"
+    _CODER_CHARACTER_FOLDER: ClassVar[str] = "coder"
+    _CODER_CONFIG_FILE: ClassVar[str] = "coder/config.json"
+    _CONTEXT_FILES_FILE: ClassVar[str] = "context_files" # Plaintext list of filepaths
+    _DIRECTORY_FILE: ClassVar[str] = "directory_file.md" # Plaintext markdown
+    _PROJECT_METADATA_FILE: ClassVar[str] = "project_metadata.yaml" # YAML format
+    _PROJECT_CONFIG_FILE: ClassVar[str] = "config.yaml" # YAML format
+    _INTERACTION_HISTORY_FILE: ClassVar[str] = "interaction_history.json"
+
+    _WORKER_SYSTEM_MSG: ClassVar[str] = "You are GhostWorker, a helpful AI assistant focused on executing specific, local programming tasks. Your primary role is to interact with the file system, run shell commands, and perform other environment-specific operations as instructed by GhostCoder. Be concise, precise, and report results clearly. Do not engage in high-level planning or code generation unless explicitly asked to generate a small snippet for a tool.{{worker_injection}}"
+    _CODER_SYSTEM_MSG: ClassVar[str] = "You are GhostCoder, a highly intelligent and experienced AI programmer. Your role is to understand complex programming tasks, devise high-level plans, generate code, and review existing code. You will delegate specific environment interactions (like reading/writing files or running commands) to GhostWorker. Focus on architectural decisions, code quality, and problem-solving. When delegating, provide clear and unambiguous instructions to GhostWorker.\n\n# Project Overview\n{{project_metadata}}\n\n# Files\n{{context_files}}"
+
+
+    @staticmethod
+    def _get_ghostcode_path(root: str) -> str:
+        """Helper to get the full path to the .ghostcode directory."""
+        return os.path.join(root, Project._GHOSTCODE_DIR)
+
+    @staticmethod
+    def find_project_root(start_path: str = '.') -> Optional[str]:
+        """
+        Traverses up the directory tree from start_path to find the .ghostcode directory.
+
+        Args:
+            start_path (str): The directory to start searching from.
+
+        Returns:
+            Optional[str]: The absolute path to the project root (parent of .ghostcode), or None if not found.
+        """
+        current_path = os.path.abspath(start_path)
+        while True:
+            ghostcode_path = os.path.join(current_path, Project._GHOSTCODE_DIR)
+            if os.path.isdir(ghostcode_path):
+                logger.debug(f"Found .ghostcode directory at {ghostcode_path}. Project root is {current_path}")
+                return current_path
+
+            parent_path = os.path.dirname(current_path)
+            if parent_path == current_path: # Reached filesystem root
+                logger.debug(f"No .ghostcode directory found up to filesystem root from {start_path}")
+                return None
+            current_path = parent_path
+
+    @staticmethod
+    def init(root: str) -> None:
+        """
+        Sets up a .ghostcode directory in the given root directory with all the necessary default files.
+
+        Args:
+            root (str): The root directory of the project where .ghostcode should be created.
+        """
+        ghostcode_dir = Project._get_ghostcode_path(root)
+        logger.info(f"Initializing .ghostcode directory at: {ghostcode_dir}")
+
+        try:
+            os.makedirs(ghostcode_dir, exist_ok=True)
+            logger.info(f"Ensured directory {ghostcode_dir} exists.")
+
+            # Create .ghostcode/worker and .ghostcode/coder directories
+            worker_char_dir = os.path.join(ghostcode_dir, "worker")
+            coder_char_dir = os.path.join(ghostcode_dir, "coder")
+            os.makedirs(worker_char_dir, exist_ok=True)
+            os.makedirs(coder_char_dir, exist_ok=True)
+            logger.info(f"Created worker character directory at {worker_char_dir}")
+            logger.info(f"Created coder character directory at {coder_char_dir}")
+
+            # Create system_msg files within character directories
+            worker_system_msg_path = os.path.join(worker_char_dir, "system_msg")
+            with open(worker_system_msg_path, 'w') as f:
+                f.write(Project._WORKER_SYSTEM_MSG)
+            logger.info(f"Created worker system_msg at {worker_system_msg_path}")
+
+            coder_system_msg_path = os.path.join(coder_char_dir, "system_msg")
+            with open(coder_system_msg_path, 'w') as f:
+                f.write(Project._CODER_SYSTEM_MSG)
+            logger.info(f"Created coder system_msg at {coder_system_msg_path}")
+
+            # 1. Create worker/config.json
+            worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
+            with open(worker_config_path, 'w') as f:
+                json.dump(DEFAULT_WORKER_LLM_CONFIG, f, indent=4)
+            logger.info(f"Created default worker LLM config at {worker_config_path}")
+
+            # 2. Create coder/config.json
+            coder_config_path = os.path.join(ghostcode_dir, Project._CODER_CONFIG_FILE)
+            with open(coder_config_path, 'w') as f:
+                json.dump(DEFAULT_CODER_LLM_CONFIG, f, indent=4)
+            logger.info(f"Created default coder LLM config at {coder_config_path}")
+
+            # 3. Create context_files (plaintext, initially empty)
+            context_files_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_FILE)
+            with open(context_files_path, 'w') as f:
+                f.write("") # Empty file
+            logger.info(f"Created empty context files list at {context_files_path}")
+
+            # 4. Create directory_file.md (plaintext, initially empty)
+            directory_file_path = os.path.join(ghostcode_dir, Project._DIRECTORY_FILE)
+            with open(directory_file_path, 'w') as f:
+                f.write("") # Empty file
+            logger.info(f"Created empty directory file at {directory_file_path}")
+
+            # 5. Create project_metadata.yaml (YAML, with default metadata)
+            project_metadata_path = os.path.join(ghostcode_dir, Project._PROJECT_METADATA_FILE)
+            with open(project_metadata_path, 'w') as f:
+                yaml.dump(DEFAULT_PROJECT_METADATA, f, indent=2, sort_keys=False)
+            logger.info(f"Created default project metadata at {project_metadata_path}")
+
+            # 6. Create config.yaml (YAML, with default ProjectConfig)
+            project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
+            default_project_config = ProjectConfig()
+            with open(project_config_path, 'w') as f:
+                yaml.dump(default_project_config.model_dump(), f, indent=2, sort_keys=False)
+            logger.info(f"Created default project config at {project_config_path}")
+
+            # 7. Create interaction_history.json (JSON, initially empty)
+            interaction_history_path = os.path.join(ghostcode_dir, Project._INTERACTION_HISTORY_FILE)
+            with open(interaction_history_path, 'w') as f:
+                json.dump(InteractionHistory(contents=[]).model_dump(), f, indent=4)
+            logger.info(f"Created empty interaction history at {interaction_history_path}")
+
+            logger.info(f"Ghostcode project initialized successfully in {root}.")
+
+        except OSError as e:
+            logger.error(f"Failed to create .ghostcode directory or files in {root}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during initialization in {root}: {e}", exc_info=True)
+            raise
+
+    @staticmethod
+    def from_root(root: str) -> 'Project':
+        """
+        Looks for a .ghostcode folder in the given root directory, loads all the necessary files,
+        constructs the respective types, and then returns a new Project instance.
+
+        Args:
+            root (str): The root directory of the project.
+
+        Returns:
+            Project: A new Project instance populated with data from the .ghostcode directory.
+
+        Raises:
+            FileNotFoundError: If the .ghostcode directory does not exist.
+        """
+        ghostcode_dir = Project._get_ghostcode_path(root)
+        logger.info(f"Loading ghostcode project from: {ghostcode_dir}")
+
+        if not os.path.isdir(ghostcode_dir):
+            logger.error(f"'.ghostcode' directory not found at {ghostcode_dir}. Please initialize the project first using `ghostcode init '{root}'`.")
+            raise FileNotFoundError(f"'.ghostcode' directory not found at {ghostcode_dir}")
+
+        worker_llm_config = {}
+        coder_llm_config = {}
+        context_files = ContextFiles()
+        directory_file_content = ""
+        project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
+        project_config = ProjectConfig() # Initialize with defaults
+        interaction_history = InteractionHistory(contents=[]) # Initialize with default
+        
+        # 1. Load worker_llm_config.json (now from worker/config.json)
+        worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
+        try:
+            with open(worker_config_path, 'r') as f:
+                worker_llm_config = json.load(f)
+            logger.debug(f"Loaded worker LLM config from {worker_config_path}")
+        except FileNotFoundError:
+            logger.warning(f"Worker LLM config file not found at {worker_config_path}. Using default configuration.")
+            worker_llm_config = DEFAULT_WORKER_LLM_CONFIG
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON from {worker_config_path}: {e}. Using default configuration.", exc_info=True)
+            worker_llm_config = DEFAULT_WORKER_LLM_CONFIG
+        except Exception as e:
+            logger.error(f"An unexpected error occurred loading {worker_config_path}: {e}. Using default configuration.", exc_info=True)
+            worker_llm_config = DEFAULT_WORKER_LLM_CONFIG
+
+        # 2. Load coder_llm_config.json (now from coder/config.json)
+        coder_config_path = os.path.join(ghostcode_dir, Project._CODER_CONFIG_FILE)
+        try:
+            with open(coder_config_path, 'r') as f:
+                coder_llm_config = json.load(f)
+            logger.debug(f"Loaded coder LLM config from {coder_config_path}")
+        except FileNotFoundError:
+            logger.warning(f"Coder LLM config file not found at {coder_config_path}. Using default configuration.")
+            coder_llm_config = DEFAULT_CODER_LLM_CONFIG
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON from {coder_config_path}: {e}. Using default configuration.", exc_info=True)
+            coder_llm_config = DEFAULT_CODER_LLM_CONFIG
+        except Exception as e:
+            logger.error(f"An unexpected error occurred loading {coder_config_path}: {e}. Using default configuration.", exc_info=True)
+            coder_llm_config = DEFAULT_CODER_LLM_CONFIG
+
+        # 3. Load context_files
+        context_files_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_FILE)
+        try:
+            with open(context_files_path, 'r') as f:
+                content = f.read()
+                context_files = ContextFiles.from_plaintext(content)
+            logger.debug(f"Loaded context files from {context_files_path}")
+        except FileNotFoundError:
+            logger.warning(f"Context files list not found at {context_files_path}. Using empty list.")
+            context_files = ContextFiles(data=[])
+        except Exception as e:
+            logger.error(f"An unexpected error occurred loading {context_files_path}: {e}. Using empty list.", exc_info=True)
+            context_files = ContextFiles(data=[])
+
+        # 4. Load directory_file.md
+        directory_file_path = os.path.join(ghostcode_dir, Project._DIRECTORY_FILE)
+        try:
+            with open(directory_file_path, 'r') as f:
+                directory_file_content = f.read()
+            logger.debug(f"Loaded directory file from {directory_file_path}")
+        except FileNotFoundError:
+            logger.warning(f"Directory file not found at {directory_file_path}. Using empty content.")
+            directory_file_content = ""
+        except Exception as e:
+            logger.error(f"An unexpected error occurred loading {directory_file_path}: {e}. Using empty content.", exc_info=True)
+            directory_file_content = ""
+
+        # 5. Load project_metadata.yaml
+        project_metadata_path = os.path.join(ghostcode_dir, Project._PROJECT_METADATA_FILE)
+        try:
+            with open(project_metadata_path, 'r') as f:
+                metadata_dict = yaml.safe_load(f)
+                if metadata_dict:
+                    project_metadata = ProjectMetadata(**metadata_dict)
+                else:
+                    logger.warning(f"Project metadata file {project_metadata_path} is empty. Using default metadata.")
+                    project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
+            logger.debug(f"Loaded project metadata from {project_metadata_path}")
+        except FileNotFoundError:
+            logger.warning(f"Project metadata file not found at {project_metadata_path}. Using default metadata.")
+            project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
+        except yaml.YAMLError as e:
+            logger.error(f"Error decoding YAML from {project_metadata_path}: {e}. Using default metadata.", exc_info=True)
+            project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
+        except Exception as e:
+            logger.error(f"An unexpected error occurred loading {project_metadata_path}: {e}. Using default metadata.", exc_info=True)
+            project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
+
+        # 6. Load config.yaml
+        project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
+        try:
+            with open(project_config_path, 'r') as f:
+                config_dict = yaml.safe_load(f)
+                if config_dict:
+                    # Pydantic will handle validation and conversion for ProjectConfig
+                    project_config = ProjectConfig(**config_dict)
+                else:
+                    logger.warning(f"Project config file {project_config_path} is empty. Using default ProjectConfig.")
+                    project_config = ProjectConfig()
+            logger.debug(f"Loaded project config from {project_config_path}")
+        except FileNotFoundError:
+            logger.warning(f"Project config file not found at {project_config_path}. Using default ProjectConfig.")
+            project_config = ProjectConfig()
+        except yaml.YAMLError as e:
+            logger.error(f"Error decoding YAML from {project_config_path}: {e}. Using default ProjectConfig.", exc_info=True)
+            project_config = ProjectConfig()
+        except Exception as e:
+            logger.error(f"An unexpected error occurred loading {project_config_path}: {e}. Using default ProjectConfig.", exc_info=True)
+            project_config = ProjectConfig()
+
+        # 7. Load interaction_history.json
+        interaction_history_path = os.path.join(ghostcode_dir, Project._INTERACTION_HISTORY_FILE)
+        try:
+            with open(interaction_history_path, 'r') as f:
+                history_data = json.load(f)
+                if history_data:
+                    interaction_history = InteractionHistory(**history_data)
+                else:
+                    logger.warning(f"Interaction history file {interaction_history_path} is empty. Using default InteractionHistory.")
+                    interaction_history = InteractionHistory(contents=[])
+            logger.debug(f"Loaded interaction history from {interaction_history_path}")
+        except FileNotFoundError:
+            logger.warning(f"Interaction history file not found at {interaction_history_path}. Using empty history.")
+            interaction_history = InteractionHistory(contents=[])
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON from {interaction_history_path}: {e}. Using empty history.", exc_info=True)
+            interaction_history = InteractionHistory(contents=[])
+        except Exception as e:
+            logger.error(f"An unexpected error occurred loading {interaction_history_path}: {e}. Using empty history.", exc_info=True)
+            interaction_history = InteractionHistory(contents=[])
+
+            
+
+        logger.info(f"Ghostcode project loaded successfully from {root}.")
+        return Project(
+            config=project_config, # Pass the loaded config
+            worker_llm_config=worker_llm_config,
+            coder_llm_config=coder_llm_config,
+            context_files=context_files,
+            directory_file=directory_file_content,
+            project_metadata=project_metadata,
+            interaction_history=interaction_history,            
+        )
+
+    def save_to_root(self, root: str) -> None:
+        """
+        Serializes all the contained types and saves them to the .ghostcode folder
+        within the given root directory.
+
+        Args:
+            root (str): The root directory of the project.
+        """
+        ghostcode_dir = Project._get_ghostcode_path(root)
+        logger.info(f"Saving ghostcode project to: {ghostcode_dir}")
+
+        if not os.path.isdir(ghostcode_dir):
+            logger.warning(f"'.ghostcode' directory not found at {ghostcode_dir}. Attempting to create it.")
+            try:
+                os.makedirs(ghostcode_dir)
+            except OSError as e:
+                logger.error(f"Failed to create .ghostcode directory at {ghostcode_dir}: {e}")
+                raise
+
+        # Ensure worker and coder character directories exist before saving their configs
+        worker_char_dir = os.path.join(ghostcode_dir, "worker")
+        coder_char_dir = os.path.join(ghostcode_dir, "coder")
+        os.makedirs(worker_char_dir, exist_ok=True)
+        os.makedirs(coder_char_dir, exist_ok=True)
+
+        # 1. Save worker_llm_config.json (now to worker/config.json)
+        worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
+        try:
+            with open(worker_config_path, 'w') as f:
+                json.dump(self.worker_llm_config, f, indent=4)
+            logger.debug(f"Saved worker LLM config to {worker_config_path}")
+        except Exception as e:
+            logger.error(f"Failed to save worker LLM config to {worker_config_path}: {e}", exc_info=True)
+            raise
+
+        # 2. Save coder_llm_config.json (now to coder/config.json)
+        coder_config_path = os.path.join(ghostcode_dir, Project._CODER_CONFIG_FILE)
+        try:
+            with open(coder_config_path, 'w') as f:
+                json.dump(self.coder_llm_config, f, indent=4)
+            logger.debug(f"Saved coder LLM config to {coder_config_path}")
+        except Exception as e:
+            logger.error(f"Failed to save coder LLM config to {coder_config_path}: {e}", exc_info=True)
+            raise
+
+        # 3. Save context_files
+        context_files_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_FILE)
+        try:
+            with open(context_files_path, 'w') as f:
+                f.write(self.context_files.to_plaintext())
+            logger.debug(f"Saved context files to {context_files_path}")
+        except Exception as e:
+            logger.error(f"Failed to save context files to {context_files_path}: {e}", exc_info=True)
+            raise
+
+        # 4. Save directory_file.md
+        directory_file_path = os.path.join(ghostcode_dir, Project._DIRECTORY_FILE)
+        try:
+            with open(directory_file_path, 'w') as f:
+                f.write(self.directory_file)
+            logger.debug(f"Saved directory file to {directory_file_path}")
+        except Exception as e:
+            logger.error(f"Failed to save directory file to {directory_file_path}: {e}", exc_info=True)
+            raise
+
+        # 5. Save project_metadata.yaml
+        project_metadata_path = os.path.join(ghostcode_dir, Project._PROJECT_METADATA_FILE)
+        if self.project_metadata:
+            try:
+                with open(project_metadata_path, 'w') as f:
+                    yaml.dump(self.project_metadata.model_dump(), f, indent=2, sort_keys=False)
+                logger.debug(f"Saved project metadata to {project_metadata_path}")
+            except Exception as e:
+                logger.error(f"Failed to save project metadata to {project_metadata_path}: {e}", exc_info=True)
+                raise
+        else:
+            logger.warning(f"No project metadata to save for {root}.")
+
+        # 6. Save config.yaml
+        project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
+        try:
+            with open(project_config_path, 'w') as f:
+                yaml.dump(self.config.model_dump(), f, indent=2, sort_keys=False)
+            logger.debug(f"Saved project config to {project_config_path}")
+        except Exception as e:
+            logger.error(f"Failed to save project config to {project_config_path}: {e}", exc_info=True)
+            raise
+
+
+        # 7. Save interaction_history.json
+        interaction_history_path = os.path.join(ghostcode_dir, Project._INTERACTION_HISTORY_FILE)
+        try:
+            with open(interaction_history_path, 'w') as f:
+                json.dump(self.interaction_history.model_dump(), f, indent=4)
+            logger.debug(f"Saved interaction history to {interaction_history_path}")
+        except Exception as e:
+            logger.error(f"Failed to save interaction history to {interaction_history_path}: {e}", exc_info=True)
+            raise
+        
+        logger.info(f"Ghostcode project saved successfully to {root}.")
+
