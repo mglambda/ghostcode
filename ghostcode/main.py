@@ -19,9 +19,63 @@ import yaml # For ProjectConfig
 import appdirs # Added for UserConfig path
 from ghostbox.definitions import LLMBackend # Added for API key checks
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-logger = logging.getLogger('ghostcode.main')
+# logger will be configured after argument parsing
+logger: logging.Logger # Declare logger globally, will be assigned later
+
+def _configure_logging(log_mode: str, project_root: Optional[str]):
+    """
+    Configures the root logger based on the specified mode and project root.
+    """
+    # Clear existing handlers to prevent duplicate logs if called multiple times
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # Set the root logger level to INFO by default
+    logging.root.setLevel(logging.INFO)
+    
+    if log_mode == "off":
+        logging.root.setLevel(logging.CRITICAL + 1) # Effectively disable all logging
+        return
+
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    if log_mode == "stderr":
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(formatter)
+        logging.root.addHandler(handler)
+        print("Logging to stderr.", file=sys.stderr)
+    elif log_mode == "file":
+        log_filepath = None
+        if project_root:
+            ghostcode_dir = os.path.join(project_root, ".ghostcode")
+            if os.path.isdir(ghostcode_dir):
+                log_filepath = os.path.join(ghostcode_dir, "log.txt")
+        
+        if log_filepath:
+            try:
+                # Ensure the directory exists
+                os.makedirs(os.path.dirname(log_filepath), exist_ok=True)
+                handler = logging.FileHandler(log_filepath)
+                handler.setFormatter(formatter)
+                logging.root.addHandler(handler)
+                # Also add a stderr handler for critical errors, so they are always visible
+                stderr_handler = logging.StreamHandler(sys.stderr)
+                stderr_handler.setFormatter(formatter)
+                stderr_handler.setLevel(logging.ERROR) # Only show ERROR and CRITICAL to stderr
+                logging.root.addHandler(stderr_handler)
+                print(f"Logging to file: {log_filepath}", file=sys.stderr) # Inform user where logs are going
+            except Exception as e:
+                # Fallback to stderr if file logging fails
+                print(f"WARNING: Failed to set up file logging to {log_filepath}: {e}. Falling back to stderr.", file=sys.stderr)
+                handler = logging.StreamHandler(sys.stderr)
+                handler.setFormatter(formatter)
+                logging.root.addHandler(handler)
+        else:
+            # Fallback to stderr if project_root or .ghostcode dir is not found
+            print("WARNING: Project root or .ghostcode directory not found for file logging. Falling back to stderr.", file=sys.stderr)
+            handler = logging.StreamHandler(sys.stderr)
+            handler.setFormatter(formatter)
+            logging.root.addHandler(handler)
 
 
 @dataclass
@@ -419,6 +473,7 @@ class InteractCommand(BaseModel, CommandInterface):
         interacting = True
         print("Multiline mode enabled. Type your prompt over multiple lines.\nType a single '\\' and hit enter to submit.\nType /quit or CTRL+D to quit.")
         prompt = ""
+        current_history = []
         while interacting:
             try:
                 line = input(prog._get_cli_prompt())
@@ -429,6 +484,16 @@ class InteractCommand(BaseModel, CommandInterface):
                 break
             elif line == "/lastrequest":
                 print(json.dumps(prog.coder_box.get_last_request(), indent=4))
+                continue
+            elif line == "/show":
+                for item in current_history:
+                    print(item.show())
+                continue
+            elif line == "/save":
+                with open("out.txt", "w") as f:
+                    for item in current_history:
+                        f.write(item.show())
+                continue
             elif line != "\\":
                 prompt += "\n" + line
                 continue
@@ -450,7 +515,7 @@ class InteractCommand(BaseModel, CommandInterface):
                                               self._make_user_prompt(prog, prompt),
                                               #options=debug_options,
                                               )
-
+                current_history.append(response)
                 for part in response.contents:
                     print(part.show_cli())
             except:
@@ -504,6 +569,10 @@ def main():
                         help=f"Path to a custom user configuration file (YAML format). "
                              f"Defaults to {os.path.join(appdirs.user_config_dir('ghostcode'), types.UserConfig._GHOSTCODE_CONFIG_FILE)}.")
 
+    # Add --logging argument
+    parser.add_argument("--logging", type=str, choices=["off", "file", "stderr"], default="file",
+                        help="Configure logging output: 'off', 'file' (to .ghostcode/log.txt), or 'stderr'.")
+
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
 
     # Init command
@@ -550,6 +619,22 @@ def main():
 
     args = parser.parse_args()
 
+    # --- Determine project_root early for logging configuration ---
+    current_project_root: Optional[str] = None
+    if args.command == "init":
+        # For init, the project_root is the path being initialized
+        current_project_root = os.path.abspath(args.path if args.path else os.getcwd())
+    else:
+        # For other commands, find the existing project root
+        current_project_root = types.Project.find_project_root()
+
+    # Configure logging based on argument and determined project_root
+    _configure_logging(args.logging, current_project_root)
+
+    # Now that logging is configured, get the main logger instance
+    global logger # Declare logger as global to assign to it
+    logger = logging.getLogger('ghostcode.main')
+
     # Load UserConfig
     user_config_path = args.user_config
     user_config: types.UserConfig
@@ -569,23 +654,24 @@ def main():
 
     # Special handling for 'init' command as it doesn't require an existing project
     if isinstance(command_obj, InitCommand):
-        out = command_obj.run(Program(project_root=None, project=None, worker_box=None, coder_box=None, user_config=user_config)) # Pass user_config
+        # The project_root for init is already determined as current_project_root
+        # and logging is configured. Just run the command.
+        out = command_obj.run(Program(project_root=current_project_root, project=None, worker_box=None, coder_box=None, user_config=user_config)) # Pass user_config
         print(out.text)
         sys.exit(0) # Exit after init
 
     # For all other commands, a project must exist
-    project_root = types.Project.find_project_root()
-    if not project_root:
+    if not current_project_root: # This would have been set by find_project_root
         logger.error("Not a ghostcode project. Run 'ghostcode init' first.")
         sys.exit(1)
 
     try:
-        project = types.Project.from_root(project_root)
+        project = types.Project.from_root(current_project_root)
     except FileNotFoundError: # Should ideally be caught by find_project_root, but good to be safe
-        logger.error(f"Project directory '.ghostcode' not found at {project_root}. This should not happen after root detection.")
+        logger.error(f"Project directory '.ghostcode' not found at {current_project_root}. This should not happen after root detection.")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Failed to load ghostcode project from {project_root}: {e}", exc_info=True)
+        logger.error(f"Failed to load ghostcode project from {current_project_root}: {e}", exc_info=True)
         sys.exit(1)
 
     # Initialize Ghostbox instances using project.config for endpoints and backends
@@ -602,30 +688,30 @@ def main():
     try:
         worker_box = Ghostbox(endpoint=project.config.worker_endpoint,
                               backend=project.config.worker_backend, # Use string directly
-                              character_folder=os.path.join(project_root, ".ghostcode", project._WORKER_CHARACTER_FOLDER),
+                              character_folder=os.path.join(current_project_root, ".ghostcode", project._WORKER_CHARACTER_FOLDER),
                               api_key=user_config.api_key, # General API key
                               google_api_key=user_config.google_api_key,
                               openai_api_key=user_config.openai_api_key,
                               **quiet_options)
     except Exception as e:
-        logging.error(f"Setting worker to dummy. Reason: {e}")
+        logger.error(f"Setting worker to dummy. Reason: {e}")
         worker_box = ghostbox.from_dummy(**quiet_options)
 
     try:
         coder_box = Ghostbox(endpoint=project.config.coder_endpoint,
                              backend=project.config.coder_backend, # Use string directly
-                             character_folder=os.path.join(project_root, ".ghostcode", project._CODER_CHARACTER_FOLDER),
+                             character_folder=os.path.join(current_project_root, ".ghostcode", project._CODER_CHARACTER_FOLDER),
                              api_key=user_config.api_key, # General API key
                              google_api_key=user_config.google_api_key,
                              openai_api_key=user_config.openai_api_key,
                              **quiet_options)
     except Exception as e:
-        logging.error(f"Setting coder backend to dummy. Reason: {e}")
+        logger.error(f"Setting coder backend to dummy. Reason: {e}")
         coder_box = ghostbox.from_dummy(**quiet_options)
 
     # Create the Program instance
     prog_instance = Program(
-        project_root=project_root,
+        project_root=current_project_root,
         project=project,
         worker_box=worker_box,
         coder_box=coder_box,

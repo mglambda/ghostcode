@@ -11,7 +11,6 @@ import appdirs # Added for platform-specific config directory
 
 # --- Logging Setup ---
 # Configure a basic logger for the ghostcode project
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('ghostcode.types')
 
 # --- Default Configurations ---
@@ -652,7 +651,35 @@ class CodeResponsePart(BaseModel):
         """Return a (short) representation that is suitable for the CLI interface."""
         filepath_str = f"({self.filepath})" if self.filepath else ""
         return f" - {self.title} {filepath_str}"
-    
+
+    def show(self) -> str:
+        """Returns a comprehensive string representation of the part."""
+        filepath_str = f" ({self.filepath})" if self.filepath else ""
+        if self.original_code is not None:
+            original_code_str = f"""
+
+### Original Code
+            
+```{self.language}
+{self.original_code}
+```
+            
+"""
+        else:
+            original_code_str = ""
+            
+        return f"""## {self.title}{filepath_str}{original_code_str}
+        {"### New Code" if original_code_str else ""}
+        
+```{self.language}
+        {self.new_code}
+```
+"""        
+        
+
+
+        
+        
 class TextResponsePart(BaseModel):
     """A text chunk that is part of a response by the LLM backend."""
 
@@ -670,7 +697,12 @@ class TextResponsePart(BaseModel):
         """A (short) CLI representation for the part."""
         filepath_str = f"## {self.filepath}\n" if self.filepath else ""
         return f"{filepath_str}{self.text}"
-    
+
+    def show(self) -> str:
+        """Comprehensive longform string representation for the part."""
+        filepath_str = f"## {self.filepath}\n\n" if self.filepath else ""        
+        return f"""{filepath_str}{self.text}
+"""        
 CoderResponsePart = CodeResponsePart | TextResponsePart
     
 class CoderResponse(BaseModel):
@@ -682,4 +714,8 @@ class CoderResponse(BaseModel):
         description = "A list of response parts returned by the backend coder LLM. This may contain code and/or text."
     )
 
-    
+    def show_cli(self) -> str:
+        return "\n".join([part.show_cli() for part in self.contents])
+
+    def show(self) -> str:
+        return "\n".join([part.show() for part in self.contents])
