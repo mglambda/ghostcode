@@ -7,8 +7,8 @@ import os
 import json
 import yaml
 import logging
-import ghostbox.definitions
-from ghostbox.definitions import LLMBackend
+import ghostbox.definitions # type: ignore
+from ghostbox.definitions import LLMBackend # type: ignore
 from ghostbox import Ghostbox
 from ghostcode.utility import language_from_extension, timestamp_now_iso8601
 import appdirs # Added for platform-specific config directory
@@ -440,7 +440,31 @@ class ActionDoNothing(BaseModel):
     """Action that represents a noop.
     Used mostly as an identity under composition in the 'Action' type."""
     pass
+
+class ActionHaltExecution(BaseModel):
+    """Represents a signal to halt the execution of the action queue. This is put on the queue whenever execution has run into too many errors or has encoutnered a critical problem that can not be overcome."""
+    reason: str = Field(
+        description = "The reason for the halt signal in plain english."
+    )
     
+class ActionHandleCodeResponsePart(BaseModel):
+    """This action represents a code response that was received by the coder LLM and needs to be handled.
+    This is a thin wrapper around a CodeResponsePart. It may be handled in a variety of ways, the exact manner of which is usually determined by the worker LLM."""
+
+    content: CodeResponsePart = Field(
+        description = "The original code response part that was received from the coder LLM."
+    )
+
+class ActionFileCreate(BaseModel):
+    """Represents the creation of a new file."""
+
+    filepath: str = Field(
+        description = "The path to the file that should be created."
+    )
+
+    content: str = Field(
+        description = "The contents that will be written to the newly created file."
+    )
 class ActionFileEdit(BaseModel):
     """Representation of a single replace operation in a file.
     This type is intended to be the end result of a worker file edit and the last step before the actual text is changed on disk."""
@@ -463,12 +487,15 @@ class ActionFileEdit(BaseModel):
     )
 
     # This isn't fully fleshed out yet but we probably want functions to handle various types of actions so
-type     Action = ActionEditFile | ActionDoNothing
+type     Action = ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution
 
-class ActionResultOK(BaseModel):
+class ActionResultOk(BaseModel):
     """Represents a successfully executed action."""
     # maybe add timing information?
-    pass
+    success_message: Optional[str] = Field(
+        default = None,
+        description = "Optional message that describes the successfully completed action or its result."
+    )
 
 class ActionResultFailure(BaseModel):
     """Represents an action that failed to execute for some reason."""
@@ -482,9 +509,19 @@ class ActionResultFailure(BaseModel):
         description = "Any error messages, logs, failure rports, or other technical indicators of failure that are associated with this action."
     )
 
-type ActionResult = ActionOk | ActionFailure
+    failure_reason: str = Field(
+        description = "The reason or problem that kept the action from executing either partially or completely, in plain english."
+    )
 
-    
+class ActionResultMoreActions(BaseModel):
+    """Result that represents that more actions need to be executed, along with action objects representing the required actions. Crucially, actions in the MoreActions result are pushed to the front of the action queue."""
+
+    actions: List[Action] = Field(
+        default_factory = lambda: [],
+        description = "The queue of actions that will need to be executed."
+    )
+        
+type ActionResult = ActionResultOk | ActionResultFailure | ActionResultMoreActions
 
 class Project(BaseModel):
     """Basic context for a ghostcode project.
@@ -512,7 +549,7 @@ class Project(BaseModel):
     project_metadata: Optional[ProjectMetadata] = Field(default_factory=lambda: ProjectMetadata(**DEFAULT_PROJECT_METADATA))
 
     interactions: List[InteractionHistory] = Field(
-        default_factory = lambda: InteractionHistory(contents=[]),
+        default_factory = lambda: [],
         description = "List of interactions that have occurred in the past."
     )
     
@@ -925,7 +962,10 @@ class Program:
     project: Optional[Project]
     worker_box: Ghostbox
     coder_box: Ghostbox
-
+    action_queue: List[Action] = field(
+        default_factory = lambda: [],
+    )
+    
     user_config: UserConfig = field(
         default_factory = UserConfig,
         )
@@ -936,6 +976,7 @@ class Program:
         coder_tokens = self.coder_box._plumbing._get_last_result_tokens()
         worker_tokens = self.worker_box._plumbing._get_last_result_tokens()
         return f" 👻{coder_tokens} 🔧{worker_tokens} >"
+    
     def _has_api_keys(self) -> Dict[LLMBackend, bool]:
         """
         Compares the chosen backends to the user config and checks for required API keys.
@@ -945,6 +986,11 @@ class Program:
                                     and values are True if the API key is present, False otherwise.
                                     Only includes backends that are actually used and require keys.
         """
+        if self.project is None:
+            error_msg = "Attempting to verify API keys with uninitialized project. Aborting."
+            logger.critical(error_msg)
+            raise RuntimeError(error_msg)
+            
         missing_keys: Dict[LLMBackend, bool] = {}
 
         # Check Coder LLM backend
@@ -1000,6 +1046,23 @@ class Program:
         # Filter out True entries, only return missing ones
         return {k: v for k, v in missing_keys.items() if not v}
 
+    def discard_actions(self) -> None:
+        """Empties the action queue."""
+        if not(self.action_queue):
+            logger.debug(f"Discard on empty action queue.")
+            return
 
+        actions_str = "\n".join([json.dumps(action.model_dump(), indent=4) for action in self.action_queue])
+        logger.debug(f"Discard on action queue. Will discard the following actions:\n{actions_str}")
+        self.action_queue = []
 
+    def queue_action(self, action: Action) -> None:
+        """Queues an action at the end of the action queue."""
+        logger.info(f"Queueing action {type(action)}.")
+        self.action_queue.append(action)
+
+    def push_front_action(self, action: Action) -> None:
+        """Pushes an action to the front of the queue. An action at the front will be executed before the remaining ones."""
+        logger.info(f"Pushing action {type(action)} to the front of the action queue.")
+        self.action_queue = [action] + self.action_queue
         
