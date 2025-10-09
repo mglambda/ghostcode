@@ -1,0 +1,28 @@
+* work-in-progress (WIP, limit 5)
+
+* todo
+** general
+Audio input support for small queries ("hey ghostcode, what was the parser class called in this project?")
+Investigate proper deployment (conda, docker, getting llama.cpp, downloading models from huggingface).
+More user friendly setup during init for various backends (ask for API keys etc).
+Status command (not sure what it should even do yet).
+git integration.
+emacs integration (use server and emacslisp generation with "emacs -e").
+More useful CLI commands.
+** CLI
+add proper SlashCommand type for slash (like "/quit") commands in interact mode.
+** coder
+Investigate wether structured output degrades performance.
+** worker
+Integrate worker into interact mode.
+Create function to reliably replace or create code based on CoderResponsePart (possibly using worker).
+** tests
+Create basic testing framework (/tests folder and scripts).
+* about this file
+Todo list that's structured like a Canban board.
+One line is one todo-item.
+Single asterisk (org-mode) headings indicate canban columns (except this 'about this file' heading). These are WIP, Todo, and Done.
+ - WIP: Contains items currently being worked on. Work may include research for vague items, that generate more items for the todo list.
+ - todo: Contains items that may be worked on in the future. These can be very specific, or vague and general. To be worked on, an item moves from this list into the WIP list. This list also contains 2 asterisk sub-headings to structure it. A single todo item is still a plaintext line, though.
+ - done: Contains todo items that have been finished. Also known as "brag list". Somewhat pointless but can be useful to get an overview of the projects history.
+* done

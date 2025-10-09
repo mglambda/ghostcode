@@ -268,9 +268,15 @@ class CodeResponsePart(BaseModel):
         description = "The actual code as plaintext."
     )
 
+    context_anchor: Optional[str] = Field(
+        default = None,
+        description = "A descriptive string identifying the containing syntactic construct, e.g. class, method, function, module, etc. This is intended to help replace an original code block with the new code."
+    )
+    notes: List[str] = Field(
+        default_factory = lambda: [],
+        description = "Some short notes explaining the intenttion or meaning behind the generated code. Point out non-obvious pitfalls here. One or two sentences. Can be left empty if redundant or obvious."
+    )
 
-   
-    
     title: str = Field(
         default = "",
         description = "A short but descriptive title for the code block."
@@ -285,7 +291,8 @@ class CodeResponsePart(BaseModel):
     def show(self) -> str:
         """Returns a comprehensive string representation of the part."""
         filepath_str = f" ({self.filepath})" if self.filepath else ""
-        notes_str = "\n" + "\n".join([f" - {note}" for note in self.notes]) if self.notes else ""        
+        notes_str = "\n" + "\n".join([f" - {note}" for note in self.notes]) if self.notes else ""
+        anchor_str = f"\nacnhor: {self.context_anchor}\n" if self.context_anchor else ""
         if self.original_code is not None:
             original_code_str = f"""
 
@@ -299,7 +306,7 @@ class CodeResponsePart(BaseModel):
         else:
             original_code_str = ""
             
-        return f"""## {self.title}{filepath_str}{notes_str}{original_code_str}
+        return f"""## {self.title}{filepath_str}{anchor_str}{notes_str}{original_code_str}
         {"### New Code" if original_code_str else ""}
         
 ```{self.language}
