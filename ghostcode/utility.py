@@ -186,3 +186,47 @@ def timestamp_now_iso8601(timespec="seconds") -> str:
     By default, the time of day will have a precision up to seconds. You can extend this with the timespec parameter. See the datetime.datetime.isoformat method documentation for more."""
     # it is ridiculous how hard this thing was to find for python
     return datetime.now(datetime.now().astimezone().tzinfo).isoformat(timespec=timespec)
+
+def levenshtein(a: str, b: str) -> int:
+    """
+    Computes the Levenshtein distance between two strings using dynamic programming.
+
+    Parameters:
+        a (str): The first input string.
+        b (str): The second input string.
+
+    Returns:
+        int: The minimum number of single-character edits (insert, delete, substitute)
+             required to transform string `a` into string `b`.
+    """
+    # Get the lengths of the two strings
+    m = len(a)
+    n = len(b)
+
+    # Create a 2D DP table with (m+1) rows and (n+1) columns
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+
+    # Initialize the first row and column
+    for i in range(m + 1):
+        dp[i][0] = i  # Deletions needed to empty string b
+    for j in range(n + 1):
+        dp[0][j] = j  # Insertions needed to empty string a
+
+    # Fill the DP table
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            # If characters match, no cost is added
+            if a[i - 1] == b[j - 1]:
+                cost = 0
+            else:
+                cost = 1  # Substitution cost
+
+            # Compute the minimum of the three possible operations
+            dp[i][j] = min(
+                dp[i - 1][j] + 1,     # Deletion from a
+                dp[i][j - 1] + 1,     # Insertion into a
+                dp[i - 1][j - 1] + cost  # Substitution or no cost
+            )
+
+    # The bottom-right cell contains the Levenshtein distance
+    return dp[m][n]

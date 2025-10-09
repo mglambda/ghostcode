@@ -2,6 +2,8 @@ from typing import *
 import json
 import traceback
 from ghostcode import types
+# don't want the types. prefix for these
+from ghostcode.types import Program
 import ghostbox
 import os
 from ghostbox import Ghostbox
@@ -76,91 +78,6 @@ def _configure_logging(log_mode: str, project_root: Optional[str]):
             handler = logging.StreamHandler(sys.stderr)
             handler.setFormatter(formatter)
             logging.root.addHandler(handler)
-
-
-@dataclass
-class Program:
-    """Holds program state for the main function.
-    This instance is passed to command run methods."""
-    project_root: Optional[str]
-    project: Optional[types.Project]
-    worker_box: Ghostbox
-    coder_box: Ghostbox
-
-    user_config: types.UserConfig = field(
-        default_factory = types.UserConfig,
-        )
-    
-    def _get_cli_prompt(self) -> str:
-        """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
-        # some ghostbox internal magic to get the token count
-        coder_tokens = self.coder_box._plumbing._get_last_result_tokens()
-        worker_tokens = self.worker_box._plumbing._get_last_result_tokens()
-        return f" 👻{coder_tokens} 🔧{worker_tokens} >"
-    def _has_api_keys(self) -> Dict[LLMBackend, bool]:
-        """
-        Compares the chosen backends to the user config and checks for required API keys.
-        
-        Returns:
-            Dict[LLMBackend, bool]: A dictionary where keys are LLMBackend enum members
-                                    and values are True if the API key is present, False otherwise.
-                                    Only includes backends that are actually used and require keys.
-        """
-        missing_keys: Dict[LLMBackend, bool] = {}
-
-        # Check Coder LLM backend
-        coder_backend_str = self.project.config.coder_backend
-        if coder_backend_str == LLMBackend.google.name:
-            if not self.user_config.google_api_key:
-                missing_keys[LLMBackend.google] = False
-            # else: # No need to add if key is present, we only care about missing ones
-            #     missing_keys[LLMBackend.google] = True
-        elif coder_backend_str == LLMBackend.openai.name:
-            if not self.user_config.openai_api_key:
-                missing_keys[LLMBackend.openai] = False
-            # else:
-            #     missing_keys[LLMBackend.openai] = True
-        elif coder_backend_str == LLMBackend.generic.name:
-            # For generic, if the endpoint is OpenAI or Google, we might need the general api_key
-            # This is a heuristic, as generic can point to anything.
-            # For now, we'll only check if the endpoint looks like OpenAI/Google official ones
-            if "openai.com" in self.project.config.coder_endpoint:
-                if not self.user_config.openai_api_key and not self.user_config.api_key:
-                    missing_keys[LLMBackend.openai] = False # Assume OpenAI key is preferred for OpenAI endpoints
-                # else:
-                #     missing_keys[LLMBackend.openai] = True
-            elif "googleapis.com" in self.project.config.coder_endpoint:
-                if not self.user_config.google_api_key and not self.user_config.api_key:
-                    missing_keys[LLMBackend.google] = False # Assume Google key is preferred for Google endpoints
-                # else:
-                #     missing_keys[LLMBackend.google] = True
-            # If generic points to a local server (e.g., localhost:8080), no API key is expected.
-
-        # Check Worker LLM backend
-        worker_backend_str = self.project.config.worker_backend
-        if worker_backend_str == LLMBackend.google.name:
-            if not self.user_config.google_api_key:
-                # Only add if not already marked as missing by coder_backend
-                if LLMBackend.google not in missing_keys:
-                    missing_keys[LLMBackend.google] = False
-        elif worker_backend_str == LLMBackend.openai.name:
-            if not self.user_config.openai_api_key:
-                # Only add if not already marked as missing by coder_backend
-                if LLMBackend.openai not in missing_keys:
-                    missing_keys[LLMBackend.openai] = False
-        elif worker_backend_str == LLMBackend.generic.name:
-            if "openai.com" in self.project.config.worker_endpoint:
-                if not self.user_config.openai_api_key and not self.user_config.api_key:
-                    if LLMBackend.openai not in missing_keys:
-                        missing_keys[LLMBackend.openai] = False
-            elif "googleapis.com" in self.project.config.worker_endpoint:
-                if not self.user_config.google_api_key and not self.user_config.api_key:
-                    if LLMBackend.google not in missing_keys:
-                        missing_keys[LLMBackend.google] = False
-        
-        # Filter out True entries, only return missing ones
-        return {k: v for k, v in missing_keys.items() if not v}
-
 
 # --- Command Interface and Implementations ---
 
@@ -557,9 +474,10 @@ class InteractCommand(BaseModel, CommandInterface):
                     logger.error(f"Could not save response to history. Reason: {e}")                    
 
                 print(response.show_cli())
-            except:
-                print(f"error on ghostbox.new. See the full traceback:\n{traceback.format_exc()}")
-                print(f"\nAnd here is the last result:\n\n{prog.coder_box.get_last_result()}") 
+            except Exception as e:
+                print(f"Problems encountered during request. Reason: {e}\nRetry the request or consult the logs for more information.")
+                logger.error(f"error on ghostbox.new. See the full traceback:\n{traceback.format_exc()}")
+                logger.error(f"\nAnd here is the last result:\n\n{prog.coder_box.get_last_result()}") 
 
             user_input = ""
             # this is a failsafe and for user convenience in case we crash
@@ -570,9 +488,11 @@ class InteractCommand(BaseModel, CommandInterface):
                     pf.write(self.interaction_history.show())
                     
         # end of interaction
-        prog.project.interactions.append(
-            self.interaction_history
-        )
+        logger.info(f"Finishing interaction.")
+        if not(self.interaction_history.empty()):
+            prog.project.interactions.append(
+                self.interaction_history
+            )
         
         return CommandOutput(text="Finished interaction.")
 

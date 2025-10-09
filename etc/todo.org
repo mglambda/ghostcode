@@ -1,7 +1,9 @@
 * work-in-progress (WIP, limit 5)
-
+Integrate worker into interact mode.
+Create function to reliably replace or create code based on CoderResponsePart (possibly using worker).
 * todo
 ** general
+Create log command to view past interactions.
 Audio input support for small queries ("hey ghostcode, what was the parser class called in this project?")
 Investigate proper deployment (conda, docker, getting llama.cpp, downloading models from huggingface).
 More user friendly setup during init for various backends (ask for API keys etc).
@@ -9,13 +11,13 @@ Status command (not sure what it should even do yet).
 git integration.
 emacs integration (use server and emacslisp generation with "emacs -e").
 More useful CLI commands.
+Keep main command executiong from crashing catastrophically (wrap in try and exit gracefully).
 ** CLI
 add proper SlashCommand type for slash (like "/quit") commands in interact mode.
+Change InteractionHistory to include a title and request an LLM to come up with a descriptive title at the end of an interaction.
 ** coder
 Investigate wether structured output degrades performance.
 ** worker
-Integrate worker into interact mode.
-Create function to reliably replace or create code based on CoderResponsePart (possibly using worker).
 ** tests
 Create basic testing framework (/tests folder and scripts).
 * about this file

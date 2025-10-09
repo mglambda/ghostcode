@@ -1,5 +1,6 @@
 # ghostcode/types.py
 from typing import *
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 import os
@@ -7,6 +8,8 @@ import json
 import yaml
 import logging
 import ghostbox.definitions
+from ghostbox.definitions import LLMBackend
+from ghostbox import Ghostbox
 from ghostcode.utility import language_from_extension, timestamp_now_iso8601
 import appdirs # Added for platform-specific config directory
 
@@ -340,8 +343,9 @@ class TextResponsePart(BaseModel):
         """Comprehensive longform string representation for the part."""
         filepath_str = f"## {self.filepath}\n\n" if self.filepath else ""        
         return f"""{filepath_str}{self.text}
-"""        
-CoderResponsePart = CodeResponsePart | TextResponsePart
+"""
+    
+type CoderResponsePart = CodeResponsePart | TextResponsePart
     
 class CoderResponse(BaseModel):
     """A response returned from the code generation backend.
@@ -413,7 +417,7 @@ class UserInteractionHistoryItem(BaseModel):
         {self.prompt}
 """
     
-InteractionHistoryItem = UserInteractionHistoryItem | CoderInteractionHistoryItem
+type InteractionHistoryItem = UserInteractionHistoryItem | CoderInteractionHistoryItem
     
 class InteractionHistory(BaseModel):
     """Keeps track of past interactions.
@@ -432,6 +436,56 @@ class InteractionHistory(BaseModel):
         """Returns a human readable text representation of the history."""
         return "\n".join([item.show() for item in self.contents])
     
+class ActionDoNothing(BaseModel):
+    """Action that represents a noop.
+    Used mostly as an identity under composition in the 'Action' type."""
+    pass
+    
+class ActionFileEdit(BaseModel):
+    """Representation of a single replace operation in a file.
+    This type is intended to be the end result of a worker file edit and the last step before the actual text is changed on disk."""
+
+    filepath: str = Field(
+        description = "The file that should be edited."
+    )
+
+    replace_pos_begin: int = Field(
+        description = "The character position in the file that marks the beginning of the text that should be replaced. Assume python-style indices."
+    )
+
+
+    replace_pos_end: int = Field(
+        description = "The character position in the file that marks the end of the text that should be replaced. Assume python-style indices."
+    )
+
+    insert_text: str = Field(
+        description = "The text that will be inserted as a replacement for the text between replace_pos_begin and replace_pos_end."
+    )
+
+    # This isn't fully fleshed out yet but we probably want functions to handle various types of actions so
+type     Action = ActionEditFile | ActionDoNothing
+
+class ActionResultOK(BaseModel):
+    """Represents a successfully executed action."""
+    # maybe add timing information?
+    pass
+
+class ActionResultFailure(BaseModel):
+    """Represents an action that failed to execute for some reason."""
+    
+    original_action: Action = Field(
+        description = "The original action that failed to execute."
+    )
+
+    error_messages: List[str] = Field(
+        default_factory = lambda: [],
+        description = "Any error messages, logs, failure rports, or other technical indicators of failure that are associated with this action."
+    )
+
+type ActionResult = ActionOk | ActionFailure
+
+    
+
 class Project(BaseModel):
     """Basic context for a ghostcode project.
     By convention, all Fields of this type are found in the .ghostcode directory at the project root, with their Field names also being the filename.
@@ -862,3 +916,90 @@ class Project(BaseModel):
         
         logger.info(f"Ghostcode project saved successfully to {root}.")
 
+
+@dataclass
+class Program:
+    """Holds program state for the main function.
+    This instance is passed to command run methods."""
+    project_root: Optional[str]
+    project: Optional[Project]
+    worker_box: Ghostbox
+    coder_box: Ghostbox
+
+    user_config: UserConfig = field(
+        default_factory = UserConfig,
+        )
+    
+    def _get_cli_prompt(self) -> str:
+        """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
+        # some ghostbox internal magic to get the token count
+        coder_tokens = self.coder_box._plumbing._get_last_result_tokens()
+        worker_tokens = self.worker_box._plumbing._get_last_result_tokens()
+        return f" 👻{coder_tokens} 🔧{worker_tokens} >"
+    def _has_api_keys(self) -> Dict[LLMBackend, bool]:
+        """
+        Compares the chosen backends to the user config and checks for required API keys.
+        
+        Returns:
+            Dict[LLMBackend, bool]: A dictionary where keys are LLMBackend enum members
+                                    and values are True if the API key is present, False otherwise.
+                                    Only includes backends that are actually used and require keys.
+        """
+        missing_keys: Dict[LLMBackend, bool] = {}
+
+        # Check Coder LLM backend
+        coder_backend_str = self.project.config.coder_backend
+        if coder_backend_str == LLMBackend.google.name:
+            if not self.user_config.google_api_key:
+                missing_keys[LLMBackend.google] = False
+            # else: # No need to add if key is present, we only care about missing ones
+            #     missing_keys[LLMBackend.google] = True
+        elif coder_backend_str == LLMBackend.openai.name:
+            if not self.user_config.openai_api_key:
+                missing_keys[LLMBackend.openai] = False
+            # else:
+            #     missing_keys[LLMBackend.openai] = True
+        elif coder_backend_str == LLMBackend.generic.name:
+            # For generic, if the endpoint is OpenAI or Google, we might need the general api_key
+            # This is a heuristic, as generic can point to anything.
+            # For now, we'll only check if the endpoint looks like OpenAI/Google official ones
+            if "openai.com" in self.project.config.coder_endpoint:
+                if not self.user_config.openai_api_key and not self.user_config.api_key:
+                    missing_keys[LLMBackend.openai] = False # Assume OpenAI key is preferred for OpenAI endpoints
+                # else:
+                #     missing_keys[LLMBackend.openai] = True
+            elif "googleapis.com" in self.project.config.coder_endpoint:
+                if not self.user_config.google_api_key and not self.user_config.api_key:
+                    missing_keys[LLMBackend.google] = False # Assume Google key is preferred for Google endpoints
+                # else:
+                #     missing_keys[LLMBackend.google] = True
+            # If generic points to a local server (e.g., localhost:8080), no API key is expected.
+
+        # Check Worker LLM backend
+        worker_backend_str = self.project.config.worker_backend
+        if worker_backend_str == LLMBackend.google.name:
+            if not self.user_config.google_api_key:
+                # Only add if not already marked as missing by coder_backend
+                if LLMBackend.google not in missing_keys:
+                    missing_keys[LLMBackend.google] = False
+        elif worker_backend_str == LLMBackend.openai.name:
+            if not self.user_config.openai_api_key:
+                # Only add if not already marked as missing by coder_backend
+                if LLMBackend.openai not in missing_keys:
+                    missing_keys[LLMBackend.openai] = False
+        elif worker_backend_str == LLMBackend.generic.name:
+            if "openai.com" in self.project.config.worker_endpoint:
+                if not self.user_config.openai_api_key and not self.user_config.api_key:
+                    if LLMBackend.openai not in missing_keys:
+                        missing_keys[LLMBackend.openai] = False
+            elif "googleapis.com" in self.project.config.worker_endpoint:
+                if not self.user_config.google_api_key and not self.user_config.api_key:
+                    if LLMBackend.google not in missing_keys:
+                        missing_keys[LLMBackend.google] = False
+        
+        # Filter out True entries, only return missing ones
+        return {k: v for k, v in missing_keys.items() if not v}
+
+
+
+        
