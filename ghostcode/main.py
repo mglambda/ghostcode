@@ -433,6 +433,10 @@ class ContextCommand(BaseModel, CommandInterface):
 class InteractCommand(BaseModel, CommandInterface):
     """Launches an interactive session with the Coder LLM."""
 
+    interaction_history:  types.InteractionHistory = Field(
+        default_factory = types.InteractionHistory
+    )
+    
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         if not prog.project_root or not prog.project:
@@ -460,20 +464,33 @@ class InteractCommand(BaseModel, CommandInterface):
         print(w, end=end)
 
 
-    def _make_user_prompt(self, prog: Program, prompt: str) -> str:
+    def _make_preamble(self, prog: Program) -> str:
+        """Plaintext context that is inserted before the user prompt - though only once."""
         return f"""{prog.project.context_files.show()}
 
 # User Prompt
 
-{prompt}"""        
+"""
+
+    def _make_user_prompt(self, prog: Program, prompt: str) -> str:
+        """Prepare a user prompt to be sent to the backend."""
+        # atm we only add a var hook for injections with ghostbox
+        # i.e. watch out the braces aren't for python format strings
+
+        # also what complicates this is that we only want the preamble to be in the context once, so as to not explode our token limit
+        # this is why we check the history.
+        # ghostbox will then use the var injection to keep the preamble at the start of the context up-to-date
+        if self.interaction_history.empty(): 
+            return "{{project_metadata}\n\n}{{preamble_injection}}" + prompt
+        return prompt
+    
     def _interact_loop(self, intermediate_result: CommandOutput, prog: Program) -> CommandOutput:
         # since the interaction is blocking we can't wait with printing until we return the result
         # so we print it here and return an empty result at the end
         self._print(intermediate_result.text)
         interacting = True
         print("Multiline mode enabled. Type your prompt over multiple lines.\nType a single '\\' and hit enter to submit.\nType /quit or CTRL+D to quit.")
-        prompt = ""
-        current_history = []
+        user_input = ""
         while interacting:
             try:
                 line = input(prog._get_cli_prompt())
@@ -486,48 +503,79 @@ class InteractCommand(BaseModel, CommandInterface):
                 print(json.dumps(prog.coder_box.get_last_request(), indent=4))
                 continue
             elif line == "/show":
-                for item in current_history:
-                    print(item.show())
+                print(self.interaction_history.show())
                 continue
             elif line == "/save":
                 with open("out.txt", "w") as f:
-                    for item in current_history:
-                        f.write(item.show())
+                    f.write(self.interaction_history.show())
                 continue
             elif line != "\\":
-                prompt += "\n" + line
+                user_input += "\n" + line
                 continue
 
-            # ok, process prompt
+            # ok, process input
+
+            preamble = prog.project.context_files.show()
+            prompt = self._make_user_prompt(prog, user_input)
             prog.coder_box.set_vars({
-                "project_metadata": "", # placeholder - should be filled in with textual representation of actual metadata
-                #"context_files": prog.project.context_files.show()
+                "project_metadata": prog.project.project_metadata.show(),
+                "preamble_injection": preamble
             })
 
+            self.interaction_history.contents.append(
+                types.UserInteractionHistoryItem(
+                    preamble=preamble,
+                    prompt = user_input,
+                    context=prog.project.context_files,
+                    )
+                )
+                    
             debug_options = {
                 "stderr":True,
                 "stdout":True,
                 "quiet":False,
                 "verbose":True
             }
+            
             try:
                 response = prog.coder_box.new(types.CoderResponse,
-                                              self._make_user_prompt(prog, prompt),
+                                              prompt,
                                               #options=debug_options,
                                               )
-                current_history.append(response)
-                for part in response.contents:
-                    print(part.show_cli())
+
+                try:                
+                    self.interaction_history.contents.append(
+                        types.CoderInteractionHistoryItem(
+                            context = prog.project.context_files,
+                            backend = prog.project.config.coder_backend,
+                            model = prog.project.coder_llm_config.get("model", "N/A"),
+                            response = response,
+                            )
+                        )
+                except Exception as e:
+                    # this is not critical, log and continue
+                    logger.error(f"Could not save response to history. Reason: {e}")                    
+
+                print(response.show_cli())
             except:
                 print(f"error on ghostbox.new. See the full traceback:\n{traceback.format_exc()}")
                 print(f"\nAnd here is the last result:\n\n{prog.coder_box.get_last_result()}") 
 
-            prompt = ""            
-        
+            user_input = ""
+            # this is a failsafe and for user convenience in case we crash
+            with open(os.path.join(prog.project_root, ".ghostcode", prog.project._CURRENT_INTERACTION_HISTORY_FILE), "w") as hf:
+                json.dump(self.interaction_history.model_dump(), hf, indent=4)
 
+                with open(os.path.join(prog.project_root, ".ghostcode", prog.project._CURRENT_INTERACTION_PLAINTEXT_FILE), "w") as pf:
+                    pf.write(self.interaction_history.show())
+                    
+        # end of interaction
+        prog.project.interactions.append(
+            self.interaction_history
+        )
+        
         return CommandOutput(text="Finished interaction.")
 
-# --- Main CLI Logic ---
 
 class VerifyCommand(BaseModel):
     """Command to verify program integrity and configuration.

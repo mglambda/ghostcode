@@ -1,13 +1,13 @@
 # ghostcode/types.py
 from typing import *
-from datetime import datetime
+
 from pydantic import BaseModel, Field
 import os
 import json
 import yaml
 import logging
 import ghostbox.definitions
-from ghostcode.utility import language_from_extension
+from ghostcode.utility import language_from_extension, timestamp_now_iso8601
 import appdirs # Added for platform-specific config directory
 
 # --- Logging Setup ---
@@ -229,12 +229,18 @@ class ContextFiles(BaseModel):
 
 """            
         return w
-    
+
+    def show_cli(self) -> str:
+        """Shows the list of filepaths in a short, command line interface friendly manner."""
+        return "(" + " ".join([item.filepath for item in self.data]) + ")"
 class ProjectMetadata(BaseModel):
     name: str
     description: str
 
-
+    def show(self) -> str:
+        """Returns a human-readable string representation of the project metadata."""
+        return f"Name: {self.name}\nDescription: {self.description}"
+    
 class CodeResponsePart(BaseModel):
     """Part of a LLM backend response that is programming code."""
     type: Literal["full", "partial"] = Field(
@@ -262,6 +268,9 @@ class CodeResponsePart(BaseModel):
         description = "The actual code as plaintext."
     )
 
+
+   
+    
     title: str = Field(
         default = "",
         description = "A short but descriptive title for the code block."
@@ -270,11 +279,13 @@ class CodeResponsePart(BaseModel):
     def show_cli(self) -> str:
         """Return a (short) representation that is suitable for the CLI interface."""
         filepath_str = f"({self.filepath})" if self.filepath else ""
-        return f" - {self.title} {filepath_str}"
+        notes_str = "\n" + "\n".join([f" - {note}" for note in self.notes]) if self.notes else ""
+        return f"## {self.title} {filepath_str}{notes_str}"
 
     def show(self) -> str:
         """Returns a comprehensive string representation of the part."""
         filepath_str = f" ({self.filepath})" if self.filepath else ""
+        notes_str = "\n" + "\n".join([f" - {note}" for note in self.notes]) if self.notes else ""        
         if self.original_code is not None:
             original_code_str = f"""
 
@@ -288,7 +299,7 @@ class CodeResponsePart(BaseModel):
         else:
             original_code_str = ""
             
-        return f"""## {self.title}{filepath_str}{original_code_str}
+        return f"""## {self.title}{filepath_str}{notes_str}{original_code_str}
         {"### New Code" if original_code_str else ""}
         
 ```{self.language}
@@ -339,21 +350,20 @@ class CoderResponse(BaseModel):
 
     def show(self) -> str:
         return "\n".join([part.show() for part in self.contents])
-
     
 class CoderInteractionHistoryItem(BaseModel):
     """A LLM coder response that was generated during a user interaction."""
 
-    timestamp: datetime = Field(
-        default_factory=datetime.now
+    timestamp: str = Field(
+        default_factory = timestamp_now_iso8601
     )
     
     context: ContextFiles = Field(
         description = "The context that was current at the time the interaction was made."
     )
 
-    backend: ghostbox.definitions.LLMBackend = Field(
-        description = "The LLM backend that was used at the time the interaction was made."
+    backend: str = Field(
+        description = "The LLM backend that was used at the time the interaction was made. See ghostbox.definitions.LLMBackends."
     )
 
     model: str = Field(
@@ -363,12 +373,18 @@ class CoderInteractionHistoryItem(BaseModel):
     response: CoderResponse = Field(
         description = "The full response returned by the LLM. as aprt of this interaction."
     )
-    
+
+    def show(self) -> str:
+        """Returns a human readable string representation of the item."""
+        return f"""[{self.timestamp}] {self.context.show_cli()}
+  {self.model}@{self.backend} >
+{        self.response.show()}
+"""        
 class UserInteractionHistoryItem(BaseModel):
     """Part of an AI/User interaction representing a user prompt."""
 
-    timestamp: datetime = Field(
-        default_factory=datetime.now
+    timestamp: str = Field(
+        default_factory = timestamp_now_iso8601
     )
     
     context: ContextFiles = Field(
@@ -377,13 +393,19 @@ class UserInteractionHistoryItem(BaseModel):
 
     preamble: str = Field(
         default = "",
-        description = "The plaintext of the context that was added automatically before the user prompt."
+        description = "The plaintext of the context that was added automatically before the user prompt. This is usually long and not present in every interaction"
     )
     
     prompt: str = Field(
         description = "The actual user prompt. This includes only the plain text created directly by the user at the time of the interaction."
     )
 
+    def show(self) -> str:
+        return f"""[{self.timestamp}] {self.context.show_cli()}
+  user >
+        {self.prompt}
+"""
+    
 InteractionHistoryItem = UserInteractionHistoryItem | CoderInteractionHistoryItem
     
 class InteractionHistory(BaseModel):
@@ -394,6 +416,14 @@ class InteractionHistory(BaseModel):
         default_factory = lambda: [],
         description = "List of past interactions in this ghostcode project."
         )
+
+    def empty(self) -> bool:
+        """Returns true if the history is empty."""
+        return self.contents == []
+
+    def show(self) -> str:
+        """Returns a human readable text representation of the history."""
+        return "\n".join([item.show() for item in self.contents])
     
 class Project(BaseModel):
     """Basic context for a ghostcode project.
@@ -420,9 +450,9 @@ class Project(BaseModel):
     )
     project_metadata: Optional[ProjectMetadata] = Field(default_factory=lambda: ProjectMetadata(**DEFAULT_PROJECT_METADATA))
 
-    interaction_history: InteractionHistory = Field(
+    interactions: List[InteractionHistory] = Field(
         default_factory = lambda: InteractionHistory(contents=[]),
-        description = "Log of interactions between user and LLMs."
+        description = "List of interactions that have occurred in the past."
     )
     
     # --- File names within the .ghostcode directory ---
@@ -436,9 +466,11 @@ class Project(BaseModel):
     _PROJECT_METADATA_FILE: ClassVar[str] = "project_metadata.yaml" # YAML format
     _PROJECT_CONFIG_FILE: ClassVar[str] = "config.yaml" # YAML format
     _INTERACTION_HISTORY_FILE: ClassVar[str] = "interaction_history.json"
-
-    _WORKER_SYSTEM_MSG: ClassVar[str] = "You are GhostWorker, a helpful AI assistant focused on executing specific, local programming tasks. Your primary role is to interact with the file system, run shell commands, and perform other environment-specific operations as instructed by GhostCoder. Be concise, precise, and report results clearly. Do not engage in high-level planning or code generation unless explicitly asked to generate a small snippet for a tool.{{worker_injection}}"
-    _CODER_SYSTEM_MSG: ClassVar[str] = "You are GhostCoder, a highly intelligent and experienced AI programmer. Your role is to understand complex programming tasks, devise high-level plans, generate code, and review existing code. You will delegate specific environment interactions (like reading/writing files or running commands) to GhostWorker. Focus on architectural decisions, code quality, and problem-solving. When delegating, provide clear and unambiguous instructions to GhostWorker.\n\n# Project Overview\n{{project_metadata}}\n\n# Files\n{{context_files}}"
+    _CURRENT_INTERACTION_HISTORY_FILE: ClassVar[str] = "current.json"
+    _CURRENT_INTERACTION_PLAINTEXT_FILE: ClassVar[str] = "current.txt"    
+    
+    _WORKER_SYSTEM_MSG: ClassVar[str] = "You are GhostWorker, a helpful AI assistant focused on executing specific, local programming tasks. Your primary role is to interact with the file system, run shell commands, and perform other environment-specific operations as instructed by GhostCoder. Be concise, precise, and report results clearly. Do not engage in high-level planning or code generation unless explicitly asked to generate a small snippet for a tool."
+    _CODER_SYSTEM_MSG: ClassVar[str] = "You are GhostCoder, a highly intelligent and experienced AI programmer. Your role is to understand complex programming tasks, devise high-level plans, generate code, and review existing code. You will delegate specific environment interactions (like reading/writing files or running commands) to GhostWorker. Focus on architectural decisions, code quality, and problem-solving. When delegating, provide clear and unambiguous instructions to GhostWorker."
 
 
     @staticmethod
@@ -544,7 +576,7 @@ class Project(BaseModel):
             # 7. Create interaction_history.json (JSON, initially empty)
             interaction_history_path = os.path.join(ghostcode_dir, Project._INTERACTION_HISTORY_FILE)
             with open(interaction_history_path, 'w') as f:
-                json.dump(InteractionHistory(contents=[]).model_dump(), f, indent=4)
+                json.dump([], f, indent=4)
             logger.info(f"Created empty interaction history at {interaction_history_path}")
 
             logger.info(f"Ghostcode project initialized successfully in {root}.")
@@ -584,7 +616,7 @@ class Project(BaseModel):
         directory_file_content = ""
         project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
         project_config = ProjectConfig() # Initialize with defaults
-        interaction_history = InteractionHistory(contents=[]) # Initialize with default
+        interactions = []
         
         # 1. Load worker_llm_config.json (now from worker/config.json)
         worker_config_path = os.path.join(ghostcode_dir, Project._WORKER_CONFIG_FILE)
@@ -694,20 +726,20 @@ class Project(BaseModel):
             with open(interaction_history_path, 'r') as f:
                 history_data = json.load(f)
                 if history_data:
-                    interaction_history = InteractionHistory(**history_data)
+                    interactions = [InteractionHistory(**history_item) for history_item in history_data]
                 else:
                     logger.warning(f"Interaction history file {interaction_history_path} is empty. Using default InteractionHistory.")
-                    interaction_history = InteractionHistory(contents=[])
+                    interactions = []
             logger.debug(f"Loaded interaction history from {interaction_history_path}")
         except FileNotFoundError:
             logger.warning(f"Interaction history file not found at {interaction_history_path}. Using empty history.")
-            interaction_history = InteractionHistory(contents=[])
+            interactions = []
         except json.JSONDecodeError as e:
             logger.error(f"Error decoding JSON from {interaction_history_path}: {e}. Using empty history.", exc_info=True)
-            interaction_history = InteractionHistory(contents=[])
+            interactions = []
         except Exception as e:
             logger.error(f"An unexpected error occurred loading {interaction_history_path}: {e}. Using empty history.", exc_info=True)
-            interaction_history = InteractionHistory(contents=[])
+            interactions = []
 
             
 
@@ -719,7 +751,7 @@ class Project(BaseModel):
             context_files=context_files,
             directory_file=directory_file_content,
             project_metadata=project_metadata,
-            interaction_history=interaction_history,            
+            interactions = interactions,
         )
 
     def save_to_root(self, root: str) -> None:
@@ -815,7 +847,7 @@ class Project(BaseModel):
         interaction_history_path = os.path.join(ghostcode_dir, Project._INTERACTION_HISTORY_FILE)
         try:
             with open(interaction_history_path, 'w') as f:
-                json.dump(self.interaction_history.model_dump(), f, indent=4)
+                json.dump([history.model_dump() for history in self.interactions], f, indent=4)
             logger.debug(f"Saved interaction history to {interaction_history_path}")
         except Exception as e:
             logger.error(f"Failed to save interaction history to {interaction_history_path}: {e}", exc_info=True)
