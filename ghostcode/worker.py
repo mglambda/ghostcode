@@ -7,7 +7,7 @@ import json
 import logging
 from ghostcode import types
 from ghostcode.types import Program
-from ghostcode.utility import levenshtein
+from ghostcode.utility import levenshtein, time_function_with_logging
 import tempfile
 
 # --- Logging Setup ---
@@ -34,7 +34,8 @@ def actions_from_response_parts(prog: Program, parts: List[types.CoderResponsePa
     return [action
             for part in parts
             if (action := action_from_part(part))]
-            
+
+@time_function_with_logging
 def run_action_queue(prog: Program) -> None:
     """Executes and removes actions at the front of the action queue until the queue is empty or the halt action is popped.
     This function has no return value as actions primarily exist to crate side effects."""
@@ -190,6 +191,7 @@ def apply_edit_file(prog: Program, edit_action: types.ActionFileEdit) -> types.A
     return types.ActionResultOk(success_message=f"Applied edit action to file {filepath} for {len(edit_action.insert_text)} characters.")
 
 
+@time_function_with_logging
 def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponsePart) -> types.ActionResult:
     """Executes an ActionHandleCodeResponsePart action."""
     # small helper for this context
@@ -208,12 +210,20 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
 
     # Case 1: File does not exist -> Create file
     if not os.path.exists(filepath):
+        logger.info(f"Null filepath on code response part. Moving to create a new file. (case 1)")
         logger.debug(f"handle_code_part: Attempting to create a new file. ({filepath})")
         if os.path.isdir(filepath):
             return fail(f"File {filepath} is a directory.")
         
         # If original_code is provided for a new file, it's a bit odd, but we'll prioritize new_code
+        if code_action.content.original_code is not None:
+            logger.warning(f"Code part has no filepath, but original code is non-null.")
+            logger.debug(f"Code part with title '{code_action.content.title}', original_code (abridged): {code_action.content.original_code[:50]}")
+            
         # The type "full" is most appropriate for new file creation.
+        if code_action.content.type != "full":
+            logger.warning(f"Code part has no filepath set, but type is '{code_action.content.type}'.")
+            
         return types.ActionResultMoreActions(
             actions=[types.ActionFileCreate(
                 filepath=filepath,
@@ -221,7 +231,7 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
             )]
         )
 
-    # Case 2: File exists, read its content
+    # invariant: File exists. Read its contents.
     try:
         with open(filepath, "r") as f:
             file_contents = f.read()
@@ -229,11 +239,12 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
         error_msg = f"Could not read file {filepath} during handling of code response action."
         logger.error(error_msg)
         logger.debug(f"Handle code part action dump:\n{json.dumps(code_action.model_dump(), indent=4)}")
-        return fail(error_msg)
+        return fail(error_msg,
+                    error_messages=[traceback.format_exc()])
 
-    # Case 3: Full replacement (if original_code matches entire file)
+    # Case 2: Full replacement (if original_code matches entire file)
     if code_action.content.original_code is not None and file_contents == code_action.content.original_code:
-        logger.info(f"Identical content for original code and entire file {filepath}. Performing full replacement.")
+        logger.info(f"Identical content for original code and entire file {filepath}. Performing full replacement. (case 2)")
         return types.ActionResultMoreActions(
             actions=[types.ActionFileEdit(
                 filepath=filepath,
@@ -243,9 +254,12 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
             )]
         )
 
-    # Case 4: Partial edit - requires original_code
+    # Case 3: Partial edit - requires original_code
+    logger.info("Attempting partial edit of {filepath} .")
+
+    # case 3.1: Original code missing -> fail
     if code_action.content.original_code is None:
-        logger.warning(f"During handling of code response part action, encountered a code response part with type {code_action.content.type} that has a null original code. Cannot perform partial edit.")
+        logger.warning(f"During handling of code response part action, encountered a code response part with type {code_action.content.type} that has a null original code. Cannot perform partial edit. (case 3.1)")
         logger.debug(f"Dumping bizarre code action:\n{json.dumps(code_action.model_dump(), indent=4)}")
         return fail("Cannot perform partial edit with missing original code block.")
 
@@ -257,9 +271,11 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
 
     # Attempt exact substring match first (most efficient if it works)
     start_char_pos = file_contents.find(original_code_block)
+
+    # case 3.2: Exact substring match of original_code found.
     if start_char_pos != -1:
         end_char_pos = start_char_pos + len(original_code_block)
-        logger.info(f"Exact substring match found for original code in {filepath}.")
+        logger.info(f"Exact substring match found for original code in {filepath}. (case 3.2)")
         return types.ActionResultMoreActions(
             actions=[types.ActionFileEdit(
                 filepath=filepath,
@@ -275,7 +291,9 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
     original_lines = original_code_block.splitlines()
     file_lines = file_contents.splitlines()
 
+    # case 3.3: Original_code had only whitespace -> fail
     if not original_lines:
+        logger.warning(f"Could not locate original code block in file {filepath}: Original code appears to be just whitespace. (case 3.3)")
         return fail("Original code block is empty after splitting into lines. Cannot perform replacement.")
 
     best_match_start_line = -1
@@ -315,7 +333,8 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
         if not file_contents.endswith('\n') and (best_match_start_line + len(original_lines) == len(file_lines)):
             replace_pos_end -= 1
 
-        logger.info(f"Line-by-line match found for original code in {filepath} (distance: {min_total_distance}).")
+        # case 3.4: Found levenshtein match
+        logger.info(f"Line-by-line match found for original code in {filepath} (distance: {min_total_distance}). (case 3.4)")
         return types.ActionResultMoreActions(
             actions=[types.ActionFileEdit(
                 filepath=filepath,
@@ -325,8 +344,8 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
             )]
         )
     else:
-        # No good match found. Return a failure.
-        logger.warning(f"Could not find a sufficiently close match for original code in {filepath} (min distance: {min_total_distance}, threshold: {distance_threshold}).")
+        # case 3.5: No good match found. Return a failure.
+        logger.warning(f"Could not find a sufficiently close match for original code in {filepath} (min distance: {min_total_distance}, threshold: {distance_threshold}). (case 3.5)")
         return fail(f"Could not locate original code block in file '{filepath}' for partial edit. "
                     f"Minimum Levenshtein distance found: {min_total_distance}. "
                     f"Original code block:\n---\n{original_code_block}\n---")

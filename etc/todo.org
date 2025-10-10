@@ -1,6 +1,6 @@
 * work-in-progress (WIP, limit 5)
-Integrate worker into interact mode.
-Create function to reliably replace or create code based on CoderResponsePart (possibly using worker).
+Create action that let's worker ask coder for adjustment.
+Handle code file edit cases of inadequate levenshtein distance.
 * todo
 ** general
 Create log command to view past interactions.
@@ -28,3 +28,5 @@ Single asterisk (org-mode) headings indicate canban columns (except this 'about 
  - todo: Contains items that may be worked on in the future. These can be very specific, or vague and general. To be worked on, an item moves from this list into the WIP list. This list also contains 2 asterisk sub-headings to structure it. A single todo item is still a plaintext line, though.
  - done: Contains todo items that have been finished. Also known as "brag list". Somewhat pointless but can be useful to get an overview of the projects history.
 * done
+Create function to reliably replace or create code based on CoderResponsePart (possibly using worker).
+Integrate worker into interact mode.

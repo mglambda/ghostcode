@@ -8,6 +8,7 @@ import ghostbox
 import os
 from ghostbox import Ghostbox  # type: ignore
 from ghostbox.definitions import BrokenBackend  # type: ignore
+from ghostbox.commands import showTime # type: ignore
 from dataclasses import dataclass, field
 import argparse
 import logging
@@ -31,7 +32,18 @@ def _configure_logging(log_mode: str, project_root: Optional[str]):
     # Clear existing handlers to prevent duplicate logs if called multiple times
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-    
+
+    # define our own timing log level
+    TIMING_LEVEL_NUM = 25
+    logging.addLevelName(TIMING_LEVEL_NUM, "TIMING")
+
+    # Add a convenience method to the Logger class
+    def timing_log(self, message, *args, **kwargs):
+        if self.isEnabledFor(TIMING_LEVEL_NUM):
+            self._log(TIMING_LEVEL_NUM, message, args, **kwargs)
+
+    logging.Logger.timing = timing_log # type: ignore
+        
     # Set the root logger level to INFO by default
     logging.root.setLevel(logging.INFO)
     
@@ -45,7 +57,7 @@ def _configure_logging(log_mode: str, project_root: Optional[str]):
         handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(formatter)
         logging.root.addHandler(handler)
-        print("Logging to stderr.", file=sys.stderr)
+        #print("Logging to stderr.", file=sys.stderr)
     elif log_mode == "file":
         log_filepath = None
         if project_root:
@@ -65,7 +77,7 @@ def _configure_logging(log_mode: str, project_root: Optional[str]):
                 stderr_handler.setFormatter(formatter)
                 stderr_handler.setLevel(logging.ERROR) # Only show ERROR and CRITICAL to stderr
                 logging.root.addHandler(stderr_handler)
-                print(f"Logging to file: {log_filepath}", file=sys.stderr) # Inform user where logs are going
+                #print(f"Logging to file: {log_filepath}", file=sys.stderr) # Inform user where logs are going
             except Exception as e:
                 # Fallback to stderr if file logging fails
                 print(f"WARNING: Failed to set up file logging to {log_filepath}: {e}. Falling back to stderr.", file=sys.stderr)
@@ -475,7 +487,8 @@ class InteractCommand(BaseModel, CommandInterface):
                                               prompt,
                                               #options=debug_options,
                                               )
-
+                logger.timing(f"ghostcoder performance statistics:\n{showTime(prog.coder_box._plumbing, [])}") # type: ignore
+                
                 try:                
                     self.interaction_history.contents.append(
                         types.CoderInteractionHistoryItem(

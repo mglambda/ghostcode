@@ -1,5 +1,7 @@
 import os
 from datetime import datetime, timezone
+import time
+import functools
 
 # A comprehensive mapping of file extensions to their associated programming languages.
 # This dictionary is designed to provide common language identifiers suitable for
@@ -230,4 +232,24 @@ def levenshtein(a: str, b: str) -> int:
 
     # The bottom-right cell contains the Levenshtein distance
     return dp[m][n]
+
+def time_function_with_logging(func):
+    """
+    A decorator that times a function's execution and logs the duration
+    using the custom 'TIMING' log level.
+    """
+    @functools.wraps(func) # Preserves the original function's metadata (name, docstring, etc.)
+    def wrapper(*args, **kwargs):
+        # Get a logger for the module where the decorated function is defined
+        logger = logging.getLogger(func.__module__)
+
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs) # Execute the original function
+        end_time = time.perf_counter()
+
+        elapsed_time = end_time - start_time
+        logger.timing(f"{func.__name__} executed in {elapsed_time:.2f} seconds.")
+
+        return result
+    return wrapper
 
