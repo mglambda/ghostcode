@@ -1,13 +1,13 @@
 from typing import *
 import json
 import traceback
-from ghostcode import types
+from ghostcode import types, worker
 # don't want the types. prefix for these
 from ghostcode.types import Program
 import ghostbox
 import os
-from ghostbox import Ghostbox
-from ghostbox.definitions import BrokenBackend
+from ghostbox import Ghostbox  # type: ignore
+from ghostbox.definitions import BrokenBackend  # type: ignore
 from dataclasses import dataclass, field
 import argparse
 import logging
@@ -86,7 +86,9 @@ class CommandOutput(BaseModel):
     Mostly will just contain text, but this exists so we can add JSON etc. in the future."""
 
     text: str = ""
-    data: Optional[Dict[str, Any] ] = None
+    data: Dict[str, Any] = Field(
+        default_factory = lambda: {}
+    )
 
     def print(self, w: str, end: str = "\n") -> None:
         """Mimics print function by concatinating text."""
@@ -383,6 +385,9 @@ class InteractCommand(BaseModel, CommandInterface):
 
     def _make_preamble(self, prog: Program) -> str:
         """Plaintext context that is inserted before the user prompt - though only once."""
+        if prog.project is None:
+            logger.warning(f"Encountered null project in program while creating preamble.")
+            return ""
         return f"""{prog.project.context_files.show()}
 
 # User Prompt
@@ -402,6 +407,11 @@ class InteractCommand(BaseModel, CommandInterface):
         return prompt
     
     def _interact_loop(self, intermediate_result: CommandOutput, prog: Program) -> CommandOutput:
+        if prog.project is None:
+            logger.error("Encountered null project in interact loop. Aborting.")
+            intermediate_result.print("Failed to initialize project. Please do\n\n```\nghostcode init\n```\n\nto create a project in the current working directory, then retry interact.")
+            return intermediate_result
+        
         # since the interaction is blocking we can't wait with printing until we return the result
         # so we print it here and return an empty result at the end
         self._print(intermediate_result.text)
@@ -433,9 +443,15 @@ class InteractCommand(BaseModel, CommandInterface):
             # ok, process input
 
             preamble = prog.project.context_files.show()
+            if prog.project.project_metadata is None:
+                logger.warning("Empty metadata while setting ghostbox vars.")
+                metadata_str = ""
+            else:
+                metadata_str = prog.project.project_metadata.show()
+                
             prompt = self._make_user_prompt(prog, user_input)
             prog.coder_box.set_vars({
-                "project_metadata": prog.project.project_metadata.show(),
+                "project_metadata": metadata_str,
                 "preamble_injection": preamble
             })
 
@@ -473,20 +489,32 @@ class InteractCommand(BaseModel, CommandInterface):
                     # this is not critical, log and continue
                     logger.error(f"Could not save response to history. Reason: {e}")                    
 
-                print(response.show_cli())
             except Exception as e:
                 print(f"Problems encountered during request. Reason: {e}\nRetry the request or consult the logs for more information.")
                 logger.error(f"error on ghostbox.new. See the full traceback:\n{traceback.format_exc()}")
                 logger.error(f"\nAnd here is the last result:\n\n{prog.coder_box.get_last_result()}") 
 
+
+            # handle the response
+            print(response.show_cli())
+            logger.info(f"Preparing action queue.")
+            prog.action_queue = worker.actions_from_response_parts(prog, response.contents)
+                
+                
             user_input = ""
             # this is a failsafe and for user convenience in case we crash
-            with open(os.path.join(prog.project_root, ".ghostcode", prog.project._CURRENT_INTERACTION_HISTORY_FILE), "w") as hf:
-                json.dump(self.interaction_history.model_dump(), hf, indent=4)
+            if prog.project_root is not None:
+                current_interaction_history_filepath = os.path.join(prog.project_root, ".ghostcode", prog.project._CURRENT_INTERACTION_HISTORY_FILE)
+                current_interaction_history_plaintext_filepath = os.path.join(prog.project_root, ".ghostcode", prog.project._CURRENT_INTERACTION_PLAINTEXT_FILE)
+                logger.info(f"Dumping current interaction history to {current_interaction_history_filepath} and {current_interaction_history_plaintext_filepath}")
+                with open(current_interaction_history_filepath, "w") as hf:
+                    json.dump(self.interaction_history.model_dump(), hf, indent=4)
 
-                with open(os.path.join(prog.project_root, ".ghostcode", prog.project._CURRENT_INTERACTION_PLAINTEXT_FILE), "w") as pf:
+                with open(current_interaction_history_plaintext_filepath, "w") as pf:
                     pf.write(self.interaction_history.show())
-                    
+            else:
+                logger.warning(f"Null project_root while trying to dump current itneraction history. Create a project root or no dump for you!")
+                
         # end of interaction
         logger.info(f"Finishing interaction.")
         if not(self.interaction_history.empty()):
@@ -504,6 +532,11 @@ class VerifyCommand(BaseModel):
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         result.data = {"error": False}
+        if prog.project is None:
+            logger.warning(f"Encountered null project in program during verify command.")
+            result.print(f"Failed verification due to missing project. Please do `ghostcode init` in a directory of your choice to initialize a project, then retry the verification.")
+            result.data["error"] = True
+            return result
         
         missing_api_keys = prog._has_api_keys()
         if missing_api_keys:

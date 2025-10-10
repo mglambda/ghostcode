@@ -496,7 +496,7 @@ class ActionFileEdit(BaseModel):
     )
 
     # This isn't fully fleshed out yet but we probably want functions to handle various types of actions so
-type     Action = ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution
+type     Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution
 
 class ActionResultOk(BaseModel):
     """Represents a successfully executed action."""

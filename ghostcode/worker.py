@@ -12,6 +12,28 @@ import tempfile
 # --- Logging Setup ---
 logger = logging.getLogger('ghostcode.worker')
 
+def actions_from_response_parts(prog: Program, parts: List[types.CoderResponsePart]) -> List[types.Action]:
+    """Transform a list of response parts from the coder LLM into a list of actions.
+    This is not a 1 to 1 mapping. You may end up with an empty list if e.g. all the response parts are just discussion text. Only code parts and similar are transformed into actions."""
+    # atm we have prog only because we might need more context here in the future
+    logger.debug(f"actions_from_response_parts with {len(parts)} parts: {[parts.__class__.__name__ for part in parts]}")
+    
+    def action_from_part(part: types.CoderResponsePart) -> Optional[types.Action]:
+        match part:
+            case types.TextResponsePart() as text_part:
+                # no action necessary
+                return None
+            case types.CodeResponsePart() as code_part:
+                return types.ActionHandleCodeResponsePart(
+                    content=code_part
+                )
+            case _:
+                return None
+            
+    return [action
+            for part in parts
+            if (action := action_from_part(part))]
+            
 def run_action_queue(prog: Program) -> None:
     """Executes and removes actions at the front of the action queue until the queue is empty or the halt action is popped.
     This function has no return value as actions primarily exist to crate side effects."""
