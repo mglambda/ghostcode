@@ -1,7 +1,7 @@
 # ghostcode/types.py
 from typing import *
 from dataclasses import dataclass, field
-
+from enum import Enum
 from pydantic import BaseModel, Field
 import os
 import json
@@ -53,6 +53,17 @@ DEFAULT_PROJECT_METADATA = {
     "name": "New Ghostcode Project",
     "description": "A new project initialized with ghostcode. Edit this description to provide an overview of your project.",
 }
+
+
+class ClearanceRequirement(Enum):
+    """Defines the level of user clearance required for an action.
+    Higher values indicate a higher requirement for user interaction/permission.
+    """
+    AUTOMATIC = 10       # Actions that are generally safe, non-destructive, or purely informational (e.g., logging, internal state changes). Can proceed without explicit user confirmation.
+    INFORM = 20          # Actions that are safe but the user should be made aware of, typically non-critical file creations (e.g., temporary files, new log files) or minor, reversible changes. User is informed, but no explicit confirmation is strictly required unless configured otherwise.
+    CONFIRM = 30         # Actions that modify existing user-created files, create new permanent files, or execute commands that might have noticeable side effects (e.g., `pip install`). Requires explicit 'yes/no' user confirmation by default.
+    DANGEROUS = 40       # Actions with significant potential for data loss, system instability, or execution of arbitrary, untrusted code (e.g., `rm -rf`, running downloaded scripts). Requires strong user confirmation (e.g., typing the full word 'confirm').
+    FORBIDDEN = 50       # Actions that the AI is explicitly forbidden from performing under any circumstances. Attempting these actions should result in an immediate halt and error.
 
 class UserConfig(BaseModel):
     """Stores user specific data, like names, emails, and api keys.
@@ -448,10 +459,14 @@ class InteractionHistory(BaseModel):
 class ActionDoNothing(BaseModel):
     """Action that represents a noop.
     Used mostly as an identity under composition in the 'Action' type."""
-    pass
+
+    clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.AUTOMATIC
 
 class ActionHaltExecution(BaseModel):
     """Represents a signal to halt the execution of the action queue. This is put on the queue whenever execution has run into too many errors or has encoutnered a critical problem that can not be overcome."""
+
+    clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.AUTOMATIC
+    
     reason: str = Field(
         description = "The reason for the halt signal in plain english."
     )
@@ -460,6 +475,8 @@ class ActionHandleCodeResponsePart(BaseModel):
     """This action represents a code response that was received by the coder LLM and needs to be handled.
     This is a thin wrapper around a CodeResponsePart. It may be handled in a variety of ways, the exact manner of which is usually determined by the worker LLM."""
 
+    clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.AUTOMATIC
+    
     content: CodeResponsePart = Field(
         description = "The original code response part that was received from the coder LLM."
     )
@@ -467,6 +484,7 @@ class ActionHandleCodeResponsePart(BaseModel):
 class ActionFileCreate(BaseModel):
     """Represents the creation of a new file."""
 
+    clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.CONFIRM    
     filepath: str = Field(
         description = "The path to the file that should be created."
     )
@@ -478,6 +496,8 @@ class ActionFileEdit(BaseModel):
     """Representation of a single replace operation in a file.
     This type is intended to be the end result of a worker file edit and the last step before the actual text is changed on disk."""
 
+    clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.CONFIRM
+    
     filepath: str = Field(
         description = "The file that should be edited."
     )

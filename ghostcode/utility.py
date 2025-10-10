@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timezone
 import time
 import functools
+import logging
 
 # A comprehensive mapping of file extensions to their associated programming languages.
 # This dictionary is designed to provide common language identifiers suitable for
