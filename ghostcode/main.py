@@ -499,7 +499,7 @@ class InteractCommand(BaseModel, CommandInterface):
             print(response.show_cli())
             logger.info(f"Preparing action queue.")
             prog.action_queue = worker.actions_from_response_parts(prog, response.contents)
-                
+            worker.run_action_queue(prog)
                 
             user_input = ""
             # this is a failsafe and for user convenience in case we crash

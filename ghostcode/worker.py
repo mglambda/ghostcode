@@ -2,6 +2,7 @@
 from typing import *
 import traceback
 import os
+import shutil
 import json
 import logging
 from ghostcode import types
@@ -46,9 +47,10 @@ def run_action_queue(prog: Program) -> None:
 
         finished_actions = 0
         while action := prog.action_queue.pop(0):
+            logger.debug(f"Current Queue Status\n  popped action: {action.__class__.__name__}\n  queue: {[a.__class__.__name__ for a in prog.action_queue]}")
             match action:
-                case types.ActionHaltExecution(reason):
-                    logger.info(f"Halting action queue execution after {finished_actions} actions, with {len(prog.action_queue)} actions remaining in queue. Reason: {reason}")
+                case types.ActionHaltExecution() as halt_action:
+                    logger.info(f"Halting action queue execution after {finished_actions} actions, with {len(prog.action_queue)} actions remaining in queue. Reason: {halt_action.reason}")
                     prog.discard_actions()
                     return
                 case _:
@@ -85,6 +87,12 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                 logger.info(f"Handling code response part.")
                 logger.debug(f"Code response part action dump:\n{json.dumps(code_action.model_dump(), indent=4)}") 
                 return handle_code_part(prog, code_action)
+            case types.ActionFileEdit() as edit_action:
+                logger.info(f"File Edit Action")
+                return apply_edit_file(prog, edit_action)
+            case types.ActionCreateFile() as create_action:
+                logger.info("Create File Action")
+                return apply_create_file(prog, create_action)
             case types.ActionDoNothing():
                 # No operation needed for ActionDoNothing
                 logger.info("Action: Do Nothing")
@@ -162,7 +170,7 @@ def apply_edit_file(prog: Program, edit_action: types.ActionFileEdit) -> types.A
             tf.write(new_content)
 
         # atomic swap
-        os.replace(temp_filepath, filepath)
+        shutil.move(temp_filepath, filepath)
 
     except Exception as e:
         error_msg = f"Could not edit  file while applying edit action. Reason: {e}"
