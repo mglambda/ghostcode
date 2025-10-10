@@ -1,8 +1,11 @@
+from typing import *
 import os
 from datetime import datetime, timezone
 import time
+from pydantic import BaseModel, Field
 import functools
 import logging
+import yaml
 
 # A comprehensive mapping of file extensions to their associated programming languages.
 # This dictionary is designed to provide common language identifiers suitable for
@@ -254,3 +257,25 @@ def time_function_with_logging(func):
         return result
     return wrapper
 
+def show_model(obj: BaseModel, heading: str ="", abridge: Optional[int] = 80) -> str:
+    """Generic way to pretty print a pydantic model.
+    If the abridge parameter is set to a positive integer, strings found in the object will be abridged to show a maximum value that is equal to the abridge value (with abridgement happening in the middle, showing beginning and end of that string equally). If it is None no abridgement will take place."""
+    data = obj.model_dump()
+
+    if abridge is not None and abridge >= 0:
+        for k in data.keys():
+            v = data[k]
+            if isinstance(v, str):
+                if len(v) <= abridge:
+                    continue
+                h = abridge // 2
+                if "\n" in v:
+                    data[k] = v[0:h] + "\n … " + v[len(v) - h:]
+                else:
+                    data[k] = v[0:h] + " … " + v[len(v) - h:]
+    
+    heading_str = f"[{heading}]\n" if heading else ""
+    return heading_str + yaml.dump(data, default_flow_style=False, indent=4, sort_keys=False)
+    
+
+        

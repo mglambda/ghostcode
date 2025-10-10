@@ -4,13 +4,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pydantic import BaseModel, Field
 import os
+import traceback
 import json
 import yaml
 import logging
 import ghostbox.definitions # type: ignore
 from ghostbox.definitions import LLMBackend # type: ignore
 from ghostbox import Ghostbox
-from ghostcode.utility import language_from_extension, timestamp_now_iso8601
+from ghostcode.utility import language_from_extension, timestamp_now_iso8601, show_model
 import appdirs # Added for platform-specific config directory
 
 # --- Logging Setup ---
@@ -189,7 +190,16 @@ class ProjectConfig(BaseModel):
     coder_endpoint: str = Field(default="https://generativelanguage.googleapis.com/v1beta", description="Endpoint for the Coder LLM.")
     worker_endpoint: str = Field(default="http://localhost:8080", description="Endpoint for the Worker LLM.")
 
+    coder_clearance_level: ClearanceRequirement = Field(
+        default=ClearanceRequirement.INFORM,
+        description = "The clearance level that the coder LLM has by default. If the coder's clearance level meets or exceeds the clearance requirement for a given action, it is permitted to perform that action without user confirmation."
+    )
 
+    worker_clearance_level: ClearanceRequirement = Field(
+        default=ClearanceRequirement.INFORM,
+        description = "The clearance level that the worker LLM has by default. If the worker's clearance level meets or exceeds the clearance requirement for a given action, it is permitted to perform that action without user confirmation."
+    )
+    
 # --- Type Definitions ---
 class ContextFile(BaseModel):
     """Abstract representation of a filepath along with metadata. Context files are sent to the cloud LLM for prompts."""
@@ -515,7 +525,11 @@ class ActionFileEdit(BaseModel):
         description = "The text that will be inserted as a replacement for the text between replace_pos_begin and replace_pos_end."
     )
 
-    # This isn't fully fleshed out yet but we probably want functions to handle various types of actions so
+class HasClearanceRequirement(Protocol):
+    """Interface for anything that requires clearance."""
+
+    clearance_required: ClassVar[ClearanceRequirement]
+    
 type     Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution
 
 class ActionResultOk(BaseModel):
@@ -1094,4 +1108,51 @@ class Program:
         """Pushes an action to the front of the queue. An action at the front will be executed before the remaining ones."""
         logger.info(f"Pushing action {type(action)} to the front of the action queue.")
         self.action_queue = [action] + self.action_queue
-        
+
+    def confirm_action(self, action: Action, agent_clearance_level: ClearanceRequirement = ClearanceRequirement.AUTOMATIC, agent_name: str = "System") -> bool:
+        """Interactively acquire user confirmation for a given action.
+        When an action needs to be confirmed, there is usually some agent who wants to perform the action (e.g. ghostcoder or ghostworker). The agent's current clearance level is provided for context."""
+
+        msg = f"{agent_name} wants to perform {action.__class__.__name__}."
+        abridge = 80 # type: Optional[int]
+        try:
+            while True:
+                choice = input("Permit? yes (y), no (n), yes to all (a), or show more info (?, default):")
+                match choice:
+                    case "y":
+                        logger.info("User confirmed action.")
+                        return True
+                    case "n":
+                        logger.info("User denied action.")
+                        return False
+                    case "a":
+                        # FIXME: this should implement a default confirm for all confirmation dialogs that happen during the current run_action_queue execution.
+                        logger.info("YOLO")
+                        return True
+                    case _:
+                        # cover "?", empty input, and anything else, as showing more nformation is generally a safe option.
+                        print(show_model(
+                            action,
+                            heading=action.__class__.__name__,
+                              abridge=abridge
+                        ))
+                        # we only show abridge once. user can do enter twice to see full strings
+                        abridge = None
+
+                        continue
+        except EOFError as e:
+            print(f"Canceled.")
+            logger.info(f"User exited confirmation dialog with EOF. Defaulting to deny.")
+            return False
+        except Exception as e:
+            print(f"Action canceled. Error: {e}.")
+            logger.error(f"Encountered error during user confirmation dialog. Defaulting to deny. Error: {e}")
+            logger.debug(f"Full traceback:\n{traceback.format_exc()}")
+            return False
+
+        # unreachable but ok
+        logger.info(f"Follow the white rabbit.")
+        return False
+                
+
+

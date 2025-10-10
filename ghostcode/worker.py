@@ -81,7 +81,33 @@ def run_action_queue(prog: Program) -> None:
         return
 
 def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
+    # small helper for this context
+    fail = lambda failure_reason, error_messages=[], action=action: types.ActionResultFailure(original_action=action,
+    error_messages=error_messages,
+    failure_reason=failure_reason)
+    
     logger.debug(f"Executing action: {action.__class__.__name__}")
+    
+    # check clearance
+    clearance_requirement = action.clearance_required
+    if prog.project is None:
+        logger.warning(f"Null project while trying to get worker clearance, so no config is available. Defaulting to lowest clearance.")
+        clearance_level = types.ClearanceRequirement.AUTOMATIC
+    else:
+        clearance_level = prog.project.config.worker_clearance_level
+    if clearance_requirement == types.ClearanceRequirement.FORBIDDEN:
+        logger.info(f"Worker tried to execute action with forbidden clearance. This is never permitted, regardless of clearance level. Failing action.")
+        return fail("Worker encountered action with 'forbidden' clearance requirement.")
+    elif clearance_level.value < clearance_requirement.value:
+        logger.info("Worker clearance of {clearance_level} insufficient for clearance requirement {clearance_requirement} of {action.__class__.__name__} action. Seeking user confirmation.")
+        if prog.confirm_action(action, agent_clearance_level=clearance_level, agent_name="Ghostworker"):
+            logger.info(f"User confirmed {action.__class__.__name__} for worker with clearance level {clearance_level}.")
+        else:
+            logger.info(f"User denied {action.__class__.__name__} for worker with clearance level {clearance_level}.")
+            return fail(f"Action {action.__class__.__name__} denied by user.")
+    else:
+        logger.info("Worker clearance of {clearance_level} meets or exceeds clearance requirement {clearance_requirement} for {action.__class__.__name__} action. Proceeding without user confirmation.")
+        
     try:
         match action:
             case types.ActionHandleCodeResponsePart() as code_action:
@@ -125,6 +151,7 @@ def apply_create_file(prog: Program, create_action: types.ActionFileCreate) -> t
     )
     
     try:
+        os.makedirs(create_action.filepath, exist_ok=True)        
         with open(create_action.filepath, "w") as f:
             f.write(create_action.content)
     except Exception as e:
