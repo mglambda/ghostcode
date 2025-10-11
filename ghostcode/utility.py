@@ -1,5 +1,6 @@
 from typing import *
 import os
+from enum import Enum
 from datetime import datetime, timezone
 import time
 from pydantic import BaseModel, Field
@@ -257,25 +258,85 @@ def time_function_with_logging(func):
         return result
     return wrapper
 
+# Define a threshold for "long" strings.
+# Strings longer than this OR containing newlines will be literal block style (|).
+LONG_STRING_THRESHOLD = 50
+
+def conditional_string_representer(dumper, data):
+    """
+    Custom representer for strings:
+    - Forces multi-line or long strings (over THRESHOLD) to literal block style (|).
+    - For short, single-line strings, lets PyYAML choose the most appropriate style
+      (usually plain scalar, or quoted if necessary).
+    """
+    if '\n' in data or len(data) > LONG_STRING_THRESHOLD:
+        # For multi-line or long strings, force literal block style (|).
+        # This style preserves newlines and leading/trailing spaces exactly.
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+    else:
+        # For short, single-line strings, let PyYAML decide.
+        # An empty string '' for style means "plain if possible, otherwise quoted".
+        # This prevents short strings from being '|' or '|-'.
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='')
+
+class CustomConditionalDumper(yaml.Dumper):
+    """
+    A custom YAML Dumper that applies conditional string representation.
+    Also ensures block style for mappings/sequences and unquoted keys by default.
+    """
+    # You can add more configurations here if needed.
+    # For example, to ensure block style for mappings and sequences:
+    # This is often set in the yaml.dump() call, but can be set here too.
+    # default_flow_style = False
+
+
+CustomConditionalDumper.add_representer(str, conditional_string_representer)
+
+
+# this dumper is used in the Program class to serialize config files
+# This representer will dump Enum members as their underlying value (int, str, etc.)
+def enum_value_representer(dumper, data):
+    """
+    Represents an Enum member as its value.
+    """
+    # PyYAML will automatically determine the best scalar style for data.value
+    # (e.g., plain for int/str, quoted if necessary).
+    return dumper.represent_data(data.value)
+
+# Create a custom Dumper class for this specific behavior
+class PydanticEnumDumper(yaml.SafeDumper):
+    """
+    A custom YAML SafeDumper that represents Enum members by their value.
+    """
+    pass
+
+# Register this representer for the base Enum class with our custom Dumper.
+PydanticEnumDumper.add_representer(Enum, enum_value_representer)
+
 def show_model(obj: BaseModel, heading: str ="", abridge: Optional[int] = 80) -> str:
     """Generic way to pretty print a pydantic model.
     If the abridge parameter is set to a positive integer, strings found in the object will be abridged to show a maximum value that is equal to the abridge value (with abridgement happening in the middle, showing beginning and end of that string equally). If it is None no abridgement will take place."""
+
+
     data = obj.model_dump()
 
     if abridge is not None and abridge >= 0:
         for k in data.keys():
             v = data[k]
             if isinstance(v, str):
-                if len(v) <= abridge:
-                    continue
-                h = abridge // 2
-                if "\n" in v:
-                    data[k] = v[0:h] + "\n … " + v[len(v) - h:]
-                else:
-                    data[k] = v[0:h] + " … " + v[len(v) - h:]
-    
+                if len(v) > abridge:
+                    h = abridge // 2
+                    if "\n" in v:
+                        data[k] = v[0:h] + "\n ... \n" + v[len(v) - h:]
+                    else:
+                        data[k] = v[0:h] + " … " + v[len(v) - h:]
+                #data[k] = literal_str(data[k])
+                          
     heading_str = f"[{heading}]\n" if heading else ""
-    return heading_str + yaml.dump(data, default_flow_style=False, indent=4, sort_keys=False)
-    
+    return heading_str + yaml.dump(
+        data,
+        Dumper=CustomConditionalDumper,
+        default_flow_style=False,
+        sort_keys=False)
 
-        
+

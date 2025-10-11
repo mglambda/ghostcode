@@ -4,6 +4,7 @@ Handle code file edit cases of inadequate levenshtein distance.
 * todo
 ** general
 Create log command to view past interactions.
+Add doc comment injections to yaml config files.
 Audio input support for small queries ("hey ghostcode, what was the parser class called in this project?")
 Investigate proper deployment (conda, docker, getting llama.cpp, downloading models from huggingface).
 More user friendly setup during init for various backends (ask for API keys etc).

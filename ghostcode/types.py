@@ -11,7 +11,7 @@ import logging
 import ghostbox.definitions # type: ignore
 from ghostbox.definitions import LLMBackend # type: ignore
 from ghostbox import Ghostbox
-from ghostcode.utility import language_from_extension, timestamp_now_iso8601, show_model
+from ghostcode.utility import language_from_extension, timestamp_now_iso8601, show_model, PydanticEnumDumper
 import appdirs # Added for platform-specific config directory
 
 # --- Logging Setup ---
@@ -720,14 +720,14 @@ class Project(BaseModel):
             # 5. Create project_metadata.yaml (YAML, with default metadata)
             project_metadata_path = os.path.join(ghostcode_dir, Project._PROJECT_METADATA_FILE)
             with open(project_metadata_path, 'w') as f:
-                yaml.dump(DEFAULT_PROJECT_METADATA, f, indent=2, sort_keys=False)
+                yaml.dump(DEFAULT_PROJECT_METADATA, f, indent=2, sort_keys=False, default_flow_style=False, Dumper=PydanticEnumDumper)
             logger.info(f"Created default project metadata at {project_metadata_path}")
 
             # 6. Create config.yaml (YAML, with default ProjectConfig)
             project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
             default_project_config = ProjectConfig()
             with open(project_config_path, 'w') as f:
-                yaml.dump(default_project_config.model_dump(), f, indent=2, sort_keys=False)
+                yaml.dump(default_project_config.model_dump(mode="json"), f, Dumper=PydanticEnumDumper, default_flow_style=False, indent=2, sort_keys=False)
             logger.info(f"Created default project config at {project_config_path}")
 
             # 7. Create interaction_history.json (JSON, initially empty)
@@ -981,7 +981,7 @@ class Project(BaseModel):
         if self.project_metadata:
             try:
                 with open(project_metadata_path, 'w') as f:
-                    yaml.dump(self.project_metadata.model_dump(), f, indent=2, sort_keys=False)
+                    yaml.dump(self.project_metadata.model_dump(mode="json"), f, Dumper=PydanticEnumDumper, indent=2, sort_keys=False, default_flow_style=False)
                 logger.debug(f"Saved project metadata to {project_metadata_path}")
             except Exception as e:
                 logger.error(f"Failed to save project metadata to {project_metadata_path}: {e}", exc_info=True)
@@ -993,7 +993,7 @@ class Project(BaseModel):
         project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
         try:
             with open(project_config_path, 'w') as f:
-                yaml.dump(self.config.model_dump(), f, indent=2, sort_keys=False)
+                yaml.dump(self.config.model_dump(mode="json"), f, Dumper=PydanticEnumDumper, indent=2, default_flow_style=False, sort_keys=False)
             logger.debug(f"Saved project config to {project_config_path}")
         except Exception as e:
             logger.error(f"Failed to save project config to {project_config_path}: {e}", exc_info=True)

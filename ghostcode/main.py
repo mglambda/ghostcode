@@ -25,7 +25,7 @@ from ghostbox.definitions import LLMBackend # Added for API key checks
 # logger will be configured after argument parsing
 logger: logging.Logger # Declare logger globally, will be assigned later
 
-def _configure_logging(log_mode: str, project_root: Optional[str]):
+def _configure_logging(log_mode: str, project_root: Optional[str], is_init: bool = False):
     """
     Configures the root logger based on the specified mode and project root.
     """
@@ -86,7 +86,8 @@ def _configure_logging(log_mode: str, project_root: Optional[str]):
                 logging.root.addHandler(handler)
         else:
             # Fallback to stderr if project_root or .ghostcode dir is not found
-            print("WARNING: Project root or .ghostcode directory not found for file logging. Falling back to stderr.", file=sys.stderr)
+            if not(is_init):
+                print("WARNING: Project root or .ghostcode directory not found for file logging. Falling back to stderr.", file=sys.stderr)
             handler = logging.StreamHandler(sys.stderr)
             handler.setFormatter(formatter)
             logging.root.addHandler(handler)
@@ -643,7 +644,11 @@ def main():
         current_project_root = types.Project.find_project_root()
 
     # Configure logging based on argument and determined project_root
-    _configure_logging(args.logging, current_project_root)
+    _configure_logging(
+        args.logging,
+        current_project_root,
+        is_init=args.command=="init"
+    )
 
     # Now that logging is configured, get the main logger instance
     global logger # Declare logger as global to assign to it
