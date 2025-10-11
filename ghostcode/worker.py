@@ -40,12 +40,16 @@ def run_action_queue(prog: Program) -> None:
     """Executes and removes actions at the front of the action queue until the queue is empty or the halt action is popped.
     This function has no return value as actions primarily exist to crate side effects."""
     logger.info("Action queue execution started with {len(prog.action_queue)} actions in queue.")
+
+    # each time we run a queue, we reset the flag that let's the user skip confirmation dialogs
+    # the user sets this to true with the "a" confirmation option.
+    prog.action_queue_yolo = False
+    
     if not(prog.action_queue):
         logger.info(f"Action queue execution stopped because there are no actions on the queue.")
         return
 
     try:
-
         finished_actions = 0
         while action := prog.action_queue.pop(0):
             logger.debug(f"Current Queue Status\n  popped action: {action.__class__.__name__}\n  queue: {[a.__class__.__name__ for a in prog.action_queue]}")
@@ -100,7 +104,17 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
         return fail("Worker encountered action with 'forbidden' clearance requirement.")
     elif clearance_level.value < clearance_requirement.value:
         logger.info("Worker clearance of {clearance_level} insufficient for clearance requirement {clearance_requirement} of {action.__class__.__name__} action. Seeking user confirmation.")
-        if prog.confirm_action(action, agent_clearance_level=clearance_level, agent_name="Ghostworker"):
+        user_response = prog.confirm_action(action, agent_clearance_level=clearance_level, agent_name="Ghostworker")
+        if user_response == types.UserConfirmation.CANCEL:
+            # we just exit regularly through the halting mechanism
+            return types.ActionResultMoreActions(
+                actions=[types.ActionHaltExecution(
+                    reason="User canceled action execution."
+                )]
+            )
+        elif types.UserConfirmation.is_confirmation(user_response):
+            if user_response == types.UserConfirmation.ALL:
+                prog.action_queue_yolo = True
             logger.info(f"User confirmed {action.__class__.__name__} for worker with clearance level {clearance_level}.")
         else:
             logger.info(f"User denied {action.__class__.__name__} for worker with clearance level {clearance_level}.")

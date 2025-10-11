@@ -66,6 +66,22 @@ class ClearanceRequirement(Enum):
     DANGEROUS = 40       # Actions with significant potential for data loss, system instability, or execution of arbitrary, untrusted code (e.g., `rm -rf`, running downloaded scripts). Requires strong user confirmation (e.g., typing the full word 'confirm').
     FORBIDDEN = 50       # Actions that the AI is explicitly forbidden from performing under any circumstances. Attempting these actions should result in an immediate halt and error.
 
+
+class UserConfirmation(Enum):
+    """Possible results of a user confirmation dialog."""
+    YES = 1
+    NO = 2
+    ALL = 3
+    CANCEL = 4
+    SHOW_MORE = 5
+
+    @staticmethod
+    
+    def is_confirmation(value: 'UserConfirmation') -> bool:
+        return value in [UserConfirmation.YES,
+                         UserConfirmation.ALL]
+
+
 class UserConfig(BaseModel):
     """Stores user specific data, like names, emails, and api keys.
     Usually stored in a .ghostcodeconfig file, in a platform specific location. The user settings are used across multiple ghostcode projects, and so aren't stored in the .ghostcode project folder.
@@ -1005,9 +1021,15 @@ class Program:
     project: Optional[Project]
     worker_box: Ghostbox
     coder_box: Ghostbox
+
+
+    # holds the actions that are processes during single interactions. FIFO style
     action_queue: List[Action] = field(
         default_factory = lambda: [],
     )
+
+    # flag indicating wether the user wants all actions in the queue to be auto-confirmed during a single interaction.
+    action_queue_yolo: bool = False
     
     user_config: UserConfig = field(
         default_factory = UserConfig,
@@ -1109,26 +1131,29 @@ class Program:
         logger.info(f"Pushing action {type(action)} to the front of the action queue.")
         self.action_queue = [action] + self.action_queue
 
-    def confirm_action(self, action: Action, agent_clearance_level: ClearanceRequirement = ClearanceRequirement.AUTOMATIC, agent_name: str = "System") -> bool:
+    def confirm_action(self, action: Action, agent_clearance_level: ClearanceRequirement = ClearanceRequirement.AUTOMATIC, agent_name: str = "System") -> UserConfirmation:
         """Interactively acquire user confirmation for a given action.
         When an action needs to be confirmed, there is usually some agent who wants to perform the action (e.g. ghostcoder or ghostworker). The agent's current clearance level is provided for context."""
 
-        msg = f"{agent_name} wants to perform {action.__class__.__name__}."
+        print(f"{agent_name} wants to perform {action.__class__.__name__}.")
         abridge = 80 # type: Optional[int]
         try:
             while True:
-                choice = input("Permit? yes (y), no (n), yes to all (a), or show more info (?, default):")
+                choice = input("Permit? yes (y), no (n), yes to all (a), cancel all (q), or show more info (?, default):")
                 match choice:
                     case "y":
                         logger.info("User confirmed action.")
-                        return True
+                        return UserConfirmation.YES
                     case "n":
                         logger.info("User denied action.")
-                        return False
+                        return UserConfirmation.NO
                     case "a":
                         # FIXME: this should implement a default confirm for all confirmation dialogs that happen during the current run_action_queue execution.
                         logger.info("YOLO")
-                        return True
+                        return UserConfirmation.ALL
+                    case "q":
+                        logger.info("User canceled all action requests.")
+                        return UserConfirmation.CANCEL
                     case _:
                         # cover "?", empty input, and anything else, as showing more nformation is generally a safe option.
                         print(show_model(
@@ -1143,16 +1168,16 @@ class Program:
         except EOFError as e:
             print(f"Canceled.")
             logger.info(f"User exited confirmation dialog with EOF. Defaulting to deny.")
-            return False
+            return UserConfirmation.CANCEL
         except Exception as e:
             print(f"Action canceled. Error: {e}.")
             logger.error(f"Encountered error during user confirmation dialog. Defaulting to deny. Error: {e}")
             logger.debug(f"Full traceback:\n{traceback.format_exc()}")
-            return False
+            return UserConfirmation.CANCEL
 
         # unreachable but ok
         logger.info(f"Follow the white rabbit.")
-        return False
+        return UserConfirmation.CANCEL
                 
 
 

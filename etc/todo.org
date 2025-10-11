@@ -30,3 +30,5 @@ Single asterisk (org-mode) headings indicate canban columns (except this 'about 
 * done
 Create function to reliably replace or create code based on CoderResponsePart (possibly using worker).
 Integrate worker into interact mode.
+Add clearance types.
+Add basic confirmation dialog.
