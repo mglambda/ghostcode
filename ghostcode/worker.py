@@ -7,19 +7,19 @@ import json
 import logging
 from ghostcode import types
 from ghostcode.types import Program
-from ghostcode.utility import levenshtein, time_function_with_logging
+from ghostcode.utility import levenshtein, time_function_with_logging, show_model, timestamp_now_iso8601
 import tempfile
 
 # --- Logging Setup ---
 logger = logging.getLogger('ghostcode.worker')
 
-def actions_from_response_parts(prog: Program, parts: List[types.CoderResponsePart]) -> List[types.Action]:
+def actions_from_response_parts(prog: Program, parts: List[types.LLMResponsePart]) -> List[types.Action]:
     """Transform a list of response parts from the coder LLM into a list of actions.
     This is not a 1 to 1 mapping. You may end up with an empty list if e.g. all the response parts are just discussion text. Only code parts and similar are transformed into actions."""
     # atm we have prog only because we might need more context here in the future
     logger.debug(f"actions_from_response_parts with {len(parts)} parts: {[parts.__class__.__name__ for part in parts]}")
     
-    def action_from_part(part: types.CoderResponsePart) -> Optional[types.Action]:
+    def action_from_part(part: types.LLMResponsePart) -> Optional[types.Action]:
         match part:
             case types.TextResponsePart() as text_part:
                 # no action necessary
@@ -69,10 +69,8 @@ def run_action_queue(prog: Program) -> None:
                         case types.ActionResultFailure() as ar_failure:
                             logger.info(f"Failed to execute action {type(ar_failure.original_action)}. Reason: {ar_failure.failure_reason}")
                             logger.debug(f"Original action dump:\n{json.dumps(ar_failure.original_action.model_dump(), indent=4)}\n\nFailure result dump:\n{json.dumps(ar_failure.model_dump(), indent=4)}")
-                            # FIXME: here we probably want to invoke the worker to look at the queue and the logs and decide on what to do next (halt/more actions). Right now we just push a halt.
-                            prog.push_front_action(
-                                types.ActionHaltExecution(reason="Encountered failed action.")
-                            )
+                            for action in worker_recover(prog, ar_failure).actions:
+                                prog.push_front_action(action)
                         case types.ActionResultMoreActions() as ar_more:
                             logger.info(f"Got MoreAction result for {len(ar_more.actions)} actions. Action queue has finished {finished_actions}, remaining {len(prog.action_queue)}.")
                             for new_action in ar_more.actions:
@@ -391,3 +389,110 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
                     f"Minimum Levenshtein distance found: {min_total_distance}. "
                     f"Original code block:\n---\n{original_code_block}\n---")
 
+
+def make_prompt_worker_recover(prog: Program, failure: types.ActionResultFailure) -> str:
+    """Creates a prompt that can be sent to a worker LLM backend based on the current program context and a given failure result with the intention to recover from the failure."""
+
+    if prog.project is None:
+        msg = f"Null project while trying to construct a worker prompt. Please first intialize a project with `ghostcode init`."
+        logger.critical(msg)
+        raise RuntimeError(msg)
+    
+    # the question here is what to include and how to phrase the prompt.
+    # still very much WIP
+
+    prompt = ""
+
+    # metadata
+    if prog.project.project_metadata is not None:
+        prompt += prog.project.project_metadata.show()
+
+    # context files (probably the biggest chunk)
+    prompt += prog.project.context_files.show()
+
+    # interaction history
+    # FIXME: where to get this from: possibilities are 1. file (requires I/O), 2. prog (requires us to add a new attribute like _current_interaction_history), 3. use ghostbox history, which is automatically saved
+    # Currently we pick (3), since its easiest.
+    history_strs = [show_model(msg)
+                    for msg in prog.coder_box.history()
+                    if msg.role != "system"]
+    prompt += f"""## Interaction History
+
+```yaml
+{"---".join(history_strs)}
+```
+
+"""    
+
+
+    # logs
+    if (log_str := prog.show_log(tail=20)) is None:
+        log_str = ""
+    prompt += f"""## Program Log
+
+```txt
+    {log_str}
+```
+
+"""    
+    
+    # The worker should probably know the time in the same format as the log files.
+    prompt += f"## Current time\n\n{timestamp_now_iso8601()}\n\n"
+
+    # the actual prompty bit
+    prompt += f"""## User prompt
+    
+The system has failed to execute an action, with the following failure result data:
+
+```yaml
+{show_model(failure)}
+```    
+
+The program logs above may contain additional information about the failure.
+    
+Please respond with one or more response parts that likely resolve the failure and yield a successful result for the user's request from the interaction history above. If you deem the problem to not be immediately resolvable with your available responses, please respond in a way that let's you acquire the information to resolve the problem in the future, or consult with the coder LLM. If you consider this failure to be truly unresolvable even with additional information, you may respond end interaction part, which halts the system and will request user intervention.
+"""
+
+    return prompt
+
+def worker_recover(prog: Program, failure: types.ActionResultFailure) -> types.ActionResultMoreActions:
+    """Recover after a failed action on the action queue.
+    This feeds the last failure result and a report of the general situation to the worker LLM, with the goal of generating one or more actions that lead to success.
+    The exact method of recovery is intentionally unspecific as it is left to the LLM to decide on a recovery plan.
+    Example: An ActionFileEdit failed because the original code block was insufficient to find a replace. The worker then generates an action that requests clarification from the coder LLM, possibly generating a more specific and precise original code block.
+    """
+    # we might error during LLM query    
+    try:
+        logger.info("Querying ghostworker for recovery.")
+        worker_response = prog.worker_box.new(
+            types.WorkerResponse,
+            make_prompt_worker_recover(prog, failure),
+        )
+        logger.timing(f"ghostworker performance statistics:\n{showTime(prog.worker_box._plumbing, [])}") # type: ignore
+
+        # FIXME: should we add response to the interaction_history?            
+        actions = actions_from_response_parts(prog, worker_response.contents) 
+
+        # we could just return a list of actions
+        # but using the types.MoreActions wrapper we can keep a semantic grouping for actions
+        # which is structure that we would otherwise lose
+        return types.ActionResultMoreActions(
+            actions=actions
+        )
+                
+                
+    except Exception as e:
+        logger. error(f"Error during worker recovery attempt. Reason: {e}")
+        logger.debug(f"Dump of original failure:\n{json.dumps(failure.model_dump(), indent=4)}")
+        return types.ActionResultMoreActions(
+            actions=[types.ActionHaltExecution(
+                reason=f"During recovery from a failed action, an error was encountered: {e}.\n\nOriginal failure reason: {failure.failure_reason}."
+            )]
+            )
+
+    # this should be unreachable but you never know and also mypy complains
+    return types.ActionResultMoreActions(
+        actions=[types.ActionHaltExecution(
+            reason="Recovery from failed action was inconclusive. This is weird and you should never actually be reading this message. Original failure reason: {failure.failure_reason}"
+        )]
+    )

@@ -340,3 +340,11 @@ def show_model(obj: BaseModel, heading: str ="", abridge: Optional[int] = 80) ->
         sort_keys=False)
 
 
+def _show_model(object: BaseModel) -> str:
+    """Returns a string representation of a pydantic model in YAML format."""
+    return yaml.dump(
+        object.model_dump(),
+        sort_keys=False,
+        default_flow_style=False,
+    )
+
