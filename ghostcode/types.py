@@ -1211,7 +1211,10 @@ class Program:
     worker_box: Ghostbox
     coder_box: Ghostbox
 
-
+    tty: shell.VirtualTerminal = field(
+        default_factory = lambda: shell.VirtualTerminal(),
+    )
+    
     # holds the actions that are processes during single interactions. FIFO style
     action_queue: List[Action] = field(
         default_factory = lambda: [],

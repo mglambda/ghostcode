@@ -3,8 +3,8 @@ import os
 import threading
 import feedwater
 from typing import *
-from ghostcode.utility import timestamp_now_iso8601
-from dataclass import dataclass, field
+from ghostcode.utility import timestamp_now_iso8601, show_model
+from dataclasses import dataclass, field
 import logging
 
 # --- Logging Setup ---
@@ -34,7 +34,10 @@ class InteractionLine(BaseModel):
         default_factory = timestamp_now_iso8601,
         description = "The (relatively accurate) time at which the line was input or read."
     )
-            
+
+    def show_xml(self) -> str:
+        return f"""<msg timestamp="{self.timestamp}">{self.text}</msg>"""
+        
 class ShellInteraction(BaseModel):
     """Represents one command execution in a virtual terminal shell.
     An interaction may be completed, in which case the exit_code field will contain the executed operation's exit code, or still be in progress, in which case the exit_code field will be None.""" 
@@ -73,6 +76,38 @@ class ShellInteraction(BaseModel):
         description = "The timestampe at which the interaction ended."
     )
 
+    def show(self) -> str:
+        """Returns a basic but complete serialization of the interaction as a string.
+        Although this can be used by an LLM, if you want a string representation optimized for LLM contexts, use the other showers, e.g. show_xml."""
+        return show_model(self)
+
+    def show_xml(self) -> str:
+        """Returns a string representation of the interaction formatted with made-up XML.
+        This tends to be easy to understand for an LLM."""
+        end_str = f"timestanp-end=\"{self.time_end}\"" if self.time_end is not None else ""
+        exit_code_str = f"exit-code=\"{self.exit_code}\"" if self.exit_code is not None else ""
+        status_str = 'status="running"' if self.exit_code is None else 'status="finished"'
+
+        stdin_str = "\n".join([msg.show_xml() for msg in self.stdin])
+        stdout_str = "\n".join([msg.show_xml() for msg in self.stdout])
+        stderr_str = "\n".join([msg.show_xml() for msg in self.stderr])
+        
+        return f"""<shell-interaction timestamp-start="{self.time_start}" {end_str} {status_str} {exit_code_str}>
+<command>
+{self.original_command}
+</command>
+<stdin>
+{stdin_str}
+</stdin>
+<stdout>
+{stdout_str}
+</stdout>
+<stderr>
+{stderr_str}
+</stderr>
+</shell-interaction>
+"""
+        
 class ShellInteractionHistory(BaseModel):
     """Keeps track of shell interaction both completed ones in the past and current ongoing ones."""
 
@@ -113,45 +148,41 @@ class VirtualTerminal:
     This type never raises errors. Check VirtualTerminal.is_ready() and VirtualTerminal.error for the VirtualTerminalError type."""
     
     env: os._Environ = field(
-        default=os.environ,
-        description="The shell environment to use. By default, the parent's process environment is used."
+        default_factory=lambda: os.environ,
     )
     
     history: ShellInteractionHistory = field(
         default_factory = ShellInteractionHistory,
-        description = "Contains past shell interactions both completed and ongoing."
     )
-    
+
+    # contains a small error object if an error was encountered in the underlying process, None otherwise
     error: Optional[VirtualTerminalError] = field(
         default = None,
-        description = "Is none if no error has occurred since initialization. Contains a VirtualTerminalError otherwise."
     )
 
+    # amount of time in seconds that passes between polling the underlying process
     refresh_rate: float = Field(
         default= 1.0,
-        description = "Amount of time in seconds that passes between polling the underlying shell process for output."
     )
 
-
+    # The process object that holds the actual shell instance. Runs asynchronously and is internally synchronized.
     _process: Optional[feedwater.Process] = field(
         init = False,
         default = None,
-        description = "The process object that holds the actual shell instance. Runs asynchronously and is internally synchronized."
     )
 
     _poll_thread: Optional[threading.Thread] = field(
         default = None,
-        description = "The thread that continuously refreshes the output."
     )
 
+    # semaphore indidcating wether the polling thread should keep running
     _poll_running: threading.Event = field(
-        default_factory = threading.Event,
-        description = "Semaphore indicating wether the polling thread should keep running."
+        default_factory = lambda: threading.Event(),
     )
 
+    # Indicates that the  polling thread has finished its operation.
     _poll_done: threading.Event = field(
-        default_factory = lambda: threading.Event,
-        description = "Indicates that a the polling thread has finished its operation."
+        default_factory = lambda: threading.Event(),
     )
 
     def __post_init__(self) -> None:
