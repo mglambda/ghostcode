@@ -6,6 +6,7 @@ from typing import *
 from ghostcode.utility import timestamp_now_iso8601, show_model
 from dataclasses import dataclass, field
 import logging
+import time
 
 # --- Logging Setup ---
 logger = logging.getLogger('ghostcode.shell')
@@ -187,14 +188,15 @@ class VirtualTerminal:
 
     def __post_init__(self) -> None:
         logger.info("Started virtual terminal.")        
-        
+        self._poll_done.set() # Initially set to allow first poll thread to start
         
     def _start_interaction(self, terminal_input: str) -> None:
         
         self.history.new(terminal_input)
-        self.process = feedwater.run(terminal_input, env=self.env)
-        if not(self.process.is_running()):
-            logger.debug(f"dumping virtual terminal outputs.\nstdout:\n{self.process.get_stdout()}\n\nstderr:\n{self.process.stderr()}\n")
+        self._process = feedwater.run(terminal_input, env=self.env) # Fixed: self.process -> self._process
+        if not(self._process.is_running()):
+            logger.debug(f"dumping virtual terminal outputs.\nstdout:\n{self._process.get()}" # Fixed: get_stdout() -> get()
+                         f"\n\nstderr:\n{self._process.get_error()}\n") # Fixed: stderr() -> get_error()
             error_msg = f"Failed to start virtual terminal interaction."
             logger.error(error_msg)
             self.error = VirtualTerminalError(message=error_msg)
@@ -207,11 +209,15 @@ class VirtualTerminal:
             logger.warning("Virtual terminal polling thread being started but another thread is already running. Ignoring start request.")
             return
 
-        if not(self._poll_done.is_set()):
-            logger.warning(f"Virtual terminal polling thread being started but another thread is not done cleaning up. Ingoring the start request.")
-            return
+        if self._poll_thread and self._poll_thread.is_alive(): # Check if previous thread is still alive
+            logger.warning(f"Virtual terminal polling thread being started but another thread is still alive. Waiting for it to finish.")
+            self._poll_done.wait(timeout=5) # Wait for a bit for cleanup
+            if self._poll_thread.is_alive():
+                logger.error("Previous poll thread did not finish cleanup. This might lead to issues.")
+                # Potentially raise an error or force cleanup if it's critical
 
-        # flags are in a sane state
+        self._poll_done.clear() # Clear the done flag for the new poll cycle
+        self._poll_running.set() # Set the running flag
 
         def update_history():
             if self._process is None:
@@ -224,7 +230,7 @@ class VirtualTerminal:
             # the only weird thing is that feedwater includes newlines and we don't want those.
             for msg_out in self._process.get():
                 current_interaction.stdout.append(
-                    ShellInterAction(
+                    InteractionLine( # Fixed: ShellInterAction -> InteractionLine
                         text = msg_out[:-1] # cut off newline
                     )
                 )
@@ -232,7 +238,7 @@ class VirtualTerminal:
             for msg_err in self._process.get_error():
                 current_interaction.stderr.append(
                     InteractionLine(
-                        text = msg_error[:-1] # cut off newline
+                        text = msg_err[:-1] # cut off newline
                     )
                 )
 
@@ -240,18 +246,16 @@ class VirtualTerminal:
         
         def poll():
             """Read stdout and stderr of the underlying shell and log it in the history."""
-            if self._poll_done.is_set():
-                logger.warning(f"Virtual terminal is starting a new polling thread, while the old one hasn't finished.")
-                self._poll_done.clear()
-            
-            self._poll_running.set()
+            logger.debug("Virtual terminal polling thread started.")
             while self._poll_running.is_set():
                 time.sleep(self.refresh_rate)
                 
-                if not(self._process.is_running()):
+                if self._process and not self._process.is_running():
                     # it may have finished or crashed
                     # exit code is dealt with in save
-                    self.running.clear()
+                    self._poll_running.clear() # Fixed: self.running.clear() -> self._poll_running.clear()
+                    logger.debug("Underlying process finished, stopping polling thread.")
+                    break # Exit loop immediately
 
                 update_history()
 
@@ -260,47 +264,51 @@ class VirtualTerminal:
             update_history()
             if self._process is not None:
                 # FIXME: in the future, we may want to expand the exit_code with our own type
-                self.interaction_history.save(exit_code=self._process.exit_code())
+                self.history.save(exit_code=self._process.exit_code())
             self._poll_done.set()
+            logger.debug("Virtual terminal polling thread finished.")
             
         self._poll_thread = threading.Thread(target=poll, daemon=True)
+        self._poll_thread.start() # Fixed: Missing .start()
+        logger.debug("Virtual terminal polling thread assigned and started.")
         
     def _close_process(self) -> None:
         """Wrap up bookkeeping for a completed process and delete the process object."""
         self._poll_running.clear()
-        self._poll_done.wait()
+        self._poll_done.wait() # This waits for the polling thread to finish its cleanup
+        if self._process:
+            self._process.close() # Ensure feedwater process is explicitly closed
         self._process = None
         
     def ready(self) -> bool:
         """Returns true if the virtual terminal is ready for input."""
-        # always ready lol
+        # currently we are always ready because there are only 3 cases
+        # 1. no process is running -> ok terminal may have just started and we can start a process
+        # 2. process exists but has finished -> we are ready for the next process
+        # 3. process exists and is running -> in this case we might feed into its stdin (imagine pactl, a python repl, any program that continusously consumes stdin)
         return True
-
+    
     def write_line(self, terminal_input: str) -> None:
         """Writes a line to the virtual terminal's stdin.
         This method is asynchronous and will return immediately."""
 
-        if self._process is None:
-            # no underlying process is being executed
+        if self._process is None or not self._process.is_running(): # Check if no process is running or if the current one has finished
+            # No underlying process is being executed or the previous one finished
+            if self._process is not None: # If a process just finished, ensure cleanup
+                self._close_process()
             self._start_interaction(terminal_input)
             self._start_polling()            
         else:
-            # an underlying process has been started but is in an indeterminate state.
-            if self._process.is_running():
-                # it's still running and we may want to feed things into standard input (imagine an LLM interacting with pactl).
-                self._feed(terminal_input)
-            else:
-                # the process has finished either successfully or otherwise
-                # we will interpret the write as starting a new process
-                # human's do this sometimes by accident and usually just get "command not found". We treat the LLM no different.
-                self._close_process()
-                self.write_line(terminal_input)
+            # An underlying process is still running
+            self._feed(terminal_input)
             
 
     def _feed(self, line: str) -> None:
         """Feed one line into the underlying stdin."""
         if self._process is None:
+            logger.warning(f"Virtual terminal tried to write to stdin but no process is running. Input '{line}' ignored.")
             return
+        
         if (current_interaction := self.history.current_interaction) is None:
             logger.warning(f"Virtual terminal tried to write to stdin but no interaction history is present. The write may procure, but interaction history is unchanged.")
         else:            
