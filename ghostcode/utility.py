@@ -8,6 +8,16 @@ import functools
 import logging
 import yaml
 
+# fixing python's reduce
+A = TypeVar("A") # accumulator
+B = TypeVar("B") # values
+
+def foldl(f: Callable[[B, A], A], initial_accumulator_value: A, xs: Iterable[B]) -> A:
+    acc = initial_accumulator_value
+    for x in xs:
+        acc = f(x, acc)
+    return acc
+    
 # A comprehensive mapping of file extensions to their associated programming languages.
 # This dictionary is designed to provide common language identifiers suitable for
 # Markdown code blocks (e.g., ```python, ```javascript).

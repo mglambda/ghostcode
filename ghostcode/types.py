@@ -13,6 +13,7 @@ import ghostbox.definitions # type: ignore
 from ghostbox.definitions import LLMBackend # type: ignore
 from ghostbox import Ghostbox
 from ghostcode.utility import language_from_extension, timestamp_now_iso8601, show_model, PydanticEnumDumper
+from ghostcode import shell
 import appdirs # Added for platform-specific config directory
 
 # --- Logging Setup ---
@@ -409,28 +410,22 @@ class TextResponsePart(BaseModel):
 class ShellCommandPart(BaseModel):
     """Represents a shell command that will be run.
     The output of the command will either be used for further processing by the worker, sent to the coder backend, shown to the user, or stored in a file.
-    By default, commands are run relative to the project root directory.
-    Commands will be run using the python subprocess module's Popen class. Only the "args" argument is required. kAdditional Popen arguments can be provided with the additional_popen_kwargs dictionary."""
+    By default, commands are run relative to the project root directory."""
 
-    args: str | List[str] = Field(
-        description='A list of arguments to the shell command invocation, e.g. ["ls" "-la"]. Alternatively, when the shell=True keyword argument is provided, it can be a single string containing the entire command passed to a shell.'
-    )
-    
-    additional_popen_kwargs: Dict[str, Any] = Field(
-        default_factory = lambda: {},
-        description="Additional arguments that will be passed to the subprocess.Popen constructor."
+    command: str = Field(
+        description = "The full shell command that will be run in a virtual terminal."
     )
 
     reason: str = Field(
         description="A short, informative statement that describes the reason and intent behind this shell command. This will be shown to the user and stored in the logs."
     )
-
+    
     def show_cli(self) -> str:
         return f"""## Shell command
 {self.reason}
 
 ```bash
- $> {" ".join(self.args)}
+ $> {self.command}
 ```
         """
 
@@ -690,6 +685,7 @@ class ActionShellCommand(BaseModel):
     """Action for executing shell commands.
     This is one security nightmare, but I guess we are doing this!
     This type shares most of its structure with the ShellCommandResponsePart and so contains it in full."""
+    
 
     clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.DANGEROUS
 
@@ -697,9 +693,8 @@ class ActionShellCommand(BaseModel):
         description="The various parameters required to invoke subprocess.Popen. Stored in a Part object for convenience and reuse."
     )
 
-    def run(self, clearance: Optional[ClearanceRequirement] = None) -> subprocess.Popen:
-        """Executes the shell command.
-        The returned object carries stdout and stderr."""
+    def run(self, tty: shell.VirtualTerminal, clearance: Optional[ClearanceRequirement] = None) -> None:
+        """Executes the shell command asynchronously."""
 
         # Although this parameter is optional and not really used, it exists here and is kchecked to force people to
         # state it explicitly at the call site
@@ -708,11 +703,9 @@ class ActionShellCommand(BaseModel):
 
         if clearance.value < self.clearance_required.value:
             raise PermissionError(f"Insufficient clearance of {clearance.name} for ActionShellCommand.run. Clearance required: {self.clearance_required.name}")
-
-        return subprocess.Popen(
-            args=self.content.args,
-            **self.content.additional_popen_kwargs
-        )
+        
+        logger.info(f"Running shell command: {" ".join(self.content.command)}")
+        logger.debug("Shell command dump:\n{self.content.show()}")
 
 # These are a bunch of small classes for a ContextAlteration type
 # I wish we had less verbose ways to do sum types but oh well
@@ -741,7 +734,7 @@ class HasClearance(Protocol):
 
     clearance_required: ClassVar[ClearanceRequirement]
     
-type     Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution
+type     Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionAlterContext
 
 class ActionResultOk(BaseModel):
     """Represents a successfully executed action."""

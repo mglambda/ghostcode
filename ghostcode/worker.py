@@ -7,7 +7,8 @@ import json
 import logging
 from ghostcode import types
 from ghostcode.types import Program
-from ghostcode.utility import levenshtein, time_function_with_logging, show_model, timestamp_now_iso8601
+import time
+from ghostcode.utility import levenshtein, time_function_with_logging, show_model, timestamp_now_iso8601, foldl
 import tempfile
 
 # --- Logging Setup ---
@@ -19,22 +20,45 @@ def actions_from_response_parts(prog: Program, parts: List[types.LLMResponsePart
     # atm we have prog only because we might need more context here in the future
     logger.debug(f"actions_from_response_parts with {len(parts)} parts: {[parts.__class__.__name__ for part in parts]}")
     
-    def action_from_part(part: types.LLMResponsePart) -> Optional[types.Action]:
+    if not(parts):
+        return []
+
+    def actions_from_part(part: types.LLMResponsePart) -> List[types.Action]:
         match part:
             case types.TextResponsePart() as text_part:
                 # no action necessary
-                return None
+                return []
             case types.CodeResponsePart() as code_part:
-                return types.ActionHandleCodeResponsePart(
+                return [types.ActionHandleCodeResponsePart(
                     content=code_part
+                )]
+            case types.ShellCommandPart() as shell_command_part:
+                return [types.ActionShellCommand(
+                    content=shell_command_part,
+                )]
+            case types.FilesLoadPart() as files_load_part:
+                return [types.ActionAlterContext(
+                    context_alteration=types.ContextAlterationLoadFile(filepath=filepath)
                 )
+                        for filepath in files_load_part.filepaths]
+            case types.FilesUnloadPart() as files_unload_part:
+                return [types.ActionAlterContext(
+                    context_alteration=types.ContextAlterationUnloadFile(filepath=filepath)
+                )
+                        for filepath in files_unload_part.filepaths]
+            case types.EndInteractionPart() as end_interaction_part:
+                # FIXME: we might want something softer than halt in the future, something that stop interactions with LLMs but resolves actions that are still on the queue
+                return [types.ActionHaltExecution(
+                    reason=f"LLM ended their interaction. Reason: {end_interaction_part.reason}"
+                )]
             case _:
-                return None
+                return []
             
-    return [action
-            for part in parts
-            if (action := action_from_part(part))]
+    return foldl(lambda part, actions: actions_from_part(part) + actions,
+                 [],
+                 parts)
 
+                  
 @time_function_with_logging
 def run_action_queue(prog: Program) -> None:
     """Executes and removes actions at the front of the action queue until the queue is empty or the halt action is popped.
@@ -136,6 +160,14 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                 # No operation needed for ActionDoNothing
                 logger.info("Action: Do Nothing")
                 return types.ActionResultOk()
+            case types.ActionShellCommand as shell_command_action:
+                logger.info(f"shell command action")
+                start_t = time.perf_counter()
+                end_t = time.perf_counter()
+                # FIXME: add wait action
+                return types.ActionResultMoreActions(
+                    actions=[]
+                )
             case _:
                 # Handle unknown action types
                 failure_message = f"Received an unknown action type: {type(action).__name__}. This action cannot be executed."
