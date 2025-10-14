@@ -1,5 +1,7 @@
 # shell.py
 import os
+import shlex
+import json
 import threading
 import feedwater
 from typing import *
@@ -67,6 +69,12 @@ class ShellInteraction(BaseModel):
         description = "The exit code of the interaction's underlying operation. None if it is still ongoing."
     )
 
+
+    cwd: str = Field(
+        default = "",
+        description = "The current working directory of the command."
+    )
+    
     time_start: str = Field(
         default_factory = timestamp_now_iso8601,
         description = "The timestampe at which the interaction started."
@@ -88,27 +96,49 @@ class ShellInteraction(BaseModel):
         end_str = f"timestanp-end=\"{self.time_end}\"" if self.time_end is not None else ""
         exit_code_str = f"exit-code=\"{self.exit_code}\"" if self.exit_code is not None else ""
         status_str = 'status="running"' if self.exit_code is None else 'status="finished"'
-
-        stdin_str = "\n".join([msg.show_xml() for msg in self.stdin])
-        stdout_str = "\n".join([msg.show_xml() for msg in self.stdout])
-        stderr_str = "\n".join([msg.show_xml() for msg in self.stderr])
+        wrap_cdata = lambda w: f"<![CDATA[\n{w}\n]]>"
+        stdin_str = wrap_cdata("\n".join([msg.text for msg in self.stdin])) if self.stdin else ""
+        stdout_str = wrap_cdata("\n".join([msg.text for msg in self.stdout])) if self.stdout else ""
+        stderr_str = wrap_cdata("\n".join([msg.text for msg in self.stderr])) if self.stderr else ""
         
         return f"""<shell-interaction timestamp-start="{self.time_start}" {end_str} {status_str} {exit_code_str}>
 <command>
 {self.original_command}
 </command>
-<stdin>
-{stdin_str}
-</stdin>
-<stdout>
-{stdout_str}
-</stdout>
-<stderr>
-{stderr_str}
-</stderr>
+<stdin>{stdin_str}</stdin>
+<stdout>{stdout_str}</stdout>
+<stderr>{stderr_str}</stderr>
 </shell-interaction>
 """
+
+
+    def _dict_for_json(self) -> Dict[str, Any]:
+        data = {}
         
+        # this is just to have a more inuitive ordering for the LLM, e.g. header-ish keys go to the top
+        data["command"] = ""
+        data["cwd"] = ""
+        data["status"] = ""
+        
+        data |= self.model_dump()
+
+        # slight renaming for more LLM clarity
+        data["command"] = data["original_command"]
+        del data["original_command"]
+
+        def text_only(key):
+            data[key] = "\n".join([msg["text"] for msg in data[key]])
+            
+        for k in ["stdin", "stdout", "stderr"]:
+            text_only(k)
+        data["status"] = "running" if self.exit_code is None else "finished"
+        return data
+    
+    def show_json(self) -> str:
+        """Returns a json representation of the shell interaction.
+        This is not guaranteed to be equivalent to json.dumps(self.__dict__). Do not use this for object serialization/deserialization."""
+        return json.dumps(self._dict_for_json, indent=4)
+
 class ShellInteractionHistory(BaseModel):
     """Keeps track of shell interaction both completed ones in the past and current ongoing ones."""
 
@@ -122,6 +152,20 @@ class ShellInteractionHistory(BaseModel):
         description = "Contains the current shell interaction if a process is ongoing, None otherwise."
     )
 
+    def show(self) -> str:
+        return show_model(self)
+
+    def show_json(self) -> str:
+        """Returns a json representation of the interaction history.
+        This is **not** equivalent to calling json.dumps(self.__dict__). Do not use this for object serialization/deserialization. The output of this function is intended for LLMs and may not conform at all to the pydantic definitions of the model."""
+        data = [interaction._dict_for_json() for interaction in self.past_interactions] + ([self.current_interaction._dict_for_json()] if self.current_interaction is not None else [])
+        return json.dumps(data, indent=4)
+        
+    def show_xml(self) -> str:
+        """Returns a string representation in made-up XML syntax, which is structured and can be easier for LLMs to process."""
+        current_interaction_str = self.current_interaction.show_xml() if self.current_interaction is not None else ""
+        return "\n".join([interaction.show_xml() for interaction in self.past_interactions]) + "\n" + current_interaction_str
+        
     def save(self, exit_code: Optional[int] = None) -> None:
         """Moves the current interaction into the past interactions."""
         if self.current_interaction is None:
@@ -151,6 +195,11 @@ class VirtualTerminal:
     env: os._Environ = field(
         default_factory=lambda: os.environ,
     )
+
+    # we model the current working directory internally. This is not perfect but for now it works.
+    cwd: str = field(
+        default_factory = os.getcwd
+    )
     
     history: ShellInteractionHistory = field(
         default_factory = ShellInteractionHistory,
@@ -162,7 +211,7 @@ class VirtualTerminal:
     )
 
     # amount of time in seconds that passes between polling the underlying process
-    refresh_rate: float = Field(
+    refresh_rate: float = field(
         default= 1.0,
     )
 
@@ -191,9 +240,21 @@ class VirtualTerminal:
         self._poll_done.set() # Initially set to allow first poll thread to start
         
     def _start_interaction(self, terminal_input: str) -> None:
+        if (new_cwd := self._try_parse_cd(terminal_input)) is not None:
+            logger.debug(f"Parsed cd in input `{terminal_input}`.")
+            if os.path.isdir(new_cwd):
+                logger.debug(f"New CWD is `{new_cwd}`.")
+                self.cwd = new_cwd
+            else:
+                logger.debug(f"New CWD `{new_cwd}` does not appear to be a directory. No change.")
         
-        self.history.new(terminal_input)
-        self._process = feedwater.run(terminal_input, env=self.env) # Fixed: self.process -> self._process
+        self.history.new(terminal_input, cwd=self.cwd)
+        self._process = feedwater.run(
+            terminal_input,
+            env=self.env,
+            popen_kwargs = {"cwd": self.cwd}
+        )
+        
         if not(self._process.is_running()):
             logger.debug(f"dumping virtual terminal outputs.\nstdout:\n{self._process.get()}" # Fixed: get_stdout() -> get()
                          f"\n\nstderr:\n{self._process.get_error()}\n") # Fixed: stderr() -> get_error()
@@ -318,3 +379,28 @@ class VirtualTerminal:
             )
         )
         self._process.write_line(line)
+
+    def _try_parse_cd(self, shell_command: str) -> Optional[str]:
+        """Tries to extract strings like "cd build/test" or similar ones from the shell command to keep track of the CWD.
+        Returns the new directory if successful, None if no directory change was detected.
+        Note: This is not effective in all cases. Things like `m̀kdir build && cd build` won't be caught yet."""
+        # this is purely heuristic
+        # first we filter out commands with pipes and semicolons and && because we can't handle those
+        blacklist = ["; ", " | ", " >", " <", " && "]
+        for word in blacklist:
+            if word in shell_command:
+                # just give up. for now we accept that the cwd may be faulty
+                return None
+
+        
+        match shlex.split(shell_command):
+            case ["cd"]:
+                # home directory
+                # FIXME: this breaks if the LLM has su-ed into another user but oh well
+                return os.path.expanduser("~")
+            case ["cd", target_dir]:
+                return os.path.abspath(os.path.join(self.cwd, os.path.expanduser(target_dir)))                
+            case ["cd", target_dir, *rest]:
+                logger.warning(f"Got weird cd command during cwd parse attempt: Command: `{shell_command}`")
+                return os.path.abspath(os.path.join(self.cwd, os.path.expanduser(target_dir)))
+        return None
