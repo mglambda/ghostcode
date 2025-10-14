@@ -336,7 +336,7 @@ class CodeResponsePart(BaseModel):
     )
     notes: List[str] = Field(
         default_factory = lambda: [],
-        description = "Concise notes, phrased as pull request comments, explaining the rationale, design decisions, assumptions, or potential implications of the generated code. This helps with code review and understanding the intent. Can be left empty if the change is self-explanatory."
+        description = "Concise notes, phrased as pull request comments, explaining the rationale, design decisions, assumptions, or potential implications of the generated code. This helps with code review and understanding the intent. Can be left empty if the change is self-explanatory. Remember that commit messages use present imperative tense."
     )
 
     title: str = Field(

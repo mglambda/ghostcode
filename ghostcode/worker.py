@@ -446,7 +446,7 @@ def make_prompt_worker_recover(prog: Program, failure: types.ActionResultFailure
     # FIXME: where to get this from: possibilities are 1. file (requires I/O), 2. prog (requires us to add a new attribute like _current_interaction_history), 3. use ghostbox history, which is automatically saved
     # Currently we pick (3), since its easiest.
     history_strs = [show_model(msg)
-                    for msg in prog.coder_box.history()
+                    for msg in prog.coder_box.get_history()
                     if msg.role != "system"]
     prompt += f"""## Interaction History
 
@@ -514,7 +514,7 @@ def worker_recover(prog: Program, failure: types.ActionResultFailure) -> types.A
                 
                 
     except Exception as e:
-        logger. error(f"Error during worker recovery attempt. Reason: {e}")
+        logger.exception(f"Error during worker recovery attempt. Reason: {e}")
         logger.debug(f"Dump of original failure:\n{json.dumps(failure.model_dump(), indent=4)}")
         return types.ActionResultMoreActions(
             actions=[types.ActionHaltExecution(

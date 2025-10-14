@@ -17,13 +17,38 @@ import glob
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
 import sys
-import json # For parsing config values
-import yaml # For ProjectConfig
-import appdirs # Added for UserConfig path
+import json
+import yaml
+import appdirs
 from ghostbox.definitions import LLMBackend # Added for API key checks
+from queue import Queue, Empty
 
 # logger will be configured after argument parsing
 logger: logging.Logger # Declare logger globally, will be assigned later
+
+
+class ExceptionListHandler(logging.Handler):
+    """Stores exceptions in a global list."""
+    def __init__(self, level=logging.NOTSET):
+        super().__init__(level)
+        self.exceptions = Queue()
+        
+    def emit(self, record):
+        if record.exc_info:
+            # record.exc_info is (type, value, tb)
+            formatted_exc = "".join(traceback.format_exception(*record.exc_info))
+            self.exceptions.put(formatted_exc)
+        # You could also store the raw record if needed
+        # self.exceptions.put(record)
+
+    def try_get_last_traceback(self) -> Optional[str]:
+        try:
+            return self.exceptions.get_nowait()
+        except Empty:
+            return None
+# Global exception handler. kWould be nicer to store in Program type but unfortunately we might handle exceptions ebfore program is fully constructed.
+EXCEPTION_HANDLER = ExceptionListHandler()
+
 
 def _configure_logging(log_mode: str, project_root: Optional[str], is_init: bool = False):
     """
@@ -32,6 +57,22 @@ def _configure_logging(log_mode: str, project_root: Optional[str], is_init: bool
     # Clear existing handlers to prevent duplicate logs if called multiple times
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
+
+
+    # global exception tracking
+    global EXCEPTION_HANDLER
+    logging.root.addHandler(EXCEPTION_HANDLER)
+
+    # Custom filter to suppress exc_info for other handlers
+    class SuppressExcInfoFilter(logging.Filter):
+        def filter(self, record):
+            # This filter is applied to handlers *after* EXCEPTION_HANDLER has processed it.
+            # So, EXCEPTION_HANDLER gets the original record with exc_info.
+            # For subsequent handlers, we clear exc_info so they don't print it.
+            record.exc_info = None
+            return True
+
+    suppress_exc_info_filter = SuppressExcInfoFilter()
 
     # define our own timing log level
     TIMING_LEVEL_NUM = 25
@@ -56,6 +97,7 @@ def _configure_logging(log_mode: str, project_root: Optional[str], is_init: bool
     if log_mode == "stderr":
         handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(formatter)
+        handler.addFilter(suppress_exc_info_filter) # Apply filter to suppress traceback printing
         logging.root.addHandler(handler)
         #print("Logging to stderr.", file=sys.stderr)
     elif log_mode == "file":
@@ -71,11 +113,13 @@ def _configure_logging(log_mode: str, project_root: Optional[str], is_init: bool
                 os.makedirs(os.path.dirname(log_filepath), exist_ok=True)
                 handler = logging.FileHandler(log_filepath)
                 handler.setFormatter(formatter)
+                handler.addFilter(suppress_exc_info_filter) # Apply filter to suppress traceback printing
                 logging.root.addHandler(handler)
                 # Also add a stderr handler for critical errors, so they are always visible
                 stderr_handler = logging.StreamHandler(sys.stderr)
                 stderr_handler.setFormatter(formatter)
                 stderr_handler.setLevel(logging.ERROR) # Only show ERROR and CRITICAL to stderr
+                stderr_handler.addFilter(suppress_exc_info_filter) # Apply filter to suppress traceback printing
                 logging.root.addHandler(stderr_handler)
                 #print(f"Logging to file: {log_filepath}", file=sys.stderr) # Inform user where logs are going
             except Exception as e:
@@ -90,6 +134,7 @@ def _configure_logging(log_mode: str, project_root: Optional[str], is_init: bool
                 print("WARNING: Project root or .ghostcode directory not found for file logging. Falling back to stderr.", file=sys.stderr)
             handler = logging.StreamHandler(sys.stderr)
             handler.setFormatter(formatter)
+            handler.addFilter(suppress_exc_info_filter) # Apply filter to suppress traceback printing
             logging.root.addHandler(handler)
 
 # --- Command Interface and Implementations ---
@@ -441,6 +486,13 @@ class InteractCommand(BaseModel, CommandInterface):
                 break
             elif line == "/lastrequest":
                 print(json.dumps(prog.coder_box.get_last_request(), indent=4))
+                continue
+            elif line == "/traceback":
+                global EXCEPTION_HANDLER
+                if (tr_str := EXCEPTION_HANDLER.try_get_last_traceback()) is not None:
+                    print(f"Displaying most recent exception below. Repeated calls of /traceback will display earlier exceptions.\n\n```\n{tr_str}```\n")
+                else:
+                    print("No recent tracebacks.")
                 continue
             elif line == "/show":
                 print(self.interaction_history.show())
