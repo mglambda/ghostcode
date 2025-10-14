@@ -50,9 +50,12 @@ class ExceptionListHandler(logging.Handler):
 EXCEPTION_HANDLER = ExceptionListHandler()
 
 
-def _configure_logging(log_mode: str, project_root: Optional[str], is_init: bool = False):
+def _configure_logging(log_mode: str, project_root: Optional[str], is_init: bool = False, secondary_log_filepath: Optional[str] = None):
     """
     Configures the root logger based on the specified mode and project root.
+    Primary logging is always directed to .ghostcode/log.txt if a project root exists and is writable.
+    If primary file logging fails or no project root is found, stderr becomes the primary target.
+    A secondary logging target can be configured via `log_mode` and `secondary_log_filepath`.
     """
     # Clear existing handlers to prevent duplicate logs if called multiple times
     for handler in logging.root.handlers[:]:
@@ -88,54 +91,61 @@ def _configure_logging(log_mode: str, project_root: Optional[str], is_init: bool
     # Set the root logger level to INFO by default
     logging.root.setLevel(logging.INFO)
     
-    if log_mode == "off":
-        logging.root.setLevel(logging.CRITICAL + 1) # Effectively disable all logging
-        return
-
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+    # --- Primary Logging: Always to .ghostcode/log.txt if project_root exists, else stderr ---
+    primary_file_handler_added = False
+    if project_root:
+        ghostcode_dir = os.path.join(project_root, ".ghostcode")
+        primary_log_filepath = os.path.join(ghostcode_dir, "log.txt")
+        try:
+            os.makedirs(os.path.dirname(primary_log_filepath), exist_ok=True)
+            file_handler = logging.FileHandler(primary_log_filepath)
+            file_handler.setFormatter(formatter)
+            file_handler.addFilter(suppress_exc_info_filter)
+            logging.root.addHandler(file_handler)
+            primary_file_handler_added = True
+        except Exception as e:
+            print(f"WARNING: Failed to set up primary file logging to {primary_log_filepath}: {e}. Primary logs will go to stderr.", file=sys.stderr)
+            stderr_error_handler = logging.StreamHandler(sys.stderr)
+            stderr_error_handler.setFormatter(formatter)
+            stderr_error_handler.setLevel(logging.ERROR) # Only show errors/critical from this handler
+            stderr_error_handler.addFilter(suppress_exc_info_filter)
+            logging.root.addHandler(stderr_error_handler)
+            logging.root.error(f"Failed to set up primary file logging: {e}", exc_info=True)
+    
+    # If primary file logging was not possible, ensure a default stderr handler is present.
+    if not primary_file_handler_added:
+        # Only add if no stderr handler is already present (e.g., from the error fallback above)
+        if not any(isinstance(h, logging.StreamHandler) and h.stream == sys.stderr for h in logging.root.handlers):
+            default_stderr_handler = logging.StreamHandler(sys.stderr)
+            default_stderr_handler.setFormatter(formatter)
+            default_stderr_handler.addFilter(suppress_exc_info_filter)
+            logging.root.addHandler(default_stderr_handler)
+
+    # --- Secondary Logging: Based on --logging parameter ---
     if log_mode == "stderr":
-        handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(formatter)
-        handler.addFilter(suppress_exc_info_filter) # Apply filter to suppress traceback printing
-        logging.root.addHandler(handler)
-        #print("Logging to stderr.", file=sys.stderr)
+        # Add a secondary stderr handler. Avoid duplicates if stderr is already a primary/default.
+        if not any(isinstance(h, logging.StreamHandler) and h.stream == sys.stderr for h in logging.root.handlers):
+            secondary_stderr_handler = logging.StreamHandler(sys.stderr)
+            secondary_stderr_handler.setFormatter(formatter)
+            secondary_stderr_handler.addFilter(suppress_exc_info_filter)
+            logging.root.addHandler(secondary_stderr_handler)
     elif log_mode == "file":
-        log_filepath = None
-        if project_root:
-            ghostcode_dir = os.path.join(project_root, ".ghostcode")
-            if os.path.isdir(ghostcode_dir):
-                log_filepath = os.path.join(ghostcode_dir, "log.txt")
-        
-        if log_filepath:
+        if secondary_log_filepath:
             try:
-                # Ensure the directory exists
-                os.makedirs(os.path.dirname(log_filepath), exist_ok=True)
-                handler = logging.FileHandler(log_filepath)
-                handler.setFormatter(formatter)
-                handler.addFilter(suppress_exc_info_filter) # Apply filter to suppress traceback printing
-                logging.root.addHandler(handler)
-                # Also add a stderr handler for critical errors, so they are always visible
-                stderr_handler = logging.StreamHandler(sys.stderr)
-                stderr_handler.setFormatter(formatter)
-                stderr_handler.setLevel(logging.ERROR) # Only show ERROR and CRITICAL to stderr
-                stderr_handler.addFilter(suppress_exc_info_filter) # Apply filter to suppress traceback printing
-                logging.root.addHandler(stderr_handler)
-                #print(f"Logging to file: {log_filepath}", file=sys.stderr) # Inform user where logs are going
+                os.makedirs(os.path.dirname(secondary_log_filepath), exist_ok=True)
+                secondary_file_handler = logging.FileHandler(secondary_log_filepath)
+                secondary_file_handler.setFormatter(formatter)
+                secondary_file_handler.addFilter(suppress_exc_info_filter)
+                logging.root.addHandler(secondary_file_handler)
             except Exception as e:
-                # Fallback to stderr if file logging fails
-                print(f"WARNING: Failed to set up file logging to {log_filepath}: {e}. Falling back to stderr.", file=sys.stderr)
-                handler = logging.StreamHandler(sys.stderr)
-                handler.setFormatter(formatter)
-                logging.root.addHandler(handler)
+                print(f"WARNING: Failed to set up secondary file logging to {secondary_log_filepath}: {e}. No secondary file logging will occur.", file=sys.stderr)
+                logging.root.error(f"Failed to set up secondary file logging: {e}", exc_info=True)
         else:
-            # Fallback to stderr if project_root or .ghostcode dir is not found
-            if not(is_init):
-                print("WARNING: Project root or .ghostcode directory not found for file logging. Falling back to stderr.", file=sys.stderr)
-            handler = logging.StreamHandler(sys.stderr)
-            handler.setFormatter(formatter)
-            handler.addFilter(suppress_exc_info_filter) # Apply filter to suppress traceback printing
-            logging.root.addHandler(handler)
+            print("WARNING: '--logging file' was specified, but no --secondary-log-filepath was provided. No secondary file logging will occur.", file=sys.stderr)
+    elif log_mode == "off":
+        pass
 
 # --- Command Interface and Implementations ---
 
@@ -637,8 +647,10 @@ def main():
                              f"Defaults to {os.path.join(appdirs.user_config_dir('ghostcode'), types.UserConfig._GHOSTCODE_CONFIG_FILE)}.")
 
     # Add --logging argument
-    parser.add_argument("--logging", type=str, choices=["off", "file", "stderr"], default="file",
-                        help="Configure logging output: 'off', 'file' (to .ghostcode/log.txt), or 'stderr'.")
+    parser.add_argument("--logging", type=str, choices=["off", "stderr", "file"], default="off",
+                        help="Configure secondary logging output: 'off' (no additional output), 'stderr' (output to stderr in addition to file), or 'file' (output to a secondary file specified by --secondary-log-filepath).")
+    parser.add_argument("--secondary-log-filepath", type=str, default=None,
+                        help="Path for secondary file logging when --logging is set to 'file'.")
 
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
 
@@ -699,7 +711,8 @@ def main():
     _configure_logging(
         args.logging,
         current_project_root,
-        is_init=args.command=="init"
+        is_init=args.command=="init",
+        secondary_log_filepath=args.secondary_log_filepath
     )
 
     # Now that logging is configured, get the main logger instance

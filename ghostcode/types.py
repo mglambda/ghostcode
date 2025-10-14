@@ -1341,7 +1341,7 @@ class Program:
 
     def push_front_action(self, action: Action) -> None:
         """Pushes an action to the front of the queue. An action at the front will be executed before the remaining ones."""
-        logger.info(f"Pushing action {type(action)} to the front of the action queue.")
+        logger.info(f"Pushing action {action_show_short(action)} to the front of the action queue.")
         self.action_queue = [action] + self.action_queue
 
     def confirm_action(self, action: Action, agent_clearance_level: ClearanceRequirement = ClearanceRequirement.AUTOMATIC, agent_name: str = "System") -> UserConfirmation:

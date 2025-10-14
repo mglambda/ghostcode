@@ -63,7 +63,7 @@ def actions_from_response_parts(prog: Program, parts: List[types.LLMResponsePart
 def run_action_queue(prog: Program) -> None:
     """Executes and removes actions at the front of the action queue until the queue is empty or the halt action is popped.
     This function has no return value as actions primarily exist to crate side effects."""
-    logger.info("Action queue execution started with {len(prog.action_queue)} actions in queue.")
+    logger.info(f"Action queue execution started with {len(prog.action_queue)} actions in queue.")
 
     # each time we run a queue, we reset the flag that let's the user skip confirmation dialogs
     # the user sets this to true with the "a" confirmation option.
@@ -514,7 +514,7 @@ def worker_recover(prog: Program, failure: types.ActionResultFailure) -> types.A
                 
                 
     except Exception as e:
-        logger.exception(f"Error during worker recovery attempt. Reason: {e}")
+        logger.exception(f"Ghostworker Failed  recovery. Reason: {e}")
         logger.debug(f"Dump of original failure:\n{json.dumps(failure.model_dump(), indent=4)}")
         return types.ActionResultMoreActions(
             actions=[types.ActionHaltExecution(
