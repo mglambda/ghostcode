@@ -1,5 +1,5 @@
 * work-in-progress (WIP, limit 5)
-Create action that let's worker ask coder for adjustment.
+Fix broken recovery.
 Handle code file edit cases of inadequate levenshtein distance.
 Make a show_log method for program.
 * todo
@@ -35,3 +35,6 @@ Create function to reliably replace or create code based on CoderResponsePart (p
 Integrate worker into interact mode.
 Add clearance types.
 Add basic confirmation dialog.
+Create virtual shell
+Create action that let's worker ask coder for adjustment.
+Give actions short string representation to be used at various points in the CLI interface.

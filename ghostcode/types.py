@@ -620,14 +620,14 @@ class InteractionHistory(BaseModel):
 # 2. Actions have clearance and user confirmation logic associated with them. LLM ResponseParts do not (we can't keep an LLM from generating a part).
 # 3. Actions can fail.
 # 4. A ResponsePart may map to 0 or more actions.
-
-
+    
 class ActionDoNothing(BaseModel):
     """Action that represents a noop.
     Used mostly as an identity under composition in the 'Action' type."""
 
     clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.AUTOMATIC
 
+    
 class ActionHaltExecution(BaseModel):
     """Represents a signal to halt the execution of the action queue. This is put on the queue whenever execution has run into too many errors or has encoutnered a critical problem that can not be overcome."""
 
@@ -736,6 +736,27 @@ class HasClearance(Protocol):
     
 type     Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionAlterContext
 
+def action_show_short(action: Action) -> str:
+    """Gives a short representation of an action.
+    By default, this function returns the actions type name with the conventional Action prefix removed. Some actions may give additional information, e.g. ActionFileEdit becomes "FileEdit(types.py)".
+    This short representation is used at various points in the CLI interface, such as when asking the user for permission to perform an action.
+    """
+
+    canonical_name = action.__class__.__name__
+    if canonical_name.startswith("Action"):
+        name = canonical_name[len("Action"):]
+    else:
+        name = canonical_name
+
+    # customize for some actions
+    # this is the kind of thing you could endlessly overcomplicate with an ABC interface when a simple match case will do just fine
+    match action:
+        case ActionFileEdit() as file_edit_action:
+            return f"{name}({file_edit_action.filepath})"
+        case _:
+            return name
+
+        
 class ActionResultOk(BaseModel):
     """Represents a successfully executed action."""
     # maybe add timing information?
@@ -1327,7 +1348,7 @@ class Program:
         """Interactively acquire user confirmation for a given action.
         When an action needs to be confirmed, there is usually some agent who wants to perform the action (e.g. ghostcoder or ghostworker). The agent's current clearance level is provided for context."""
 
-        print(f"{agent_name} wants to perform {action.__class__.__name__}.")
+        print(f"{agent_name} wants to perform {action_show_short(action)}.")
         abridge = 80 # type: Optional[int]
         try:
             while True:
