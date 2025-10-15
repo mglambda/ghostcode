@@ -286,7 +286,8 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
         logger.info(f"Null filepath on code response part. Moving to create a new file. (case 1)")
         logger.debug(f"handle_code_part: Attempting to create a new file. ({filepath})")
         if os.path.isdir(filepath):
-            return fail(f"File {filepath} is a directory.")
+            return fail(f"Cannot create file '{filepath}' because a directory with that name already exists.")
+        
         
         # If original_code is provided for a new file, it's a bit odd, but we'll prioritize new_code
         if code_action.content.original_code is not None:
@@ -305,11 +306,13 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
         )
 
     # invariant: File exists. Read its contents.
+    if os.path.isdir(filepath):
+        return fail(f"Cannot edit file '{filepath}' because it is a directory.")
     try:
         with open(filepath, "r") as f:
             file_contents = f.read()
     except Exception as e:
-        error_msg = f"Could not read file {filepath} during handling of code response action."
+        error_msg = f"Could not read file '{filepath}' during handling of code response action. Reason: {e}"
         logger.error(error_msg)
         logger.debug(f"Handle code part action dump:\n{json.dumps(code_action.model_dump(), indent=4)}")
         return fail(error_msg,
@@ -366,8 +369,8 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
 
     # case 3.3: Original_code had only whitespace -> fail
     if not original_lines:
-        logger.warning(f"Could not locate original code block in file {filepath}: Original code appears to be just whitespace. (case 3.3)")
-        return fail("Original code block is empty after splitting into lines. Cannot perform replacement.")
+        logger.warning(f"Could not locate original code block in file '{filepath}': Original code appears to be empty or only newlines. (case 3.3)")
+        return fail("Original code block is empty or contains only newlines after splitting. Cannot perform replacement.")
 
     best_match_start_line = -1
     min_total_distance = float('inf')
@@ -420,7 +423,7 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
         # case 3.5: No good match found. Return a failure.
         logger.warning(f"Could not find a sufficiently close match for original code in {filepath} (min distance: {min_total_distance}, threshold: {distance_threshold}). (case 3.5)")
         return fail(f"Could not locate original code block in file '{filepath}' for partial edit. "
-                    f"Minimum Levenshtein distance found: {min_total_distance}. "
+                    f"Minimum Levenshtein distance found: {min_total_distance} (threshold: {distance_threshold}). "
                     f"Original code block:\n---\n{original_code_block}\n---")
 
 

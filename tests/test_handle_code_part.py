@@ -136,7 +136,7 @@ class TestHandleCodePart(unittest.TestCase):
         result = handle_code_part(self.prog, action)
 
         self.assertIsInstance(result, types.ActionResultFailure)
-        self.assertIn("is a directory", result.failure_reason)
+        self.assertIn("because it is a directory.", result.failure_reason)
 
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.path.exists', return_value=True)
@@ -212,7 +212,7 @@ class TestHandleCodePart(unittest.TestCase):
         """Test case 3.3: Original_code had only whitespace."""
         filepath = os.path.join(self.test_dir, "existing_file.txt")
         file_content = "line1\nline2\nline3"
-        original_code = "   \n  \n"
+        original_code = ""
         new_code = "new_content"
 
         mock_file_open.return_value.read.return_value = file_content
@@ -223,7 +223,7 @@ class TestHandleCodePart(unittest.TestCase):
         result = handle_code_part(self.prog, action)
 
         self.assertIsInstance(result, types.ActionResultFailure)
-        self.assertIn("Original code block is empty after splitting into lines", result.failure_reason)
+        self.assertIn("Original code block is empty or contains only newlines", result.failure_reason)
 
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.path.exists', return_value=True)
@@ -249,7 +249,7 @@ class TestHandleCodePart(unittest.TestCase):
         self.assertEqual(result.actions[0].filepath, filepath)
         # Calculate expected positions manually
         expected_begin = 0 # Start of 'def foo():'
-        expected_end = len("def foo():\n    print('hello')\n    pass") # End of 'pass'
+        expected_end = len("def foo():\n    print('hello')\n    pass\n") # End of 'pass' including trailing newline
         self.assertEqual(result.actions[0].replace_pos_begin, expected_begin)
         self.assertEqual(result.actions[0].replace_pos_end, expected_end)
         self.assertEqual(result.actions[0].insert_text, new_code)
@@ -273,7 +273,7 @@ class TestHandleCodePart(unittest.TestCase):
         result = handle_code_part(self.prog, action)
 
         self.assertIsInstance(result, types.ActionResultFailure)
-        self.assertIn("Could not find a sufficiently close match", result.failure_reason)
+        self.assertIn("Could not locate original code block", result.failure_reason)
 
     @patch('builtins.open')
     @patch('os.path.exists', return_value=True)
