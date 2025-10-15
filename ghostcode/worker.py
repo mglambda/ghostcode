@@ -85,7 +85,7 @@ def run_action_queue(prog: Program) -> None:
                     prog.discard_actions()
                     return
                 case _:
-                    logger.info(f"Executing {type(action)}. Finished {finished_actions}, remaining {len(prog.action_queue)}.")
+                    logger.info(f"Executing {types.action_show_short(action)}. Finished {finished_actions}, remaining {len(prog.action_queue)}.")
                     logger.debug(f"More info on action being executed:\n{json.dumps(action.model_dump(), indent=4)}")
                     result = execute_action(prog, action)
                     finished_actions += 1
@@ -144,7 +144,7 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
             logger.info(f"User denied {action.__class__.__name__} for worker with clearance level {clearance_level}.")
             return fail(f"Action {action.__class__.__name__} denied by user.")
     else:
-        logger.info("Worker clearance of {clearance_level} meets or exceeds clearance requirement {clearance_requirement} for {action.__class__.__name__} action. Proceeding without user confirmation.")
+        logger.info(f"Worker clearance of {clearance_level} meets or exceeds clearance requirement {clearance_requirement} for {action.__class__.__name__} action. Proceeding without user confirmation.")
         
     try:
         match action:
@@ -328,7 +328,7 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
         )
 
     # Case 3: Partial edit - requires original_code
-    logger.info("Attempting partial edit of {filepath} .")
+    logger.info(f"Attempting partial edit of {filepath} .")
 
     # case 3.1: Original code missing -> fail
     if code_action.content.original_code is None:
