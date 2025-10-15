@@ -68,4 +68,11 @@ class ProgressPrinter:
         self._print_thread = None
         self.print_function("\r" + " " * 4 + "\r", end="", flush=True) # Clear the line after stopping
 
+    def __enter__(self) -> "ProgressPrinter":
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.stop()
+
 

@@ -545,13 +545,13 @@ class InteractCommand(BaseModel, CommandInterface):
             }
             
             try:
-                pp = ProgressPrinter(message=" Querying ghostcoder ", print_function=prog.print)
-                pp.start()
-                response = prog.coder_box.new(types.CoderResponse,
-                                              prompt,
-                                              #options=debug_options,
-                                              )
-                pp.stop()
+                with ProgressPrinter(message=" Querying ghostcoder ", print_function=prog.print):
+                    response = prog.coder_box.new(
+                        types.CoderResponse,
+                        prompt,
+                        #options=debug_options,
+                    )
+
                 logger.timing(f"ghostcoder performance statistics:\n{showTime(prog.coder_box._plumbing, [])}") # type: ignore
                 
                 try:                
