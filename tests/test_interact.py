@@ -1,2 +1,232 @@
+import unittest
+import os
+import shutil
+import tempfile
+from unittest.mock import MagicMock, patch, mock_open
+import io
+import contextlib
+import json
+import logging
+import sys
 
-# Fill this in
+from ghostcode import types, main, worker
+from ghostcode.progress_printer import ProgressPrinter
+
+# Configure logging for tests to see debug output if needed
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Define a custom timing log level for tests, mirroring main.py
+TIMING_LEVEL_NUM = 25
+logging.addLevelName(TIMING_LEVEL_NUM, "TIMING")
+def timing_log(self, message, *args, **kwargs):
+    if self.isEnabledFor(TIMING_LEVEL_NUM):
+        self._log(TIMING_LEVEL_NUM, message, args, **kwargs)
+logging.Logger.timing = timing_log # type: ignore
+
+class FunctionalInteractTest(unittest.TestCase):
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_cwd = os.getcwd()
+        os.chdir(self.temp_dir)
+
+        # 1. Initialize a ghostcode project in the temporary directory
+        # We need to mock sys.argv for argparse to work correctly
+        with patch('sys.argv', ['ghostcode', 'init']):
+            try:
+                main()
+            except SystemExit as e:
+                # this is fine, main will call sys.exit after init
+                pass
+
+        # 2. Add scratch files to context
+        scratch_dir = os.path.join(self.original_cwd, "tests", "scratch")
+        os.makedirs("scratch", exist_ok=True)
+        shutil.copy(os.path.join(scratch_dir, "example.py"), os.path.join(self.temp_dir, "scratch", "example.py"))
+
+        with patch('sys.argv', ['ghostcode', 'context', 'add', 'scratch/*.py']):
+            main.main()
+
+        # 3. Load the project and create a Program instance
+        self.project_root = types.Project.find_project_root()
+        self.assertIsNotNone(self.project_root)
+        self.project = types.Project.from_root(self.project_root)
+
+        # Mock Ghostbox instances to prevent actual LLM calls
+        self.coder_box = MagicMock(spec=main.Ghostbox)
+        self.worker_box = MagicMock(spec=main.Ghostbox)
+
+        # Mock _plumbing for token count display, if needed, otherwise it's fine as is
+        self.coder_box._plumbing = MagicMock()
+        self.coder_box._plumbing._get_last_result_tokens.return_value = 0
+        self.worker_box._plumbing = MagicMock()
+        self.worker_box._plumbing._get_last_result_tokens.return_value = 0
+
+        self.prog = types.Program(
+            project_root=self.project_root,
+            project=self.project,
+            coder_box=self.coder_box,
+            worker_box=self.worker_box,
+            user_config=types.UserConfig() # Use a default user config
+        )
+
+        self.command_obj = main.InteractCommand()
+
+        # Mock worker.run_action_queue to prevent actual file system changes during tests
+        # We will inspect the actions queued by handle_code_part directly
+        self.mock_run_action_queue = patch('ghostcode.worker.run_action_queue', new=MagicMock())
+        self.mock_run_action_queue.start()
+        self.addCleanup(self.mock_run_action_queue.stop)
+
+        # Mock apply_create_file and apply_edit_file to prevent actual file system changes
+        self.mock_apply_create_file = patch('ghostcode.worker.apply_create_file', return_value=types.ActionResultOk())
+        self.mock_apply_edit_file = patch('ghostcode.worker.apply_edit_file', return_value=types.ActionResultOk())
+        self.mock_apply_create_file.start()
+        self.mock_apply_edit_file.start()
+        self.addCleanup(self.mock_apply_create_file.stop)
+        self.addCleanup(self.mock_apply_edit_file.stop)
+
+
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.temp_dir)
+
+    def test_simple_interaction_and_code_response(self):
+        logger.info("Running test_simple_interaction_and_code_response")
+        user_prompt = "Please add a comment to the 'example.py' file." # This is the user's input
+        expected_new_code = "# This is a new comment\nprint('Hello from scratch!')"
+        expected_original_code = "print('Hello from scratch!')"
+        filepath = os.path.join(self.project_root, "scratch", "example.py")
+        relative_filepath = os.path.relpath(filepath, self.project_root)
+
+        # Mock the coder_box response
+        mock_coder_response = types.CoderResponse(
+            contents=[
+                types.CodeResponsePart(
+                    type="partial",
+                    filepath=relative_filepath,
+                    language="python",
+                    original_code=expected_original_code,
+                    new_code=expected_new_code,
+                    title="Add comment to example.py"
+                )
+            ]
+        )
+        self.coder_box.new.return_value = mock_coder_response
+
+        # Simulate user input: prompt, then submit
+        mock_inputs = [user_prompt, "\\"]
+        with patch('builtins.input', side_effect=mock_inputs), contextlib.redirect_stdout(io.StringIO()) as stdout_capture:
+            # The interact loop will run until it encounters /quit or EOFError
+            # We'll let it run through one interaction cycle
+            self.command_obj._interact_loop(main.CommandOutput(), self.prog)
+
+        captured_output = stdout_capture.getvalue()
+        logger.debug(f"Captured stdout:\n{captured_output}")
+
+        # Assertions
+        # 1. Check if coder_box.new was called with the correct prompt
+        self.coder_box.new.assert_called_once()
+        call_args, _ = self.coder_box.new.call_args
+        actual_prompt_sent = call_args[1] # The second argument is the prompt string
+        self.assertIn(user_prompt, actual_prompt_sent)
+        self.assertIn("project_metadata", actual_prompt_sent)
+        self.assertIn("scratch/example.py", actual_prompt_sent)
+
+        # 2. Check if worker.run_action_queue was called
+        self.mock_run_action_queue.assert_called_once()
+
+        # 3. Check the actions queued by handle_code_part (which is called by worker.run_action_queue)
+        # Since we mocked run_action_queue, we need to manually call handle_code_part
+        # to see what actions it would have pushed.
+        # In a real scenario, run_action_queue would process this.
+        # For this test, we verify the *intent* of the LLM response by checking what
+        # handle_code_part would produce.
+        code_action = types.ActionHandleCodeResponsePart(content=mock_coder_response.contents[0])
+        result_from_handle_code_part = worker.handle_code_part(self.prog, code_action)
+
+        self.assertIsInstance(result_from_handle_code_part, types.ActionResultMoreActions)
+        self.assertEqual(len(result_from_handle_code_part.actions), 1)
+        created_action = result_from_handle_code_part.actions[0]
+        self.assertIsInstance(created_action, types.ActionFileEdit)
+        self.assertEqual(created_action.filepath, relative_filepath)
+        self.assertEqual(created_action.insert_text, expected_new_code)
+
+        # 4. Check interaction history
+        self.assertEqual(len(self.command_obj.interaction_history.contents), 2)
+        user_history = self.command_obj.interaction_history.contents[0]
+        coder_history = self.command_obj.interaction_history.contents[1]
+
+        self.assertIsInstance(user_history, types.UserInteractionHistoryItem)
+        self.assertEqual(user_history.prompt, user_prompt)
+
+        self.assertIsInstance(coder_history, types.CoderInteractionHistoryItem)
+        self.assertEqual(coder_history.response, mock_coder_response)
+
+        logger.info("Finished test_simple_interaction_and_code_response")
+
+    def test_interact_quit_command(self):
+        logger.info("Running test_interact_quit_command")
+        mock_inputs = ["/quit"]
+        with patch('builtins.input', side_effect=mock_inputs), contextlib.redirect_stdout(io.StringIO()) as stdout_capture:
+            self.command_obj._interact_loop(main.CommandOutput(), self.prog)
+
+        captured_output = stdout_capture.getvalue()
+        self.assertIn("Finished interaction.", captured_output)
+        self.coder_box.new.assert_not_called() # No LLM call should happen
+        self.mock_run_action_queue.assert_not_called()
+        self.assertEqual(len(self.command_obj.interaction_history.contents), 0) # History should be empty if no actual interaction happened
+        logger.info("Finished test_interact_quit_command")
+
+    def test_interact_eof(self):
+        logger.info("Running test_interact_eof")
+        # Simulate EOF by providing an empty list of inputs
+        mock_inputs = []
+        with patch('builtins.input', side_effect=mock_inputs), contextlib.redirect_stdout(io.StringIO()) as stdout_capture:
+            self.command_obj._interact_loop(main.CommandOutput(), self.prog)
+
+        captured_output = stdout_capture.getvalue()
+        self.assertIn("Finished interaction.", captured_output)
+        self.coder_box.new.assert_not_called()
+        self.mock_run_action_queue.assert_not_called()
+        self.assertEqual(len(self.command_obj.interaction_history.contents), 0)
+        logger.info("Finished test_interact_eof")
+
+    def test_interact_no_action_response(self):
+        logger.info("Running test_interact_no_action_response")
+        user_prompt = "Just a discussion point."
+
+        # Mock the coder_box response with only text
+        mock_coder_response = types.CoderResponse(
+            contents=[
+                types.TextResponsePart(
+                    text="Understood. Let's discuss further."
+                )
+            ]
+        )
+        self.coder_box.new.return_value = mock_coder_response
+
+        mock_inputs = [user_prompt, "\\"]
+        with patch('builtins.input', side_effect=mock_inputs), contextlib.redirect_stdout(io.StringIO()) as stdout_capture:
+            self.command_obj._interact_loop(main.CommandOutput(), self.prog)
+
+        captured_output = stdout_capture.getvalue()
+        logger.debug(f"Captured stdout:\n{captured_output}")
+
+        self.coder_box.new.assert_called_once()
+        self.mock_run_action_queue.assert_called_once() # run_action_queue is called, but with an empty list of actions
+        self.assertEqual(len(self.prog.action_queue), 0) # No actions should be queued
+
+        self.assertEqual(len(self.command_obj.interaction_history.contents), 2)
+        coder_history = self.command_obj.interaction_history.contents[1]
+        self.assertIsInstance(coder_history, types.CoderInteractionHistoryItem)
+        self.assertEqual(coder_history.response, mock_coder_response)
+
+        logger.info("Finished test_interact_no_action_response")
+
+
+
+
+
+
