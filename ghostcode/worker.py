@@ -224,7 +224,7 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
             case types.ActionFileEdit() as edit_action:
                 logger.info(f"File Edit Action")
                 return apply_edit_file(prog, edit_action)
-            case types.ActionCreateFile() as create_action:
+            case types.ActionFileCreate() as create_action:
                 logger.info("Create File Action")
                 return apply_create_file(prog, create_action)
             case types.ActionDoNothing():
@@ -257,7 +257,7 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
 def apply_create_file(
     prog: Program, create_action: types.ActionFileCreate
 ) -> types.ActionResult:
-    """Apply a ActionFileCreate to actually write a new file to disk."""
+    """Apply an ActionFileCreate to actually write a new file to disk."""
     fail = lambda failure_reason, error_messages=[], create_action=create_action: types.ActionResultFailure(
         original_action=create_action,
         error_messages=error_messages,
