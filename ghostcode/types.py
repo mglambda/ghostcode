@@ -1229,7 +1229,7 @@ class Project(BaseModel):
             raise
         
         logger.info(f"Ghostcode project saved successfully to {root}.")
-
+        
 
 @dataclass
 class Program:
@@ -1415,6 +1415,19 @@ class Program:
         self.last_print_tag = tag
 
 
+    def get_data(self, relative_filepath: str) -> str:
+        """Returns a filepath relative to the hidden ghostcode directory.
+            Example: get_data("log.txt") -> ".ghostcode/log.txt"
+        If no project root directory is defined, this function raises a runtime error.
+        If the filepath that this function returns does not exist, no error is raised.
+            """
+        if self.project_root is None or not(os.path.isdir(ghostcode_dir := os.path.join(self.project_root, ".ghostcode"))):
+            msg = "Could not find .ghostcode directory. Please run `ghostcode init` and retry."
+            logger.error(msg)
+            raise RuntimeError(msg)
+
+        return os.path.join(ghostcode_dir, relative_filepath)
+            
     def show_log(self, tail: Optional[int] = None) -> Optional[str]:
         """Returns the current event log if available.
         If tail is given, show only the tail latest number of log lines.
@@ -1422,10 +1435,8 @@ class Program:
         if self.project is None:
             logger.warn("Null project while trying to read logs.")
             return None
-        # FIXME: we should really always log to this file and only enable the user to optionall also print to stderr
-        # but since it's not guaranteed we have to check here.
         try:
-            with open(self.project._LOG_FILE, "r") as f:
+            with open(self.get_data(self.project._LOG_FILE), "r") as f:
                 log = f.read()
 
             if tail is None:
