@@ -367,10 +367,14 @@ def handle_code_part(prog: Program, code_action: types.ActionHandleCodeResponseP
     original_lines = original_code_block.splitlines()
     file_lines = file_contents.splitlines()
 
-    # case 3.3: Original_code had only whitespace -> fail
-    if not original_lines:
-        logger.warning(f"Could not locate original code block in file '{filepath}': Original code appears to be empty or only newlines. (case 3.3)")
-        return fail("Original code block is empty or contains only newlines after splitting. Cannot perform replacement.")
+    stripped_lines = [stripped_line
+                      for line in original_lines
+                      if (stripped_line := line.strip()) != ""]
+
+    # case 3.3: Original_code had only whitespace -> fail    
+    if not(stripped_lines):
+        logger.warning(f"Could not locate original code block in file '{filepath}': Original code appears to be empty or only whitespace. (case 3.3)")
+        return fail("Original code block is empty or contains only whitespace after splitting. Cannot perform replacement.")
 
     best_match_start_line = -1
     min_total_distance = float('inf')

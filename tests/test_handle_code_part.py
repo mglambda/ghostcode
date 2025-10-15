@@ -211,8 +211,8 @@ class TestHandleCodePart(unittest.TestCase):
     def test_handle_code_part_partial_edit_original_code_whitespace_only(self, mock_isdir, mock_exists, mock_file_open):
         """Test case 3.3: Original_code had only whitespace."""
         filepath = os.path.join(self.test_dir, "existing_file.txt")
-        file_content = "line1\nline2\nline3"
-        original_code = ""
+        file_content = "lin1\nlin2\nlin3\n"
+        original_code = "\n\n\n"
         new_code = "new_content"
 
         mock_file_open.return_value.read.return_value = file_content
@@ -223,7 +223,7 @@ class TestHandleCodePart(unittest.TestCase):
         result = handle_code_part(self.prog, action)
 
         self.assertIsInstance(result, types.ActionResultFailure)
-        self.assertIn("Original code block is empty or contains only newlines", result.failure_reason)
+        self.assertIn("Original code block is empty or contains only whitespace", result.failure_reason)
 
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.path.exists', return_value=True)
