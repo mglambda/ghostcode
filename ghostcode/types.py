@@ -756,6 +756,14 @@ def action_show_short(action: Action) -> str:
         case _:
             return name
 
+def action_show_user_message(action: Action) -> str:
+    """Display a user message for the action, which is printed when the action is popped off the action queue."""
+    delimiter = " >>= "
+    
+    match action:
+        case _:
+            result = action_show_short(action)
+    return result + delimiter
         
 class ActionResultOk(BaseModel):
     """Represents a successfully executed action."""
@@ -1247,7 +1255,9 @@ class Program:
     user_config: UserConfig = field(
         default_factory = UserConfig,
         )
-    
+
+    # holds the tag of the last message that was printed, useful for internal print logic
+    last_print_tag: Optional[str] = None
     def _get_cli_prompt(self) -> str:
         """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
         # some ghostbox internal magic to get the token count
@@ -1348,7 +1358,7 @@ class Program:
         """Interactively acquire user confirmation for a given action.
         When an action needs to be confirmed, there is usually some agent who wants to perform the action (e.g. ghostcoder or ghostworker). The agent's current clearance level is provided for context."""
 
-        print(f"{agent_name} wants to perform {action_show_short(action)}.")
+        self.print(f"{agent_name} wants to perform {action_show_short(action)}.")
         abridge = 80 # type: Optional[int]
         try:
             while True:
@@ -1379,11 +1389,11 @@ class Program:
 
                         continue
         except EOFError as e:
-            print(f"Canceled.")
+            self.print(f"Canceled.")
             logger.info(f"User exited confirmation dialog with EOF. Defaulting to deny.")
             return UserConfirmation.CANCEL
         except Exception as e:
-            print(f"Action canceled. Error: {e}.")
+            self.print(f"Action canceled. Error: {e}.")
             logger.error(f"Encountered error during user confirmation dialog. Defaulting to deny. Error: {e}")
             logger.debug(f"Full traceback:\n{traceback.format_exc()}")
             return UserConfirmation.CANCEL
@@ -1391,7 +1401,20 @@ class Program:
         # unreachable but ok
         logger.info(f"Follow the white rabbit.")
         return UserConfirmation.CANCEL
-                
+
+    def print(self, text: str, end: str = "\n", tag: Optional[str] = None, flush: bool = True) -> None:
+        """Print a message to stdout.
+        If you tag your print message, this print remembers and an automatic newline is inserted before another message that does not share the tag. This allows you to build up a line without interfereing in other print actions."""
+        # we hijack the normal print so that we can more easily change things in the future
+        # e.g. make it thread safe or keep a log.
+        # right now it's just easy print
+
+        if tag != self.last_print_tag and self.last_print_tag is not None:
+            print("")
+        print(text, end=end, flush=flush)
+        self.last_print_tag = tag
+
+
     def show_log(self, tail: Optional[int] = None) -> Optional[str]:
         """Returns the current event log if available.
         If tail is given, show only the tail latest number of log lines.

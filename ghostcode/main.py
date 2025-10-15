@@ -2,6 +2,7 @@ from typing import *
 import json
 import traceback
 from ghostcode import types, worker
+from ghostcode.progress_printer import ProgressPrinter
 # don't want the types. prefix for these
 from ghostcode.types import Program
 import ghostbox
@@ -438,17 +439,13 @@ class InteractCommand(BaseModel, CommandInterface):
             return result
 
         result.print("Starting interactive session with Coder LLM (placeholder).")
-        result.print("API keys checked. If warnings were shown, please address them.")
+        result.print("API keys checked. All good.")
 
         # start the actual loop in another method 
         return self._interact_loop(result, prog)
 
     # This code is unreachable but in the future error handling/control flow of this method might become more complicated and we may need it
         return result
-
-    def _print(self, w: str, end: str = "\n") -> None:
-        """Synonymous with print. Just aliases here as future-proofing."""
-        print(w, end=end)
 
 
     def _make_preamble(self, prog: Program) -> str:
@@ -482,13 +479,15 @@ class InteractCommand(BaseModel, CommandInterface):
         
         # since the interaction is blocking we can't wait with printing until we return the result
         # so we print it here and return an empty result at the end
-        self._print(intermediate_result.text)
+        prog.print(intermediate_result.text)
         interacting = True
         print("Multiline mode enabled. Type your prompt over multiple lines.\nType a single '\\' and hit enter to submit.\nType /quit or CTRL+D to quit.")
         user_input = ""
         while interacting:
             try:
-                line = input(prog._get_cli_prompt())
+                # for complex reasons we do printing of cli prompt ourselves instead of leaving it to input()
+                prog.print(prog._get_cli_prompt(), end="")
+                line = input()
             except EOFError:
                 break
             
@@ -546,10 +545,13 @@ class InteractCommand(BaseModel, CommandInterface):
             }
             
             try:
+                pp = ProgressPrinter(message=" Querying ghostcoder ", print_function=prog.print)
+                pp.start()
                 response = prog.coder_box.new(types.CoderResponse,
                                               prompt,
                                               #options=debug_options,
                                               )
+                pp.stop()
                 logger.timing(f"ghostcoder performance statistics:\n{showTime(prog.coder_box._plumbing, [])}") # type: ignore
                 
                 try:                

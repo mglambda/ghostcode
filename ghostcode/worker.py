@@ -6,6 +6,7 @@ import shutil
 import json
 import logging
 from ghostcode import types
+from ghostcode.progress_printer import ProgressPrinter
 from ghostcode.types import Program
 import time
 from ghostcode.utility import levenshtein, time_function_with_logging, show_model, timestamp_now_iso8601, foldl
@@ -77,6 +78,7 @@ def run_action_queue(prog: Program) -> None:
         finished_actions = 0
         while action := prog.action_queue.pop(0):
             logger.debug(f"Current Queue Status\n  popped action: {action.__class__.__name__}\n  queue: {[a.__class__.__name__ for a in prog.action_queue]}")
+            prog.print(types.action_show_user_message(action), end="", tag="action_queue")
             match action:
                 case types.ActionHaltExecution() as halt_action:
                     logger.info(f"Halting action queue execution after {finished_actions} actions, with {len(prog.action_queue)} actions remaining in queue. Reason: {halt_action.reason}")
@@ -172,7 +174,7 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                 # Handle unknown action types
                 failure_message = f"Received an unknown action type: {type(action).__name__}. This action cannot be executed."
                 logger.error(failure_message)
-                print(f"ERROR: {failure_message}")
+                prog.print(f"ERROR: {failure_message}")
                 return types.ActionResultFailure(
                     original_action=action,
                     failure_reason=failure_message
