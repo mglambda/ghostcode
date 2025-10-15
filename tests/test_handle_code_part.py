@@ -142,7 +142,7 @@ class TestHandleCodePart(unittest.TestCase):
     @patch('os.path.exists', return_value=True)
     @patch('os.path.isdir', return_value=False)
     def test_handle_code_part_full_replacement_exact_match(self, mock_isdir, mock_exists, mock_file_open):
-        """Test case 2: Full replacement when original_code matches entire file."""
+        """Test case 2.2: Full replacement when original_code matches entire file."""
         filepath = os.path.join(self.test_dir, "existing_file.txt")
         original_content = "line1\nline2\nline3"
         new_content = "new_line1\nnew_line2"
