@@ -5,6 +5,15 @@ import tempfile
 from unittest.mock import MagicMock, patch, mock_open
 from ghostcode.worker import handle_code_part
 from ghostcode import types
+import logging
+
+# Define a custom timing log level for tests, mirroring main.py
+TIMING_LEVEL_NUM = 25
+logging.addLevelName(TIMING_LEVEL_NUM, "TIMING")
+def timing_log(self, message, *args, **kwargs):
+    if self.isEnabledFor(TIMING_LEVEL_NUM):
+        self._log(TIMING_LEVEL_NUM, message, args, **kwargs)
+logging.Logger.timing = timing_log # type: ignore
 
 class TestHandleCodePart(unittest.TestCase):
 
