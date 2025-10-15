@@ -753,6 +753,8 @@ def action_show_short(action: Action) -> str:
     match action:
         case ActionFileEdit() as file_edit_action:
             return f"{name}({file_edit_action.filepath})"
+        case ActionFileCreate() as file_create_action:
+            return f"{name}({file_create_action.filepath})"
         case _:
             return name
 
