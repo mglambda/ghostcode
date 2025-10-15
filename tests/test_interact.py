@@ -8,8 +8,9 @@ import contextlib
 import json
 import logging
 import sys
+import ghostbox
 
-from ghostcode import types, main, worker
+from ghostcode import types, main, worker, InteractCommand, CommandOutput
 from ghostcode.progress_printer import ProgressPrinter
 
 # Configure logging for tests to see debug output if needed
@@ -40,13 +41,30 @@ class FunctionalInteractTest(unittest.TestCase):
                 # this is fine, main will call sys.exit after init
                 pass
 
+        # Ensure the scratch directory and example.py exist in the *original* project's test resources
+        # This is where the test expects to copy from.
+        # The path 'tests/scratch' is relative to self.original_cwd
+        source_scratch_dir = os.path.join(self.original_cwd, "tests", "scratch")
+        os.makedirs(source_scratch_dir, exist_ok=True)
+        
+        example_py_content = "print('Hello from scratch!')"
+        source_example_py_path = os.path.join(source_scratch_dir, "example.py")
+        with open(source_example_py_path, "w") as f:
+            f.write(example_py_content)
+
         # 2. Add scratch files to context
-        scratch_dir = os.path.join(self.original_cwd, "tests", "scratch")
-        os.makedirs("scratch", exist_ok=True)
-        shutil.copy(os.path.join(scratch_dir, "example.py"), os.path.join(self.temp_dir, "scratch", "example.py"))
+        # Create the destination directory in the temporary project
+        destination_scratch_dir_in_temp = os.path.join(self.temp_dir, "scratch")
+        os.makedirs(destination_scratch_dir_in_temp, exist_ok=True)
+        
+        # Now copy the example.py from the original test resources to the temporary project's scratch directory
+        shutil.copy(source_example_py_path, os.path.join(destination_scratch_dir_in_temp, "example.py"))
 
         with patch('sys.argv', ['ghostcode', 'context', 'add', 'scratch/*.py']):
-            main.main()
+            try:
+                main()
+            except SystemExit:
+                pass
 
         # 3. Load the project and create a Program instance
         self.project_root = types.Project.find_project_root()
@@ -54,8 +72,8 @@ class FunctionalInteractTest(unittest.TestCase):
         self.project = types.Project.from_root(self.project_root)
 
         # Mock Ghostbox instances to prevent actual LLM calls
-        self.coder_box = MagicMock(spec=main.Ghostbox)
-        self.worker_box = MagicMock(spec=main.Ghostbox)
+        self.coder_box = MagicMock(spec=ghostbox.Ghostbox)
+        self.worker_box = MagicMock(spec=ghostbox.Ghostbox)
 
         # Mock _plumbing for token count display, if needed, otherwise it's fine as is
         self.coder_box._plumbing = MagicMock()
@@ -71,7 +89,7 @@ class FunctionalInteractTest(unittest.TestCase):
             user_config=types.UserConfig() # Use a default user config
         )
 
-        self.command_obj = main.InteractCommand()
+        self.command_obj = InteractCommand()
 
         # Mock worker.run_action_queue to prevent actual file system changes during tests
         # We will inspect the actions queued by handle_code_part directly
@@ -91,6 +109,13 @@ class FunctionalInteractTest(unittest.TestCase):
     def tearDown(self):
         os.chdir(self.original_cwd)
         shutil.rmtree(self.temp_dir)
+        # Clean up the created example.py in the original tests/scratch directory
+        source_scratch_dir = os.path.join(self.original_cwd, "tests", "scratch")
+        source_example_py_path = os.path.join(source_scratch_dir, "example.py")
+        if os.path.exists(source_example_py_path):
+            os.remove(source_example_py_path)
+        if os.path.exists(source_scratch_dir) and not os.listdir(source_scratch_dir):
+            os.rmdir(source_scratch_dir)
 
     def test_simple_interaction_and_code_response(self):
         logger.info("Running test_simple_interaction_and_code_response")
@@ -120,7 +145,7 @@ class FunctionalInteractTest(unittest.TestCase):
         with patch('builtins.input', side_effect=mock_inputs), contextlib.redirect_stdout(io.StringIO()) as stdout_capture:
             # The interact loop will run until it encounters /quit or EOFError
             # We'll let it run through one interaction cycle
-            self.command_obj._interact_loop(main.CommandOutput(), self.prog)
+            self.command_obj._interact_loop(CommandOutput(), self.prog)
 
         captured_output = stdout_capture.getvalue()
         logger.debug(f"Captured stdout:\n{captured_output}")
@@ -170,7 +195,7 @@ class FunctionalInteractTest(unittest.TestCase):
         logger.info("Running test_interact_quit_command")
         mock_inputs = ["/quit"]
         with patch('builtins.input', side_effect=mock_inputs), contextlib.redirect_stdout(io.StringIO()) as stdout_capture:
-            self.command_obj._interact_loop(main.CommandOutput(), self.prog)
+            self.command_obj._interact_loop(CommandOutput(), self.prog)
 
         captured_output = stdout_capture.getvalue()
         self.assertIn("Finished interaction.", captured_output)
@@ -184,7 +209,7 @@ class FunctionalInteractTest(unittest.TestCase):
         # Simulate EOF by providing an empty list of inputs
         mock_inputs = []
         with patch('builtins.input', side_effect=mock_inputs), contextlib.redirect_stdout(io.StringIO()) as stdout_capture:
-            self.command_obj._interact_loop(main.CommandOutput(), self.prog)
+            self.command_obj._interact_loop(CommandOutput(), self.prog)
 
         captured_output = stdout_capture.getvalue()
         self.assertIn("Finished interaction.", captured_output)
@@ -209,7 +234,7 @@ class FunctionalInteractTest(unittest.TestCase):
 
         mock_inputs = [user_prompt, "\\"]
         with patch('builtins.input', side_effect=mock_inputs), contextlib.redirect_stdout(io.StringIO()) as stdout_capture:
-            self.command_obj._interact_loop(main.CommandOutput(), self.prog)
+            self.command_obj._interact_loop(CommandOutput(), self.prog)
 
         captured_output = stdout_capture.getvalue()
         logger.debug(f"Captured stdout:\n{captured_output}")
