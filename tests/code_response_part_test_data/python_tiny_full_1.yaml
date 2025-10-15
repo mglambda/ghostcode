@@ -1,0 +1,23 @@
+id: python_tiny_full_1
+title: |-
+  Full replace of function in tiny, one function file.
+expected_outcome: foo function should get replaced.
+code_response:
+  type: partial
+  filepath: example.py
+  language: python
+  original_code: |-
+    def foo(bar):
+        pass
+  new_code: |-
+    def foo(bar):
+        return 'Hello, world!'
+  context_anchor: foo
+  notes:
+  - Add hello world example to foo.
+  title: Example Code Response Part
+file:
+  filepath: example.py
+  content: |-
+    def foo(bar):
+        pass
