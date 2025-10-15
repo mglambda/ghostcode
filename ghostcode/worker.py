@@ -498,10 +498,11 @@ def worker_recover(prog: Program, failure: types.ActionResultFailure) -> types.A
     # we might error during LLM query    
     try:
         logger.info("Querying ghostworker for recovery.")
-        worker_response = prog.worker_box.new(
-            types.WorkerResponse,
-            make_prompt_worker_recover(prog, failure),
-        )
+        with ProgressPrinter(message=" Querying 🔧 ", print_function=prog.print):
+            worker_response = prog.worker_box.new(
+                types.WorkerResponse,
+                make_prompt_worker_recover(prog, failure),
+            )
         logger.timing(f"ghostworker performance statistics:\n{showTime(prog.worker_box._plumbing, [])}") # type: ignore
 
         # FIXME: should we add response to the interaction_history?            

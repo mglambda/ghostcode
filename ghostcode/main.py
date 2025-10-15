@@ -545,7 +545,7 @@ class InteractCommand(BaseModel, CommandInterface):
             }
             
             try:
-                with ProgressPrinter(message=" Querying ghostcoder ", print_function=prog.print):
+                with ProgressPrinter(message=" Querying 👻 ", print_function=prog.print):
                     response = prog.coder_box.new(
                         types.CoderResponse,
                         prompt,
