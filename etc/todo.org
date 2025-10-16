@@ -4,6 +4,7 @@ Create worker routing
 Properly test worker recovery.
 * todo
 ** general
+
 Add doc comment injections to yaml config files.
 Audio input support for small queries ("hey ghostcode, what was the parser class called in this project?")
 Investigate proper deployment (conda, docker, getting llama.cpp, downloading models from huggingface).
@@ -15,10 +16,10 @@ More useful CLI commands.
 Keep main command executiong from crashing catastrophically (wrap in try and exit gracefully).
 ** CLI
 add proper SlashCommand type for slash (like "/quit") commands in interact mode.
-Change InteractionHistory to include a title and request an LLM to come up with a descriptive title at the end of an interaction.
 ** coder
 Investigate wether structured output degrades performance.
 ** worker
+Add context expansion/contraction by worker
 ** tests
 Write tests for the virtual terminal
 * about this file
@@ -42,3 +43,4 @@ Make a show_log method for program.
 Fix log file not being created when logging is set to stderr.
 Create basic testing framework (/tests folder and scripts).
 Create log command to view past interactions.
+add talk command

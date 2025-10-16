@@ -1044,6 +1044,12 @@ def main():
     )
     interact_parser.set_defaults(func=lambda args: InteractCommand(actions=args.actions))
 
+    # Talk command
+    talk_parser = subparsers.add_parser(
+        "talk", help="Launches an interactive session with the Coder LLM, but without performing any actions."
+    )
+    talk_parser.set_defaults(func=lambda args: InteractCommand(actions=False))
+
     # Log command
     log_parser = subparsers.add_parser("log", help="Display past interaction history.")
     log_parser.add_argument(
