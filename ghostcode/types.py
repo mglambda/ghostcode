@@ -28,7 +28,42 @@ import appdirs  # Added for platform-specific config directory
 # Configure a basic logger for the ghostcode project
 logger = logging.getLogger("ghostcode.types")
 
-# --- Default Configurations ---
+
+### Protocols ###
+
+
+class Showable(Protocol):
+    """Interface for anything that can be turned into strings.
+    By convention, the CLI method turns objects into strings in a way that is slightly less verbose and more friendly to humans, though it is not required that show and show_cli have different return values at all.
+    """
+
+    def show_cli(self, **kwargs) -> str:
+        pass
+
+    def show(self, **kwargs) -> str:
+        pass
+
+
+class HasTimestamp(Protocol):
+    timestamp: str
+
+
+class HasUniqueID(Protocol):
+    unique_id: str
+    tag: Optional[str]
+
+
+class HasGitCommitHash(Protocol):
+    git_commit_hash: str
+
+
+class HasClearance(Protocol):
+    """Interface for anything that requires clearance."""
+
+    clearance_required: ClassVar[ClearanceRequirement]
+
+
+### --- Default Configurations ---
 # Default configuration for the coder LLM (e.g., for planning, complex reasoning)
 DEFAULT_CODER_LLM_CONFIG = {
     "model": "models/gemini-2.5-flash",
@@ -282,7 +317,7 @@ class ContextFiles(BaseModel):
         context_files = [ContextFile(filepath=fp, rag=False) for fp in filepaths]
         return ContextFiles(data=context_files)
 
-    def show(self) -> str:
+    def show(self, **kwargs) -> str:
         """Renders file contents of the context files to a string, in a format that is suitable for an LLM."""
         w = ""
         for context_file in self.data:
@@ -304,7 +339,7 @@ class ContextFiles(BaseModel):
 """
         return w
 
-    def show_cli(self) -> str:
+    def show_cli(self, **kwargs) -> str:
         """Shows the list of filepaths in a short, command line interface friendly manner."""
         return "(" + " ".join([item.filepath for item in self.data]) + ")"
 
@@ -313,21 +348,9 @@ class ProjectMetadata(BaseModel):
     name: str
     description: str
 
-    def show(self) -> str:
+    def show(self, **kwargs) -> str:
         """Returns a human-readable string representation of the project metadata."""
         return f"## Project Metadata\n{show_model(self)}\n"
-
-
-class Showable(Protocol):
-    """Interface for anything that can be turned into strings.
-    By convention, the CLI method turns objects into strings in a way that is slightly less verbose and more friendly to humans, though it is not required that show and show_cli have different return values at all.
-    """
-
-    def show_cli(self) -> str:
-        pass
-
-    def show(self) -> str:
-        pass
 
 
 ### ResponseParts ###
@@ -385,7 +408,7 @@ class CodeResponsePart(BaseModel):
         description="A short, descriptive title for the code block or the change it represents.",
     )
 
-    def show_cli(self) -> str:
+    def show_cli(self, **kwargs) -> str:
         """Return a (short) representation that is suitable for the CLI interface."""
         filepath_str = f"({self.filepath})" if self.filepath else ""
         notes_str = (
@@ -395,7 +418,8 @@ class CodeResponsePart(BaseModel):
         )
         return f"## {self.title} {filepath_str}{notes_str}"
 
-    def show(self) -> str:
+    def show(self, include_code: bool = True, **kwargs) -> str:
+        missing_msg = "<Code Redacted>"
         """Returns a comprehensive string representation of the part."""
         filepath_str = f" ({self.filepath})" if self.filepath else ""
         notes_str = (
@@ -410,7 +434,7 @@ class CodeResponsePart(BaseModel):
 ### Original Code
             
 ```{self.language}
-{self.original_code}
+{self.original_code if include_code else missing_msg}
 ```
             
 """
@@ -421,7 +445,7 @@ class CodeResponsePart(BaseModel):
         {"### New Code" if original_code_str else ""}
         
 ```{self.language}
-        {self.new_code}
+        {self.new_code if include_code else missing_msg}
 ```
 """
 
@@ -439,12 +463,12 @@ class TextResponsePart(BaseModel):
         description="An optional filepath. Use this to explicitly mark the generated text as refering to one of the files in the context.",
     )
 
-    def show_cli(self) -> str:
+    def show_cli(self, **kwargs) -> str:
         """A (short) CLI representation for the part."""
         filepath_str = f"## {self.filepath}\n" if self.filepath else ""
         return f"{filepath_str}{self.text}"
 
-    def show(self) -> str:
+    def show(self, **kwargs) -> str:
         """Comprehensive longform string representation for the part."""
         filepath_str = f"## {self.filepath}\n\n" if self.filepath else ""
         return f"""{filepath_str}{self.text}
@@ -464,7 +488,7 @@ class ShellCommandPart(BaseModel):
         description="A short, informative statement that describes the reason and intent behind this shell command. This will be shown to the user and stored in the logs."
     )
 
-    def show_cli(self) -> str:
+    def show_cli(self, **kwargs) -> str:
         return f"""## Shell command
 {self.reason}
 
@@ -473,7 +497,7 @@ class ShellCommandPart(BaseModel):
 ```
         """
 
-    def show(self) -> str:
+    def show(self, **kwargs) -> str:
         return show_model(self)
 
 
@@ -484,12 +508,12 @@ class FilesLoadPart(BaseModel):
         description="One or more  filepaths relative to the project root which will be loaded into context."
     )
 
-    def show_cli(self) -> str:
+    def show_cli(self, **kwargs) -> str:
         return f"""## Load Files into Context
 {" -> ".join(self.filepaths)}
 """
 
-    def show(self) -> str:
+    def show(self, **kwargs) -> str:
         return show_model(self)
 
 
@@ -502,12 +526,12 @@ class FilesUnloadPart(BaseModel):
         description="One or more filepaths relative to the project root that should be unloaded from the current context."
     )
 
-    def show_cli(self) -> str:
+    def show_cli(self, **kwargs) -> str:
         return f"""## Unload files from context
 {" <- ".join(self.filepaths)}
 """
 
-    def show(self) -> str:
+    def show(self, **kwargs) -> str:
         return show_model(self)
 
 
@@ -528,11 +552,11 @@ class CoderResponse(BaseModel):
         description="A list of response parts returned by the backend coder LLM. This may contain code and/or text.",
     )
 
-    def show_cli(self) -> str:
-        return "\n".join([part.show_cli() for part in self.contents])
+    def show_cli(self, **kwargs) -> str:
+        return "\n".join([part.show_cli(**kwargs) for part in self.contents])
 
-    def show(self) -> str:
-        return "\n".join([part.show() for part in self.contents])
+    def show(self, **kwargs) -> str:
+        return "\n".join([part.show(**kwargs) for part in self.contents])
 
 
 class WorkerCoderRequestPart(BaseModel):
@@ -614,16 +638,16 @@ class CoderInteractionHistoryItem(BaseModel):
         description="The full response returned by the LLM. as aprt of this interaction."
     )
 
-
     git_commit_hash: Optional[str] = Field(
-        default = None,
-        description = "The commit that was checked out at the time this interaction took place."
+        default=None,
+        description="The commit that was checked out at the time this interaction took place.",
     )
-    def show(self) -> str:
+
+    def show(self, **kwargs) -> str:
         """Returns a human readable string representation of the item."""
         return f"""[{self.timestamp}] {self.context.show_cli()}
   {self.model}@{self.backend} >
-{        self.response.show()}
+{        self.response.show(**kwargs)}
 """
 
 
@@ -650,7 +674,7 @@ class UserInteractionHistoryItem(BaseModel):
         description="The actual user prompt. This includes only the plain text created directly by the user at the time of the interaction."
     )
 
-    def show(self) -> str:
+    def show(self, **kwargs) -> str:
         return f"""[{self.timestamp}] {self.context.show_cli()}
   user >
         {self.prompt}
@@ -658,17 +682,6 @@ class UserInteractionHistoryItem(BaseModel):
 
 
 type InteractionHistoryItem = UserInteractionHistoryItem | CoderInteractionHistoryItem
-
-class HasTimestamp(Protocol):
-    timestamp: str
-
-class HasUniqueID(Protocol):
-    unique_id: str
-    tag: Optional[str]
-
-
-class HasGitCommitHash(Protocol):
-    git_commit_hash: str
 
 
 class InteractionHistory(BaseModel):
@@ -687,10 +700,10 @@ class InteractionHistory(BaseModel):
     )
 
     title: str = Field(
-        default = "",
-        description = "A short phrase summarizing what the interaction was about. An interaction's title may change over time."
+        default="",
+        description="A short phrase summarizing what the interaction was about. An interaction's title may change over time.",
     )
-    
+
     contents: List[InteractionHistoryItem] = Field(
         default_factory=lambda: [],
         description="List of past interactions in this ghostcode project.",
@@ -705,20 +718,27 @@ class InteractionHistory(BaseModel):
         if self.empty():
             return None
 
-
         # rely on the fact that iso8601 timestamps equate chronological with lexicographical ordering
         timestamps = sorted([item.timestamp for item in self.contents])
         return (timestamps[0], timestamps[-1])
-    
+
     def get_affected_git_commits(self) -> List[str]:
         """Returns a (non-duplicate containing) list of git commits that served as basis for the interaction turns."""
-        return list(set([hash
-                         for item in self.contents
-                         if (hash := item.git_commit_hash) is not None]))
-        
-    def show(self) -> str:
+        return list(
+            set(
+                [
+                    hash
+                    for item in self.contents
+                    if (hash := item.git_commit_hash) is not None
+                ]
+            )
+        )
+
+    def show(self, include_code: bool = True) -> str:
         """Returns a human readable text representation of the history."""
-        return "\n".join([item.show() for item in self.contents])
+        return "\n".join(
+            [item.show(include_code=include_code) for item in self.contents]
+        )
 
 
 ### Actions ###
@@ -857,12 +877,6 @@ class ActionAlterContext(BaseModel):
     clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.INFORM
 
     context_alteration: ContextAlteration
-
-
-class HasClearance(Protocol):
-    """Interface for anything that requires clearance."""
-
-    clearance_required: ClassVar[ClearanceRequirement]
 
 
 type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionAlterContext
