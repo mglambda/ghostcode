@@ -673,6 +673,7 @@ def worker_recover(
     # we might error during LLM query
     try:
         logger.info("Querying ghostworker for recovery.")
+        prog.worker_box.clear_history()
         with ProgressPrinter(message=" Querying 🔧 ", print_function=prog.print):
             worker_response = prog.worker_box.new(
                 types.WorkerResponse,

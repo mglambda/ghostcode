@@ -1,5 +1,6 @@
 from typing import *
 import os
+import random
 from enum import Enum
 from datetime import datetime, timezone
 import time
@@ -358,3 +359,23 @@ def _show_model(object: BaseModel) -> str:
         default_flow_style=False,
     )
 
+def make_mnemonic(max_length: int = 1, min_length: int = 1) -> str:
+    """Returns a memorable but somewhat unique phrase, like 'moses-4-dragon' or 'zero-dark-30'."""
+    # FIXME: this is mostly a stub right now
+    nouns = "danger dragon fire quest moses night shield ocean forge hammer power freedom love utility house tree dog forest hill salamander hippopotamus car airplane knife whistle violin shoestring pig iron rock gold".split(" ")
+    adjectives = "dark strong strange blue deep high full relative regular ok galactic ornary wide intense extreme serene equal low salty intelligent mad fortuitous renowned aspiring parsemonious happy cheap gorgeous".split(" ")
+    verbs = "shoot feel punch kiss drink hit weep banish slash inspect observe steal keep fly reek hoist discover feed point make".split(" ")
+    numbers = "0 2 3 5 7 13 16 24 37 42 55 64 72 88 91 92 100 101".split(" ")
+    # pool will have all of them later, but numbers can never be the first pick
+    pool = [nouns, adjectives,verbs]
+    acc = []
+    length = random.randint(min_length, max_length)
+    for i in range(0, length):
+        if i == 1:
+            pool.append(numbers)
+
+        acc.append(random.choice(random.choice(pool)))
+
+    return "-".join(acc)
+
+        

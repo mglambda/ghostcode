@@ -1,7 +1,5 @@
 * work-in-progress (WIP, limit 5)
-Fix broken recovery.
-Handle code file edit cases of inadequate levenshtein distance.
-Make a show_log method for program.
+Properly test worker recovery.
 * todo
 ** general
 Fix log file not being created when logging is set to stderr.
@@ -38,3 +36,6 @@ Add basic confirmation dialog.
 Create virtual shell
 Create action that let's worker ask coder for adjustment.
 Give actions short string representation to be used at various points in the CLI interface.
+Fix broken recovery.
+Handle code file edit cases of inadequate levenshtein distance.
+Make a show_log method for program.
