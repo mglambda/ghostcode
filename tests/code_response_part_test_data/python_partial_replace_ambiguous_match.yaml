@@ -11,7 +11,7 @@ code_response_part:
   new_code: |
     def helper_func(val):
         return val * 3 # Updated logic
-  context_anchor: def helper_func(val):
+  context_anchor: "def helper_func(val):"
   notes:
     - Update the first instance of helper_func.
 file:

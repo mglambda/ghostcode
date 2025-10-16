@@ -17,7 +17,7 @@ code_response_part:
         intermediate_result = [x * 3 for x in data]
         final_result = sum(intermediate_result) + 10
         return final_result
-  context_anchor: def process_data(data):
+  context_anchor: "def process_data(data):"
   notes:
     - Update data processing logic in process_data.
 file:

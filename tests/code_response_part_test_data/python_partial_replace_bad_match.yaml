@@ -12,7 +12,7 @@ code_response_part:
   new_code: |
     def calculate_product(x, y):
         return x * y
-  context_anchor: def my_function():
+  context_anchor: "def my_function():"
   notes:
     - Attempt to replace a function that doesn't exist with a very different block.
 file:
