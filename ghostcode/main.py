@@ -697,11 +697,7 @@ class InteractCommand(BaseModel, CommandInterface):
                 elif not (self.actions):
                     # we only want a text response
                     text_response = prog.coder_box.new(types.TextResponsePart, prompt)
-                    response = types.CoderResponse(
-                    # lists are not covariant functors in python
-                    # have to repackage a bit to keep mypy happy. this is safe (TM)                        
-                        contents=[cast(types.CoderResponsePart, text_response)]
-                    )
+                    response = types.CoderResponse(contents=[text_response])
             logger.timing(f"ghostcoder performance statistics:\n{showTime(prog.coder_box._plumbing, [])}")  # type: ignore
         except Exception as e:
             prog.print(
@@ -810,9 +806,7 @@ class InteractCommand(BaseModel, CommandInterface):
             prog.print(response.show_cli())
             logger.info(f"Preparing action queue.")
             prog.action_queue = worker.actions_from_response_parts(
-                prog,
-                # FIXME: make this a sequence so mypy shuts up
-                cast(List[types.LLMResponsePart], response.contents)
+                prog, response.contents
             )
             worker.run_action_queue(prog)
 

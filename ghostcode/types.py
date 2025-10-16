@@ -547,7 +547,7 @@ class CoderResponse(BaseModel):
     Coder responses are conceptual in nature and contain code and text. THey are not intended to be tool-calls etc.
     """
 
-    contents: List[CoderResponsePart] = Field(
+    contents: Sequence[CoderResponsePart] = Field(
         default_factory=lambda: [],
         description="A list of response parts returned by the backend coder LLM. This may contain code and/or text.",
     )

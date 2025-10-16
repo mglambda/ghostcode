@@ -24,7 +24,7 @@ logger = logging.getLogger("ghostcode.worker")
 
 
 def actions_from_response_parts(
-    prog: Program, parts: List[types.LLMResponsePart]
+    prog: Program, parts: Sequence[types.LLMResponsePart]
 ) -> List[types.Action]:
     """Transform a list of response parts from the coder LLM into a list of actions.
     This is not a 1 to 1 mapping. You may end up with an empty list if e.g. all the response parts are just discussion text. Only code parts and similar are transformed into actions.
