@@ -614,6 +614,11 @@ class CoderInteractionHistoryItem(BaseModel):
         description="The full response returned by the LLM. as aprt of this interaction."
     )
 
+
+    git_commit_hash: Optional[str] = Field(
+        default = None,
+        description = "The commit that was checked out at the time this interaction took place."
+    )
     def show(self) -> str:
         """Returns a human readable string representation of the item."""
         return f"""[{self.timestamp}] {self.context.show_cli()}
@@ -654,6 +659,8 @@ class UserInteractionHistoryItem(BaseModel):
 
 type InteractionHistoryItem = UserInteractionHistoryItem | CoderInteractionHistoryItem
 
+class HasTimestamp(Protocol):
+    timestamp: str
 
 class HasUniqueID(Protocol):
     unique_id: str
@@ -693,6 +700,22 @@ class InteractionHistory(BaseModel):
         """Returns true if the history is empty."""
         return self.contents == []
 
+    def timestamps(self) -> Optional[Tuple[str, str]]:
+        """Returns a pair of (earliest interaction, most recent itneraction), or None if no interactions present."""
+        if self.empty():
+            return None
+
+
+        # rely on the fact that iso8601 timestamps equate chronological with lexicographical ordering
+        timestamps = sorted([item.timestamp for item in self.contents])
+        return (timestamps[0], timestamps[-1])
+    
+    def get_affected_git_commits(self) -> List[str]:
+        """Returns a (non-duplicate containing) list of git commits that served as basis for the interaction turns."""
+        return list(set([hash
+                         for item in self.contents
+                         if (hash := item.git_commit_hash) is not None]))
+        
     def show(self) -> str:
         """Returns a human readable text representation of the history."""
         return "\n".join([item.show() for item in self.contents])
