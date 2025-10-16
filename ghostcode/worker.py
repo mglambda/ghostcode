@@ -7,6 +7,7 @@ import json
 import logging
 from ghostcode import types
 from ghostcode.progress_printer import ProgressPrinter
+from ghostcode.ansi_colors import Color256
 from ghostcode.types import Program
 import time
 from ghostcode.utility import (
@@ -71,7 +72,8 @@ def actions_from_response_parts(
                 # FIXME: we might want something softer than halt in the future, something that stop interactions with LLMs but resolves actions that are still on the queue
                 return [
                     types.ActionHaltExecution(
-                        reason=f"LLM ended their interaction. Reason: {end_interaction_part.reason}"
+                        reason=f"LLM ended their interaction. Reason: {end_interaction_part.reason}",
+                        announce=True,
                     )
                 ]
             case _:
@@ -106,7 +108,11 @@ def run_action_queue(prog: Program) -> None:
                 f"Current Queue Status\n  popped action: {action.__class__.__name__}\n  queue: {[a.__class__.__name__ for a in prog.action_queue]}"
             )
             prog.print(
-                types.action_show_user_message(action), end="", tag="action_queue"
+                types.action_show_user_message(
+                    action, delimiter_color=prog.cosmetic_state.to_color()
+                ),
+                end="",
+                tag="action_queue",
             )
             match action:
                 case types.ActionHaltExecution() as halt_action:
@@ -114,6 +120,8 @@ def run_action_queue(prog: Program) -> None:
                         f"Halting action queue execution after {finished_actions} actions, with {len(prog.action_queue)} actions remaining in queue. Reason: {halt_action.reason}"
                     )
                     prog.discard_actions()
+                    if halt_action.announce:
+                        prog.print(f"Halted. {halt_action.reason}")
                     return
                 case _:
                     logger.info(
@@ -126,6 +134,7 @@ def run_action_queue(prog: Program) -> None:
                     finished_actions += 1
                     match result:
                         case types.ActionResultOk() as result_ok:
+                            prog.cosmetic_state = types.CosmeticProgramState.WORKING
                             logger.info(
                                 f"Action execution successful."
                                 + f"Message: {result_ok.success_message}"
@@ -133,6 +142,7 @@ def run_action_queue(prog: Program) -> None:
                                 else ""
                             )
                         case types.ActionResultFailure() as ar_failure:
+                            prog.cosmetic_state = types.CosmeticProgramState.PROBLEM
                             logger.info(
                                 f"Failed to execute action {type(ar_failure.original_action)}. Reason: {ar_failure.failure_reason}"
                             )
@@ -142,17 +152,20 @@ def run_action_queue(prog: Program) -> None:
                             for action in worker_recover(prog, ar_failure).actions:
                                 prog.push_front_action(action)
                         case types.ActionResultMoreActions() as ar_more:
+                            prog.cosmetic_state = types.CosmeticProgramState.WORKING
                             logger.info(
                                 f"Got MoreAction result for {len(ar_more.actions)} actions. Action queue has finished {finished_actions}, remaining {len(prog.action_queue)}."
                             )
                             for new_action in ar_more.actions:
                                 prog.push_front_action(new_action)
                         case _:
+                            prog.cosmetic_state = types.CosmeticProgramState.WORKING
                             logger.info(f"Got unknown action result. Weird, but ok.")
                             logger.debug(
                                 f"Dumping unknown action result:\n{json.dumps(result.model_dump(), indent=4)}"
                             )
     except IndexError:
+        prog.cosmetic_state = types.CosmeticProgramState.IDLE
         logger.info(
             f"Action queue execution finished after {finished_actions} actions."
         )
@@ -246,7 +259,7 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                     original_action=action, failure_reason=failure_message
                 )
     except Exception as e:
-        logger.error(
+        logger.exception(
             f"Caught exception in execute_action: {e}. Full traceback: \n{traceback.format_exc()}"
         )
         return types.ActionResultFailure(
@@ -683,7 +696,8 @@ def worker_recover(
         return types.ActionResultMoreActions(
             actions=[
                 types.ActionHaltExecution(
-                    reason=f"During recovery from a failed action, an error was encountered: {e}.\n\nOriginal failure reason: {failure.failure_reason}."
+                    reason=f"During recovery from a failed action, an error was encountered: {e}.\n\nOriginal failure reason: {failure.failure_reason}.",
+                    announce=True,
                 )
             ]
         )

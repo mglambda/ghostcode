@@ -11,6 +11,7 @@ import yaml
 import logging
 import ghostbox.definitions # type: ignore
 from ghostbox.definitions import LLMBackend # type: ignore
+from ghostcode.ansi_colors import Color256, colored
 from ghostbox import Ghostbox
 from ghostcode.utility import language_from_extension, timestamp_now_iso8601, show_model, PydanticEnumDumper
 from ghostcode import shell
@@ -636,6 +637,11 @@ class ActionHaltExecution(BaseModel):
     reason: str = Field(
         description = "The reason for the halt signal in plain english."
     )
+
+    announce: bool = Field(
+        default = False,
+        description = "Wether to announce the reason for the halting to the user. During regular execution, this is usually unnecessary."
+    )
     
 class ActionHandleCodeResponsePart(BaseModel):
     """This action represents a code response that was received by the coder LLM and needs to be handled.
@@ -758,9 +764,12 @@ def action_show_short(action: Action) -> str:
         case _:
             return name
 
-def action_show_user_message(action: Action) -> str:
+def action_show_user_message(action: Action, delimiter_color: Optional[Color256] = None) -> str:
     """Display a user message for the action, which is printed when the action is popped off the action queue."""
-    delimiter = " >>= "
+    if delimiter_color is None:
+        delimiter = " >>= "
+    else:
+        delimiter = f" {colored(">>=", delimiter_color)} "
     
     match action:
         case _:
@@ -1231,8 +1240,28 @@ class Project(BaseModel):
             raise
         
         logger.info(f"Ghostcode project saved successfully to {root}.")
-        
 
+class CosmeticProgramState(Enum):
+    """A vague indicator of program state. This is used to e.g. color certain outputs in the interface. Do not use this to query program state programmatically."""
+    IDLE = 0
+    WORKING = 10
+    PROBLEM = 20
+    CRITICAL_PROBLEM = 30
+
+    def to_color(self) -> Color256:
+        match self:
+            case CosmeticProgramState.IDLE:
+                return Color256.GREEN
+            case CosmeticProgramState.WORKING:
+                return Color256.ORANGE
+            case CosmeticProgramState.PROBLEM:
+                return Color256.DARK_MAGENTA
+            case CosmeticProgramState.CRITICAL_PROBLEM:
+                return Color256.RED
+            case _:
+                return Color256.GRAY_MEDIUM
+            
+            
 @dataclass
 class Program:
     """Holds program state for the main function.
@@ -1260,6 +1289,13 @@ class Program:
 
     # holds the tag of the last message that was printed, useful for internal print logic
     last_print_tag: Optional[str] = None
+
+    # used to color the interface and cannot be relied on except for cosmetics
+    cosmetic_state: CosmeticProgramState = Field(
+        default_factory=lambda: CosmeticProgramState.IDLE
+        )
+
+    
     def _get_cli_prompt(self) -> str:
         """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
         # some ghostbox internal magic to get the token count

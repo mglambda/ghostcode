@@ -2,7 +2,7 @@ id: python_tiny_full_1
 title: |-
   Full replace of function in tiny, one function file.
 expected_outcome: foo function should get replaced.
-code_response:
+code_response_part:
   type: partial
   filepath: example.py
   language: python
