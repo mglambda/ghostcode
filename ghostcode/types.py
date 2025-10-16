@@ -60,7 +60,7 @@ class HasGitCommitHash(Protocol):
 class HasClearance(Protocol):
     """Interface for anything that requires clearance."""
 
-    clearance_required: ClassVar[ClearanceRequirement]
+    clearance_required: ClassVar['ClearanceRequirement']
 
 
 ### --- Default Configurations ---
