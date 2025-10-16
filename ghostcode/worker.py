@@ -670,12 +670,12 @@ def make_prompt_interaction_title(interaction: types.InteractionHistory) -> str:
 Below is an interaction between a User and a coding assistant LLM.
 
 ```txt
-interaction.show(include_code=False)
+{interaction.show(include_code=False)}
 ```    
 
 ## User Prompt
 
-    Please generate a descriptive title for the above interaction.
+Please generate a descriptive title for the above interaction. It should capture the main theme or topic of the discussion.
 Generate only the title. Do not generate additional output except for the title that has been requested.
 """
 
@@ -730,7 +730,7 @@ def worker_recover(
     )
 
 
-def worker_generate_title(prog: types.Program, interaction: types.InteractionHistory) -> str:
+def worker_generate_title(prog: Program, interaction: types.InteractionHistory) -> str:
     """Query the worker to generate a title for a given interaction.
     This works best if the interaction has some content.
     It can be repeatedly called on the same interaction for different titles."""

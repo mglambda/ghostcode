@@ -687,6 +687,34 @@ class InteractCommand(BaseModel, CommandInterface):
             return "{{project_metadata}\n\n}{{preamble_injection}}" + prompt
         return prompt
 
+    def _dump_interaction(self, prog: Program) -> None:
+        """Dumps interaction history to .ghostcode/current_interaction.txt and .ghostcode/current_interaction.json""" 
+        if prog.project is not None and prog.project_root is not None:
+            with ProgressPrinter(message=" Saving interaction ", print_function=prog.print):
+                current_interaction_history_filepath = os.path.join(
+                    prog.project_root,
+                    ".ghostcode",
+                    prog.project._CURRENT_INTERACTION_HISTORY_FILE,
+                )
+                current_interaction_history_plaintext_filepath = os.path.join(
+                    prog.project_root,
+                    ".ghostcode",
+                    prog.project._CURRENT_INTERACTION_PLAINTEXT_FILE,
+                )
+                logger.info(
+                    f"Dumping current interaction history to {current_interaction_history_filepath} and {current_interaction_history_plaintext_filepath}"
+                )
+                with open(current_interaction_history_filepath, "w") as hf:
+                    json.dump(self.interaction_history.model_dump(), hf, indent=4)
+
+                with open(current_interaction_history_plaintext_filepath, "w") as pf:
+                    pf.write(self.interaction_history.show())
+        else:
+            logger.warning(
+                f"Null project_root while trying to dump current itneraction history. Create a project root or no dump for you!"
+            )
+        
+    
     def _query_coder(self, prog: Program, prompt: str) -> Optional[types.CoderResponse]:
         try:
             with ProgressPrinter(message=" Querying 👻 ", print_function=prog.print):
@@ -705,7 +733,7 @@ class InteractCommand(BaseModel, CommandInterface):
             prog.print(
                 f"Problems encountered during 👻 request. Reason: {e}\nRetry the request or consult the logs for more information."
             )
-            logger.error(
+            logger.exception(
                 f"error on ghostbox.new. See the full traceback:\n{traceback.format_exc()}"
             )
             logger.error(
@@ -713,6 +741,15 @@ class InteractCommand(BaseModel, CommandInterface):
             )
             return None
         return response
+
+    def _save_interaction(self, prog: Program) -> None:
+        logger.info(f"Finishing interaction.")
+        new_title = worker.worker_generate_title(prog, self.interaction_history)
+        self.interaction_history.title = new_title if new_title else self.interaction_history.title
+        
+        if not (self.interaction_history.empty()) and prog.project is not None:
+            prog.project.interactions.append(self.interaction_history)
+        
 
     def _interact_loop(
         self, intermediate_result: CommandOutput, prog: Program
@@ -814,34 +851,10 @@ class InteractCommand(BaseModel, CommandInterface):
 
             user_input = ""
             # this is a failsafe and for user convenience in case we crash
-            if prog.project_root is not None:
-                current_interaction_history_filepath = os.path.join(
-                    prog.project_root,
-                    ".ghostcode",
-                    prog.project._CURRENT_INTERACTION_HISTORY_FILE,
-                )
-                current_interaction_history_plaintext_filepath = os.path.join(
-                    prog.project_root,
-                    ".ghostcode",
-                    prog.project._CURRENT_INTERACTION_PLAINTEXT_FILE,
-                )
-                logger.info(
-                    f"Dumping current interaction history to {current_interaction_history_filepath} and {current_interaction_history_plaintext_filepath}"
-                )
-                with open(current_interaction_history_filepath, "w") as hf:
-                    json.dump(self.interaction_history.model_dump(), hf, indent=4)
-
-                with open(current_interaction_history_plaintext_filepath, "w") as pf:
-                    pf.write(self.interaction_history.show())
-            else:
-                logger.warning(
-                    f"Null project_root while trying to dump current itneraction history. Create a project root or no dump for you!"
-                )
+            self._dump_interaction(prog)
 
         # end of interaction
-        logger.info(f"Finishing interaction.")
-        if not (self.interaction_history.empty()):
-            prog.project.interactions.append(self.interaction_history)
+        self._save_interaction(prog)
 
         return CommandOutput(text="Finished interaction.")
 
@@ -1046,7 +1059,7 @@ def main():
 
     # Talk command
     talk_parser = subparsers.add_parser(
-        "talk", help="Launches an interactive session with the Coder LLM, but without performing any actions."
+        "talk", help="Launches an interactive session with the Coder LLM, but without performing any actions. This is shorthand for ghostcode interact --no-actions"
     )
     talk_parser.set_defaults(func=lambda args: InteractCommand(actions=False))
 

@@ -1,6 +1,6 @@
 * work-in-progress (WIP, limit 5)
-Have worker make title for interactions
 Create worker routing
+Refactor ghostcoder querying from interact subcommand to action queue.
 Properly test worker recovery.
 * todo
 ** general
@@ -44,3 +44,4 @@ Fix log file not being created when logging is set to stderr.
 Create basic testing framework (/tests folder and scripts).
 Create log command to view past interactions.
 add talk command
+Have worker make title for interactions
