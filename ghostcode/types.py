@@ -678,6 +678,12 @@ class InteractionHistory(BaseModel):
         default_factory=lambda: make_mnemonic(3),
         description="An easy to remember, somewhat unique string that can be used to retrieve the conversation history. If any ambiguity is encountered, the unique_id is used as a fallback. Can also be set by users.",
     )
+
+    title: str = Field(
+        default = "",
+        description = "A short phrase summarizing what the interaction was about. An interaction's title may change over time."
+    )
+    
     contents: List[InteractionHistoryItem] = Field(
         default_factory=lambda: [],
         description="List of past interactions in this ghostcode project.",
