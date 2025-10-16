@@ -1,0 +1,28 @@
+id: markdown_full_replace_existing_file
+title: Full replacement of an existing Markdown file.
+expected_outcome: Should result in ActionFileEdit replacing the entire content of 'README.md'.
+code_response_part:
+  type: full
+  filepath: README.md
+  language: markdown
+  original_code: |
+    # Old Project Title
+
+    This is an old description of the project.
+    It needs to be completely rewritten.
+  new_code: |
+    # New and Improved Project Title
+
+    This project is now awesome!
+    It does many cool things.
+    - Feature 1
+    - Feature 2
+  notes:
+    - Update the project README with new information.
+file:
+  filepath: README.md
+  content: |
+    # Old Project Title
+
+    This is an old description of the project.
+    It needs to be completely rewritten.

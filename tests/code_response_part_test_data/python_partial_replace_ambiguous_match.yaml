@@ -1,0 +1,41 @@
+id: python_partial_replace_ambiguous_match
+title: Partial replacement with an ambiguous original code block.
+expected_outcome: Should replace the first occurrence of the 'helper_func' block.
+code_response_part:
+  type: partial
+  filepath: repeated_code.py
+  language: python
+  original_code: |
+    def helper_func(val):
+        return val * 2
+  new_code: |
+    def helper_func(val):
+        return val * 3 # Updated logic
+  context_anchor: def helper_func(val):
+  notes:
+    - Update the first instance of helper_func.
+file:
+  filepath: repeated_code.py
+  content: |
+    # This file contains repeated code blocks.
+
+    def main_logic():
+        x = helper_func(5)
+        y = helper_func(10)
+        print(f"Main logic: {x}, {y}")
+
+    def helper_func(val):
+        return val * 2
+
+    def another_function():
+        a = 1
+        b = 2
+        c = helper_func(a + b) # Another call to helper_func
+        return c
+
+    def helper_func(val):
+        return val * 2 # This is a duplicate definition
+
+    if __name__ == "__main__":
+        main_logic()
+        print(f"Another result: {another_function()}")

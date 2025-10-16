@@ -1,0 +1,55 @@
+id: python_large_file_partial_replace_good_match
+title: Partial replacement in a large Python file with a good Levenshtein match.
+expected_outcome: The 'process_data' function in 'large_script.py' should be updated.
+code_response_part:
+  type: partial
+  filepath: large_script.py
+  language: python
+  original_code: |
+    def process_data(data):
+        # Initial processing logic
+        intermediate_result = [x * 2 for x in data]
+        final_result = sum(intermediate_result)
+        return final_result
+  new_code: |
+    def process_data(data):
+        # Updated processing logic
+        intermediate_result = [x * 3 for x in data]
+        final_result = sum(intermediate_result) + 10
+        return final_result
+  context_anchor: def process_data(data):
+  notes:
+    - Update data processing logic in process_data.
+file:
+  filepath: large_script.py
+  content: |
+    # This is a large Python script for data processing.
+
+    import math
+    import os
+
+    def load_config(path):
+        # Loads configuration from a file
+        pass
+
+    def initialize_system():
+        # Sets up the environment
+        pass
+
+    def process_data(data):
+        # Initial processing logic
+        intermediate_result = [x * 2 for x in data]
+        final_result = sum(intermediate_result)
+        return final_result
+
+    def save_results(results, output_path):
+        # Saves the processed results
+        pass
+
+    if __name__ == "__main__":
+        config = load_config("config.json")
+        initialize_system()
+        sample_data = [1, 2, 3, 4, 5]
+        processed = process_data(sample_data)
+        save_results(processed, "output.txt")
+        print(f"Processing complete: {processed}")

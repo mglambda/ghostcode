@@ -1,0 +1,20 @@
+id: javascript_create_new_file
+title: Create a new JavaScript file.
+expected_outcome: Should result in ActionFileCreate for 'new_feature.js'.
+code_response_part:
+  type: full
+  filepath: new_feature.js
+  language: javascript
+  original_code: null
+  new_code: |
+    // This is a new JavaScript feature file
+    function calculateDiscount(price, discountPercentage) {
+        return price * (1 - discountPercentage / 100);
+    }
+
+    export default calculateDiscount;
+  notes:
+    - Create a new utility file for discount calculation.
+file:
+  filepath: new_feature.js
+  content: ""

@@ -1291,7 +1291,7 @@ class Program:
     last_print_tag: Optional[str] = None
 
     # used to color the interface and cannot be relied on except for cosmetics
-    cosmetic_state: CosmeticProgramState = Field(
+    cosmetic_state: CosmeticProgramState = field(
         default_factory=lambda: CosmeticProgramState.IDLE
         )
 
