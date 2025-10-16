@@ -16,6 +16,7 @@ from ghostcode.utility import (
     show_model,
     timestamp_now_iso8601,
     foldl,
+    mock_print,
 )
 import tempfile
 
@@ -356,6 +357,45 @@ def apply_edit_file(
         success_message=f"Applied edit action to file {filepath} for {len(edit_action.insert_text)} characters."
     )
 
+def execute_query_coder(prog: Program, query_coder_action: types.ActionQueryCoder) -> types.ActionResult:
+    print_function = mock_print if query_coder_action.hidden else prog.print
+    
+    try:
+        with ProgressPrinter(message=" Querying 👻 ", print_function=print_function):
+            profile = query_coder_action.llm_response_profile
+            if profile.actions and profile.text:
+                # this is the default, offer the coder the full menu of parts to generate
+                response = prog.coder_box.new(
+                    types.CoderResponse,
+                    query_coder_action.prompt,
+                )
+            elif profile.text:
+                # we only want a text response
+                text_response = prog.coder_box.new(types.TextResponsePart, query_coder_action.prompt)
+                response = types.CoderResponse(contents=[text_response])
+        logger.timing(f"ghostcoder performance statistics:\n{showTime(prog.coder_box._plumbing, [])}")  # type: ignore
+    except Exception as e:
+        prog.print( # this bypasses hidden and that's ok
+            f"Problems encountered during 👻 request. Reason: {e}\nRetry the request or consult the logs for more information."
+        )
+        logger.exception(
+            f"error on ghostbox.new. See the full traceback:\n{traceback.format_exc()}"
+        )
+        logger.error(
+            f"\nAnd here is the last result:\n\n{prog.coder_box.get_last_result()}"
+        )
+        return types.ActionResultFailure(
+            original_action=query_coder_action,
+            failure_reason = f"Querying the ghostcoder backend failed. Reason: {e}."
+        )
+
+    return types.ActionResultMoreActions(
+        actions=actions_from_response_parts(
+            prog, response.contents
+        )
+    )
+
+    
 
 @time_function_with_logging
 def handle_code_part(
