@@ -1,9 +1,9 @@
 * work-in-progress (WIP, limit 5)
+Have worker make title for interactions
+Create worker routing
 Properly test worker recovery.
 * todo
 ** general
-Fix log file not being created when logging is set to stderr.
-Create log command to view past interactions.
 Add doc comment injections to yaml config files.
 Audio input support for small queries ("hey ghostcode, what was the parser class called in this project?")
 Investigate proper deployment (conda, docker, getting llama.cpp, downloading models from huggingface).
@@ -20,7 +20,7 @@ Change InteractionHistory to include a title and request an LLM to come up with 
 Investigate wether structured output degrades performance.
 ** worker
 ** tests
-Create basic testing framework (/tests folder and scripts).
+Write tests for the virtual terminal
 * about this file
 Todo list that's structured like a Canban board.
 One line is one todo-item.
@@ -39,3 +39,6 @@ Give actions short string representation to be used at various points in the CLI
 Fix broken recovery.
 Handle code file edit cases of inadequate levenshtein distance.
 Make a show_log method for program.
+Fix log file not being created when logging is set to stderr.
+Create basic testing framework (/tests folder and scripts).
+Create log command to view past interactions.

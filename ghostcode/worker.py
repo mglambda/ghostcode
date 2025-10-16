@@ -661,6 +661,23 @@ Please respond with one or more response parts that likely resolve the failure a
 
     return prompt
 
+def make_prompt_interaction_title(interaction: types.InteractionHistory) -> str:
+    """Returns a prompt that should generate a title for a given interaction history."""
+    # this can be improved but to strike a good balance between tokencount and accuracy
+    # we can just reused the show method
+    return f"""## Context
+
+Below is an interaction between a User and a coding assistant LLM.
+
+```txt
+interaction.show(include_code=False)
+```    
+
+## User Prompt
+
+    Please generate a descriptive title for the above interaction.
+Generate only the title. Do not generate additional output except for the title that has been requested.
+"""
 
 def worker_recover(
     prog: Program, failure: types.ActionResultFailure
@@ -711,3 +728,17 @@ def worker_recover(
             )
         ]
     )
+
+
+def worker_generate_title(prog: types.Program, interaction: types.InteractionHistory) -> str:
+    """Query the worker to generate a title for a given interaction.
+    This works best if the interaction has some content.
+    It can be repeatedly called on the same interaction for different titles."""
+    logger.info(f"Generating title for interaction {interaction.unique_id}.")
+    try:
+        with ProgressPrinter(message=" Querying 🔧 ", print_function=prog.print):
+            return prog.worker_box.text(make_prompt_interaction_title(interaction))
+    except Exception as e:
+        logger.exception(f"Uncaught exception while trying to generate title for interaction {interaction.unique_id}. Reason: {e}")
+    # we are prepared to deal with empty string titles
+    return ""
