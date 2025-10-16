@@ -651,7 +651,9 @@ class InteractCommand(BaseModel, CommandInterface):
             result.print("Aborting interaction.")
             return result
 
-        result.print("Starting interactive session with Coder LLM (placeholder).")
+
+        actions_str = " Talk only, no actions will be performed in this interaction." if not(self.actions) else ""
+        result.print("Starting interactive session with 👻." + actions_str)
         result.print("API keys checked. All good.")
 
         # start the actual loop in another method
@@ -1040,7 +1042,7 @@ def main():
         default=True,
         help="If --no-actions is provided, ghostcode won't try to do edits, file creation, git commits or anything else that changes state. The ghostcoder LLM will be forced to generate only text, which may or may not contain inline code examples.",
     )
-    interact_parser.set_defaults(func=lambda args: InteractCommand())
+    interact_parser.set_defaults(func=lambda args: InteractCommand(actions=args.actions))
 
     # Log command
     log_parser = subparsers.add_parser("log", help="Display past interaction history.")
