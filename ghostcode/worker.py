@@ -1,5 +1,6 @@
 # ghostcode/worker.py
 from typing import *
+from ghostbox.commands import showTime  # type: ignore
 import traceback
 import os
 import shutil
@@ -251,6 +252,8 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                 end_t = time.perf_counter()
                 # FIXME: add wait action
                 return types.ActionResultMoreActions(actions=[])
+            case types.ActionQueryCoder() as query_coder_action:
+                return execute_query_coder(prog, query_coder_action)
             case _:
                 # Handle unknown action types
                 failure_message = f"Received an unknown action type: {type(action).__name__}. This action cannot be executed."
