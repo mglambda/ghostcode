@@ -2,6 +2,7 @@ from typing import *
 import json
 import traceback
 from ghostcode import types, worker
+from ghostcode import slash_commands
 from ghostcode.progress_printer import ProgressPrinter
 
 # don't want the types. prefix for these
@@ -772,24 +773,7 @@ class InteractCommand(BaseModel, CommandInterface):
 
             if line == "/quit":
                 break
-            elif line == "/lastrequest":
-                print(json.dumps(prog.coder_box.get_last_request(), indent=4))
-                continue
-            elif line == "/traceback":
-                global EXCEPTION_HANDLER
-                if (tr_str := EXCEPTION_HANDLER.try_get_last_traceback()) is not None:
-                    print(
-                        f"Displaying most recent exception below. Repeated calls of /traceback will display earlier exceptions.\n\n```\n{tr_str}```\n"
-                    )
-                else:
-                    print("No recent tracebacks.")
-                continue
-            elif line == "/show":
-                print(self.interaction_history.show())
-                continue
             elif line == "/save":
-                with open("out.txt", "w") as f:
-                    f.write(self.interaction_history.show())
                 continue
             elif line != "\\":
                 user_input += "\n" + line
@@ -893,7 +877,7 @@ class VerifyCommand(BaseModel):
         return result
 
 
-def main():
+def _main():
     parser = argparse.ArgumentParser(
         prog="ghostcode",
         description="A command line tool to help programmers code using LLMs.",
@@ -1190,4 +1174,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    _main()

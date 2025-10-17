@@ -1,10 +1,10 @@
 * work-in-progress (WIP, limit 5)
+add proper SlashCommand type for slash (like "/quit") commands in interact mode.
 Create worker routing
-Refactor ghostcoder querying from interact subcommand to action queue.
 Properly test worker recovery.
+Add ActionShellCommand to execute_action match case.
 * todo
 ** general
-
 Add doc comment injections to yaml config files.
 Audio input support for small queries ("hey ghostcode, what was the parser class called in this project?")
 Investigate proper deployment (conda, docker, getting llama.cpp, downloading models from huggingface).
@@ -15,7 +15,7 @@ emacs integration (use server and emacslisp generation with "emacs -e").
 More useful CLI commands.
 Keep main command executiong from crashing catastrophically (wrap in try and exit gracefully).
 ** CLI
-add proper SlashCommand type for slash (like "/quit") commands in interact mode.
+
 ** coder
 Investigate wether structured output degrades performance.
 ** worker
@@ -45,3 +45,4 @@ Create basic testing framework (/tests folder and scripts).
 Create log command to view past interactions.
 add talk command
 Have worker make title for interactions
+Refactor ghostcoder querying from interact subcommand to action queue.
