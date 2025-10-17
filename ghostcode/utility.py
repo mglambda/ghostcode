@@ -379,3 +379,7 @@ def make_mnemonic(max_length: int = 1, min_length: int = 1) -> str:
     return "-".join(acc)
 
         
+
+
+def mock_print(text_that_will_not_be_printed: str, end: str = "\n", flush=True) -> None:
+    return

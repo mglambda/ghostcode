@@ -630,14 +630,15 @@ class LogCommand(BaseModel, CommandInterface):
 class InteractCommand(BaseModel, CommandInterface):
     """Launches an interactive session with the Coder LLM."""
 
-    interaction_history: types.InteractionHistory = Field(
-        default_factory=types.InteractionHistory
+    interaction_history: Optional[types.InteractionHistory] = Field(
+        default = None
     )
 
     # wether we will perform actions
     # disabling this will make the backend do talking instead of generating code parts etc
     actions: bool = True
 
+    
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         if not prog.project_root or not prog.project:
@@ -683,13 +684,17 @@ class InteractCommand(BaseModel, CommandInterface):
         # also what complicates this is that we only want the preamble to be in the context once, so as to not explode our token limit
         # this is why we check the history.
         # ghostbox will then use the var injection to keep the preamble at the start of the context up-to-date
+        if self.interaction_history is None:
+            logger.warning(f"Tried to construct preamble with null interaction history in interaction.")
+            return ""
+        
         if self.interaction_history.empty():
             return "{{project_metadata}\n\n}{{preamble_injection}}" + prompt
         return prompt
 
     def _dump_interaction(self, prog: Program) -> None:
         """Dumps interaction history to .ghostcode/current_interaction.txt and .ghostcode/current_interaction.json""" 
-        if prog.project is not None and prog.project_root is not None:
+        if prog.project is not None and prog.project_root is not None and self.interaction_history is not None:
             with ProgressPrinter(message=" Saving interaction ", print_function=prog.print):
                 current_interaction_history_filepath = os.path.join(
                     prog.project_root,
@@ -714,42 +719,26 @@ class InteractCommand(BaseModel, CommandInterface):
                 f"Null project_root while trying to dump current itneraction history. Create a project root or no dump for you!"
             )
         
-    
-    def _query_coder(self, prog: Program, prompt: str) -> Optional[types.CoderResponse]:
-        try:
-            with ProgressPrinter(message=" Querying 👻 ", print_function=prog.print):
-                if self.actions:
-                    # this is the default, offer the coder the full menu of parts to generate
-                    response = prog.coder_box.new(
-                        types.CoderResponse,
-                        prompt,
-                    )
-                elif not (self.actions):
-                    # we only want a text response
-                    text_response = prog.coder_box.new(types.TextResponsePart, prompt)
-                    response = types.CoderResponse(contents=[text_response])
-            logger.timing(f"ghostcoder performance statistics:\n{showTime(prog.coder_box._plumbing, [])}")  # type: ignore
-        except Exception as e:
-            prog.print(
-                f"Problems encountered during 👻 request. Reason: {e}\nRetry the request or consult the logs for more information."
-            )
-            logger.exception(
-                f"error on ghostbox.new. See the full traceback:\n{traceback.format_exc()}"
-            )
-            logger.error(
-                f"\nAnd here is the last result:\n\n{prog.coder_box.get_last_result()}"
-            )
-            return None
-        return response
-
     def _save_interaction(self, prog: Program) -> None:
+        if self.interaction_history is None:
+            logger.warning(f"Tried to save null interaction history during interaction.")
+            return
+            
+        if self.interaction_history.empty():
+            # nothing to do
+            return
+        
         logger.info(f"Finishing interaction.")
         new_title = worker.worker_generate_title(prog, self.interaction_history)
         self.interaction_history.title = new_title if new_title else self.interaction_history.title
         
-        if not (self.interaction_history.empty()) and prog.project is not None:
-            prog.project.interactions.append(self.interaction_history)
-        
+    def _make_llm_response_profile(self) -> types.LLMResponseProfile:
+        if not(self.actions):
+            return types.LLMResponseProfile.text_only()
+
+        # default is return whatever is the default
+        return types.LLMResponseProfile()
+            
 
     def _interact_loop(
         self, intermediate_result: CommandOutput, prog: Program
@@ -764,8 +753,12 @@ class InteractCommand(BaseModel, CommandInterface):
         # since the interaction is blocking we can't wait with printing until we return the result
         # so we print it here and return an empty result at the end
         prog.print(intermediate_result.text)
+        
+        # we start for real
+        self.interaction_history = prog.project.new_interaction_history()
         interacting = True
-        print(
+
+        prog.print(
             "Multiline mode enabled. Type your prompt over multiple lines.\nType a single '\\' and hit enter to submit.\nType /quit or CTRL+D to quit."
         )
         user_input = ""
@@ -824,28 +817,17 @@ class InteractCommand(BaseModel, CommandInterface):
                 )
             )
 
-            response = self._query_coder(prog, prompt)
-            if not (response):
-                continue
+            #response = self._query_coder(prog, prompt, interaction_history_id = self.interaction_history.unique_id)
 
-            try:
-                self.interaction_history.contents.append(
-                    types.CoderInteractionHistoryItem(
-                        context=prog.project.context_files,
-                        backend=prog.project.config.coder_backend,
-                        model=prog.project.coder_llm_config.get("model", "N/A"),
-                        response=response,
-                    )
-                )
-            except Exception as e:
-                # this is not critical, log and continue
-                logger.error(f"Could not save response to history. Reason: {e}")
-
-            # handle the response
-            prog.print(response.show_cli())
             logger.info(f"Preparing action queue.")
-            prog.action_queue = worker.actions_from_response_parts(
-                prog, response.contents
+            prog.discard_actions()
+            prog.queue_action(
+                types.ActionQueryCoder(
+                    prompt = prompt,
+                    interaction_history_id = self.interaction_history.unique_id,
+                    hidden = False,
+                    llm_response_profile = self._make_llm_response_profile()
+                )
             )
             worker.run_action_queue(prog)
 

@@ -357,9 +357,12 @@ def apply_edit_file(
         success_message=f"Applied edit action to file {filepath} for {len(edit_action.insert_text)} characters."
     )
 
-def execute_query_coder(prog: Program, query_coder_action: types.ActionQueryCoder) -> types.ActionResult:
+
+def execute_query_coder(
+    prog: Program, query_coder_action: types.ActionQueryCoder
+) -> types.ActionResult:
     print_function = mock_print if query_coder_action.hidden else prog.print
-    
+
     try:
         with ProgressPrinter(message=" Querying 👻 ", print_function=print_function):
             profile = query_coder_action.llm_response_profile
@@ -371,11 +374,13 @@ def execute_query_coder(prog: Program, query_coder_action: types.ActionQueryCode
                 )
             elif profile.text:
                 # we only want a text response
-                text_response = prog.coder_box.new(types.TextResponsePart, query_coder_action.prompt)
+                text_response = prog.coder_box.new(
+                    types.TextResponsePart, query_coder_action.prompt
+                )
                 response = types.CoderResponse(contents=[text_response])
         logger.timing(f"ghostcoder performance statistics:\n{showTime(prog.coder_box._plumbing, [])}")  # type: ignore
     except Exception as e:
-        prog.print( # this bypasses hidden and that's ok
+        prog.print(  # this bypasses hidden and that's ok
             f"Problems encountered during 👻 request. Reason: {e}\nRetry the request or consult the logs for more information."
         )
         logger.exception(
@@ -386,16 +391,35 @@ def execute_query_coder(prog: Program, query_coder_action: types.ActionQueryCode
         )
         return types.ActionResultFailure(
             original_action=query_coder_action,
-            failure_reason = f"Querying the ghostcoder backend failed. Reason: {e}."
+            failure_reason=f"Querying the ghostcoder backend failed. Reason: {e}.",
         )
 
+    # append to history if any ID is given
+    if query_coder_action.interaction_history_id is not None:
+        try:
+            if prog.project is not None:
+                prog.project.append_interaction_history_item(
+                    unique_id = query_coder_action.interaction_history_id,
+                    item = types.CoderInteractionHistoryItem(
+                        context=prog.project.context_files,
+                        backend=prog.project.config.coder_backend,
+                        model=prog.project.coder_llm_config.get("model", "N/A"),
+                        response=response,
+                    )
+                )
+            else:
+                logger.warning(
+                    f"null project while trying to append coder response item to interaction with ID {query_coder_action.interaction_history_id}"
+                )
+        except Exception as e:
+            # this is not critical, log and continue
+            logger.error(f"Could not save response to history. Reason: {e}")
+
+    print_function((response.show_cli()))
     return types.ActionResultMoreActions(
-        actions=actions_from_response_parts(
-            prog, response.contents
-        )
+        actions=actions_from_response_parts(prog, response.contents)
     )
 
-    
 
 @time_function_with_logging
 def handle_code_part(
@@ -701,6 +725,7 @@ Please respond with one or more response parts that likely resolve the failure a
 
     return prompt
 
+
 def make_prompt_interaction_title(interaction: types.InteractionHistory) -> str:
     """Returns a prompt that should generate a title for a given interaction history."""
     # this can be improved but to strike a good balance between tokencount and accuracy
@@ -718,6 +743,7 @@ Below is an interaction between a User and a coding assistant LLM.
 Please generate a descriptive title for the above interaction. It should capture the main theme or topic of the discussion.
 Generate only the title. Do not generate additional output except for the title that has been requested.
 """
+
 
 def worker_recover(
     prog: Program, failure: types.ActionResultFailure
@@ -779,6 +805,8 @@ def worker_generate_title(prog: Program, interaction: types.InteractionHistory) 
         with ProgressPrinter(message=" Querying 🔧 ", print_function=prog.print):
             return prog.worker_box.text(make_prompt_interaction_title(interaction))
     except Exception as e:
-        logger.exception(f"Uncaught exception while trying to generate title for interaction {interaction.unique_id}. Reason: {e}")
+        logger.exception(
+            f"Uncaught exception while trying to generate title for interaction {interaction.unique_id}. Reason: {e}"
+        )
     # we are prepared to deal with empty string titles
     return ""

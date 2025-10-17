@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pydantic import BaseModel, Field
 import os
-import uuid
+from uuid import uuid4, UUID
 import subprocess
 import traceback
 import json
@@ -737,7 +737,7 @@ class InteractionHistory(BaseModel):
     """
 
     unique_id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()),
+        default_factory=lambda: str(uuid4()),
         description="Randomly generated unique identified that can be used to retrieve the interaction history.",
     )
 
@@ -786,7 +786,6 @@ class InteractionHistory(BaseModel):
         return "\n".join(
             [item.show(include_code=include_code) for item in self.contents]
         )
-
 
 ### Actions ###
 # These are put on the action queue and sequentially resolved.
@@ -947,9 +946,12 @@ class ActionQueryCoder(BaseModel):
         description="Hidden queries are not shown to the user. Unhidden queries will have their response parts displayed with the various show_cli methods.",
     )
 
+    interaction_history_id: Optional[str] = Field(
+        default = None,
+        description = "ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history."
+    )
 
 type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder
-
 
 def action_show_short(action: Action) -> str:
     """Gives a short representation of an action.
@@ -1617,7 +1619,39 @@ class Project(BaseModel):
 
         logger.info(f"Ghostcode project saved successfully to {root}.")
 
+    def new_interaction_history(self) -> InteractionHistory:
+        """Create a new InteractionHistory and return its ID."""
+        self.interactions.append(interaction_history := InteractionHistory())
+        return interaction_history
 
+    def get_interaction_history(self, unique_id: Optional[str] = None, tag: Optional[str] = None) -> Optional[InteractionHistory]:
+        """Returns an InteractionHistory if it can be retrieved by either ID or tag, None otherwise. If both tag and ID are supplied, the ID is prefered."""
+        if unique_id is None and tag is None:
+            logger.warning("Tried to get interaction history without ID or tag.")
+            return None
+
+        # we start at the back because imo recent interactions are more likely to be retrieved
+        for interaction_history in reversed(self.interactions):
+            if unique_id is not None:
+                if interaction_history.unique_id == unique_id:
+                    return interaction_history
+                
+            if interaction_history.tag == tag:
+                return interaction_history
+        return None
+
+    def append_interaction_history_item(self, unique_id: Optional[str] = None, item: Optional[InteractionHistoryItem] = None) -> None:
+        """Appends a given interaction history item to an existing interaction history with a specified unique_id.
+        Raises index error if the interaction history with that unique_id is not found."""
+        if unique_id is None or item is None:
+            raise RuntimeError(f"Need all arguments supplied in call to append_interaction_history_item.")
+        
+        if (interaction_history := self.get_interaction_history(unique_id = unique_id)) is None:
+            logger.error(        msg := f"Could not append to interaction history with id: {unique_id}: ID not found.")
+            raise IndexError(msg)
+
+        interaction_history.contents.append(item)
+        
 class CosmeticProgramState(Enum):
     """A vague indicator of program state. This is used to e.g. color certain outputs in the interface. Do not use this to query program state programmatically."""
 
