@@ -771,11 +771,21 @@ class InteractCommand(BaseModel, CommandInterface):
             except EOFError:
                 break
 
-            if line == "/quit":
-                break
-            elif line == "/save":
-                continue
-            elif line != "\\":
+            match slash_commands.try_command(prog, self.interaction_history, line):
+                case slash_commands.SlashCommandResult.OK:
+                    continue
+                case slash_commands.SlashCommandResult.HALT:
+                    break
+                case slash_commands.SlashCommandResult.COMMAND_NOT_FOUND:
+                    prog.print(f"Unrecognized command: {line}")
+                    continue
+                case slash_commands.SlashCommandResult.BAD_ARGUMENTS:
+                    prog.print(f"Invalid arguments. Try /help COMMAND for more information.")
+                    continue
+                case _:
+                    pass
+                
+            if line != "\\":
                 user_input += "\n" + line
                 continue
 
