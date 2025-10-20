@@ -235,9 +235,16 @@ class VirtualTerminal:
         default_factory = lambda: threading.Event(),
     )
 
+    # this is set before killing a process to communicate to the polling thread that termination isn't regular
+    _kill_flag: threading.Event = field(
+        default_factory = lambda: threading.Event()
+    )
+    
     def __post_init__(self) -> None:
         logger.info("Started virtual terminal.")        
         self._poll_done.set() # Initially set to allow first poll thread to start
+        self._kill_flag.clear()
+        
         
     def _start_interaction(self, terminal_input: str) -> None:
         if (new_cwd := self._try_parse_cd(terminal_input)) is not None:
@@ -302,9 +309,7 @@ class VirtualTerminal:
                         text = msg_err[:-1] # cut off newline
                     )
                 )
-
                 
-        
         def poll():
             """Read stdout and stderr of the underlying shell and log it in the history."""
             logger.debug("Virtual terminal polling thread started.")
@@ -324,7 +329,15 @@ class VirtualTerminal:
             # one last update and then save the interaction
             update_history()
             if self._process is not None:
-                # FIXME: in the future, we may want to expand the exit_code with our own type
+                if self._kill_flag.is_set():
+                    self._kill_flag.clear()
+                    # process was killed, we do some creative history editing here
+                    if (current_history := self.history.current_history) is not None:
+                        current_history.stdout.append("Killed.")
+                        current_history.stderr.append("Killed.")
+                        # by convention, 143 is the exit code that indicates that a SIGTERM was received by the process
+                        current_history.exit_code = 143
+
                 self.history.save(exit_code=self._process.exit_code())
             self._poll_done.set()
             logger.debug("Virtual terminal polling thread finished.")
@@ -404,3 +417,11 @@ class VirtualTerminal:
                 logger.warning(f"Got weird cd command during cwd parse attempt: Command: `{shell_command}`")
                 return os.path.abspath(os.path.join(self.cwd, os.path.expanduser(target_dir)))
         return None
+
+    def kill(self) -> None:
+        """Terminates the underlying process if one is running."""
+        self._kill_flag.set()
+        self._close_process()
+
+
+            

@@ -328,6 +328,16 @@ class ProjectConfig(BaseModel):
     )
 
 
+    shell_wait_time_minimum: Optional[float] = Field(
+        default = 1.0,
+        description = "Minimum time (in seconds) that the worker will wait for a shell command to execute, or None for no minimum."
+    )
+
+    shell_wait_time_maximum: Optional[float] = Field(
+        default= 240.0,
+        description = "Maximum time (in seconds) that the worker will wait for a shell command to finish, or None for no limit."
+    )        
+
 # --- Type Definitions ---
 class ContextFile(BaseModel):
     """Abstract representation of a filepath along with metadata. Context files are sent to the cloud LLM for prompts."""
@@ -874,29 +884,50 @@ class ActionShellCommand(BaseModel):
         description="The various parameters required to invoke subprocess.Popen. Stored in a Part object for convenience and reuse."
     )
 
-    def run(
-        self,
-        tty: shell.VirtualTerminal,
-        clearance: Optional[ClearanceRequirement] = None,
-    ) -> None:
-        """Executes the shell command asynchronously."""
+# helper classes for waiting on shell commands
 
-        # Although this parameter is optional and not really used, it exists here and is kchecked to force people to
-        # state it explicitly at the call site
-        if clearance is None:
-            raise RuntimeError(
-                "Bad call of ActionShellCommand.run: You **must** provide the clearance parameter explicitly."
-            )
+class ShellWaitResponsePartKeepWaiting(BaseModel):
+    """A response part indicating that a currently executing shell process should be given more time to finish execution."""
 
-        if clearance.value < self.clearance_required.value:
-            raise PermissionError(
-                f"Insufficient clearance of {clearance.name} for ActionShellCommand.run. Clearance required: {self.clearance_required.name}"
-            )
+    reason: str = Field(
+        description = "The reason that the shell command is likely to finish within a reasonable time, or the reason why it is advisable to keep waiting for the execution to finish a little longer."
+    )
 
-        logger.info(f"Running shell command: {" ".join(self.content.command)}")
-        logger.debug("Shell command dump:\n{self.content.show()}")
+    time_to_wait_seconds: float = Field(
+        description = "How many seconds to wait for the process to finish. After the time has elapsed, another check will be made to see if execution of the shell command is likely to ever finish."
+    )
 
+class ShellWaitResponsePartKillProcess(BaseModel):
+    """A response part indicating that the running shell process is unlikely to finish and should be killed."""
 
+    reason: str = Field(
+        description = "Why the shell process is unlikely to finish."
+    )
+
+class ShellWaitResponsePartFinished(BaseModel):
+    """A response part indicating that the shell process has finished execution."""
+
+    reason: str = Field(
+        description = "Why it is reasonable to assume that the process has finished."
+    )
+
+type ShellWaitResponsePart = ShellWaitResponsePartKeepWaiting | ShellWaitResponsePartKillProcess | ShellWaitResponsePartFinished
+
+class ShellWaitResponse(BaseModel):
+    """Determines wether a shell command has finished, is still in progress and should be waited on further, or is unlikely to ever succeed and should be canceled."""
+
+    content: ShellWaitResponsePart = Field(
+        description = "The response part that indicates how to proceed with the shell command."
+    )
+    
+class ActionWaitOnShellCommand(BaseModel):
+    """Wait for an executing shell command to finish, periodically checking the output to judge progress."""
+    clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.AUTOMATIC
+    
+    original_command: ActionShellCommand = Field(
+        description = "The original shell command that was invoked is not being waited for."
+    )
+    
 # These are a bunch of small classes for a ContextAlteration type
 # I wish we had less verbose ways to do sum types but oh well
 
@@ -951,7 +982,7 @@ class ActionQueryCoder(BaseModel):
         description = "ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history."
     )
 
-type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder
+type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder
 
 def action_show_short(action: Action) -> str:
     """Gives a short representation of an action.

@@ -247,11 +247,19 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                 logger.info("Action: Do Nothing")
                 return types.ActionResultOk()
             case types.ActionShellCommand as shell_command_action:
-                logger.info(f"shell command action")
-                start_t = time.perf_counter()
-                end_t = time.perf_counter()
-                # FIXME: add wait action
-                return types.ActionResultMoreActions(actions=[])
+                logger.info(f"Running shell command: {shell_command_action.content.command}")
+                logger.debu(f"Full dump of shell command action: {show_model(shell_command_action)}")
+                prog.tty.write_line(shell_command_action.command)
+
+                return types.ActionResultMoreActions(
+                    actions=[
+                        types.ActionWaitOnShellCommand(
+                            original_action=shell_command_action
+                        )
+                    ])
+            case types.ActionWaitOnShellCommand() as wait_on_shell_command_action:
+                logger.info(f"Waiting on shell command.")
+                return worker_wait_on_shell_command(prog, wait_on_shell_command_action)
             case types.ActionQueryCoder() as query_coder_action:
                 return execute_query_coder(prog, query_coder_action)
             case _:
@@ -747,7 +755,68 @@ Please generate a descriptive title for the above interaction. It should capture
 Generate only the title. Do not generate additional output except for the title that has been requested.
 """
 
+def make_prompt_worker_wait_shell(prog: Program, time_elapsed: float) -> str:
+    """Build a prompt to ask a worker wether a shell command has finished, should be waited on further, or should be killed."""
+    return ""
 
+def worker_wait_on_shell_command(prog: Program, wait_action: types.ActionWaitOnShellCommand) -> types.ActionResult:
+    """Waits for a shell command to finish or cancels it if it takes too long."""
+    # who knew LLMs could solve the halting problem with just vibes
+    if prog.project is None:
+        min_t, max_t = float("-inf"), float("inf")
+    else:
+        min_t, max_t = _min_t if (_min_t := prog.project.config.shell_wait_time_minimum) is not None else float("-inf"), _max_t if (_max_t := prog.project.config.shell_wait_time_maximum) is not None else float("inf")
+
+    start_t = time.perf_counter()
+    additional_wait_time = 0.0
+    if min_t:
+        logger.debug(f"Sleeping for {min_t} seconds.")
+        time.sleep(min_t)
+
+    with ProgressPrinter(message=" Querying 🔧 ", print_function=prog.print):                                    
+        while (time_elapsed := time.perf_counter() - start_t) < max_t:
+            while additional_wait_time > 0.0:
+                time.sleep(1.0)
+                additional_wait_time -= 1.0
+
+            try:
+                response = prog.worker_box.new(
+                    types.ShellWaitResponse,
+                    make_prompt_worker_wait_shell(prog, time_elapsed)
+                )
+            except Exception as e:
+                logger.exception(f"Caught exception while waiting on shell command. Reason: {e}")
+                return types.ActionResultFailure(
+                    original_action=wait_action,
+                    failure_reason=f"{e}"
+                )
+
+            # we have a response
+            match response.content:
+                case types.ShellWaitResponsePartFinished() as finished_part:
+                    logger.info(f"Worker has determined that shell command finished. Reason: {finished_part.reason}")
+                    # FIXME: maybe we should return MoreActions here?
+                    return types.ActionResultOk(
+                        success_message=f"Command has finished executing. Reason: {finished_part.reason}"
+                    )
+                case types.ShellWaitResponsePartKeepWaiting() as keep_waiting_part:
+                    additional_wait_time = min(keep_waiting_part.time_to_wait_seconds, max_t)
+                    logger.info(f"Worker decided to wait an additional {additional_wait_time} seconds. Reason: {keep_waiting_part.reason}")
+                    # loop around
+                case types.ShellWaitResponsePartKillProcess() as kill_process_part:
+                    logger.info(f"Worker decided to kill shell process. Reason: {kill_process_part.reason}")
+                    prog.tty.kill()
+                    return types.ActionResultFailure(
+                        original_action=wait_action,
+                        failure_reason = f"Worker killed process. Reason: {kill_process_part.reason}"
+                    )
+
+    # end of while loop -> timed out
+    return types.ActionResultFailure(
+        original_action=wait_action,
+        failure_reason=f"The shell command timed out after {time_elapsed:2f} seconds by exceeding the maximum wait time of {max_t}."
+    )
+        
 def worker_recover(
     prog: Program, failure: types.ActionResultFailure
 ) -> types.ActionResultMoreActions:

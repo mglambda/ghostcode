@@ -2,7 +2,7 @@
 make proper multiline mode utility function
 Create worker routing
 Properly test worker recovery.
-Add ActionShellCommand to execute_action match case.
+Create prompt for worker waiting on shell command
 * todo
 ** general
 Add doc comment injections to yaml config files.
@@ -55,3 +55,4 @@ Have worker make title for interactions
 Refactor ghostcoder querying from interact subcommand to action queue.
 add proper SlashCommand type for slash (like "/quit") commands in interact mode.
 emacs integration (use server and emacslisp generation with "emacs -e").
+Add ActionShellCommand to execute_action match case.
