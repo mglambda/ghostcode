@@ -397,7 +397,9 @@ def coder_query(
     print_function = mock_print if query_coder_action.hidden else prog.print
 
     try:
-        with ProgressPrinter(message=" Querying 👻 ", print_function=print_function):
+        with ProgressPrinter(message=f"{prog.last_print_text} Querying 👻 ",
+                             postfix_message=f"{prog.last_print_text}",                             
+                             print_function= prog.make_tagged_printer("action_queue")): #type: ignore
             profile = query_coder_action.llm_response_profile
             if profile.actions and profile.text:
                 # this is the default, offer the coder the full menu of parts to generate
@@ -800,11 +802,21 @@ def worker_route_request(prog: Program, request: str) -> types.AIAgent:
     """Classify a request as belonging to worker or coder."""
     return types.AIAgent.CODER
 
-def worker_query(prog: Program, worker_query_action: types.ActionQueryWorker) -> types.ActionResult:
+def worker_query(prog: Program, query_worker_action: types.ActionQueryWorker) -> types.ActionResult:
     """Send a query to the worker backend."""
+    print_function = mock_print if query_worker_action.hidden else prog.print
+
+    try:
+        with ProgressPrinter(message=f"{prog.last_print_text} Querying 🔧 ",
+                             postfix_message=f"{prog.last_print_text}",                             
+                             print_function= prog.make_tagged_printer("action_queue")): #type: ignore                             
+            profile = query_worker_action.llm_response_profile
+    except:
+        pass
+    # placeholder
     return types.ActionResultOk()
 
-
+            
 def worker_wait_on_shell_command(prog: Program, wait_action: types.ActionWaitOnShellCommand) -> types.ActionResult:
     """Waits for a shell command to finish or cancels it if it takes too long."""
     # who knew LLMs could solve the halting problem with just vibes
@@ -819,7 +831,9 @@ def worker_wait_on_shell_command(prog: Program, wait_action: types.ActionWaitOnS
         logger.debug(f"Sleeping for {min_t} seconds.")
         time.sleep(min_t)
 
-    with ProgressPrinter(message=" Querying 🔧 ", print_function=prog.print):                                    
+    with ProgressPrinter(message=f"{prog.last_print_text} Querying 🔧 ",
+                             postfix_message=f"{prog.last_print_text}",                         
+                         print_function=prog.make_tagged_printer("action_queue")):                                    
         while (time_elapsed := time.perf_counter() - start_t) < max_t:
             while additional_wait_time > 0.0:
                 time.sleep(1.0)
@@ -875,7 +889,9 @@ def worker_recover(
     try:
         logger.info("Querying ghostworker for recovery.")
         prog.worker_box.clear_history()
-        with ProgressPrinter(message=" Querying 🔧 ", print_function=prog.print):
+        with ProgressPrinter(message=f"{prog.last_print_text} Querying 🔧 ",
+                             postfix_message=f"{prog.last_print_text}",                             
+                             print_function=prog.make_tagged_printer("action_queue")):
             worker_response = prog.worker_box.new(
                 types.WorkerResponse,
                 make_prompt_worker_recover(prog, failure),
@@ -920,7 +936,9 @@ def worker_generate_title(prog: Program, interaction: types.InteractionHistory) 
     It can be repeatedly called on the same interaction for different titles."""
     logger.info(f"Generating title for interaction {interaction.unique_id}.")
     try:
-        with ProgressPrinter(message=" Querying 🔧 ", print_function=prog.print):
+        with ProgressPrinter(message=f"{prog.last_print_text} Querying 🔧 ",
+                             postfix_message=f"{prog.last_print_text}",
+                             print_function=prog.make_tagged_printer("action_queue")):
             return prog.worker_box.text(make_prompt_interaction_title(interaction))
     except Exception as e:
         logger.exception(

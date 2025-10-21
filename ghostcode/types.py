@@ -1789,7 +1789,9 @@ class Program:
 
     # holds the tag of the last message that was printed, useful for internal print logic
     last_print_tag: Optional[str] = None
-
+    # always holds the last printed text, or empty string
+    last_print_text: str = ""
+    
     # used to color the interface and cannot be relied on except for cosmetics
     cosmetic_state: CosmeticProgramState = field(
         default_factory=lambda: CosmeticProgramState.IDLE
@@ -1976,10 +1978,18 @@ class Program:
         # right now it's just easy print
 
         if tag != self.last_print_tag and self.last_print_tag is not None:
-            print("")
+            if self.last_print_tag == "action_queue":
+                print("\r", end="", flush=True)
+            else:
+                print("")
+
         print(text, end=end, flush=flush)
+        self.last_print_text = text        
         self.last_print_tag = tag
 
+    def make_tagged_printer(self, tag: str) -> Callable[[str], None]:
+        return lambda text, end="\n", flush=True: self.print(text, end=end, flush=flush, tag=tag) # type: ignore
+        
     def get_data(self, relative_filepath: str) -> str:
         """Returns a filepath relative to the hidden ghostcode directory.
             Example: get_data("log.txt") -> ".ghostcode/log.txt"

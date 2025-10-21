@@ -381,5 +381,5 @@ def make_mnemonic(max_length: int = 1, min_length: int = 1) -> str:
         
 
 
-def mock_print(text_that_will_not_be_printed: str, end: str = "\n", flush=True) -> None:
+def mock_print(text_that_will_not_be_printed: str, end: str = "\n", flush=True, **kwargs) -> None:
     return

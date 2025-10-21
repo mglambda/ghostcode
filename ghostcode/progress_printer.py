@@ -16,6 +16,9 @@ class ProgressPrinter:
 
     # will be displayed in front of the spinning element
     message: str = ""
+
+    # will be displayed after progress printing is done.
+    postfix_message: str = ""
     print_function: Callable[[str], None] = field(default=print)
 
     _print_thread: Optional[threading.Thread] = None
@@ -35,7 +38,7 @@ class ProgressPrinter:
             )
             i += 1
             time.sleep(0.1)
-        self.print_function("\r", end="", flush=True)  # type: ignore
+        self.print_function("\r", end=self.postfix_message, flush=True)  # type: ignore
 
     def _print_dots(self) -> None:
         dot_patterns = [".  ", ".. ", "..."]
@@ -48,7 +51,7 @@ class ProgressPrinter:
             )
             i += 1
             time.sleep(0.5)
-        self.print_function("\r", end="", flush=True)  # type: ignore
+        self.print_function("\r", end=self.postfix_message, flush=True)  # type: ignore
 
     def start(self) -> None:
         """Beings the progress indicator by calling the provided print function (python's print by default) with a progress indicating string.
