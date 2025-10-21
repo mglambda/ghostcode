@@ -230,6 +230,24 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
 
     try:
         match action:
+            case types.ActionRouteRequest() as route_request_action:
+                logger.info(f"Determining route.")
+                match worker_route_request(prog, route_request_action.request):
+                    case types.AIAgent.WORKER:
+                        logger.info(f"Routing user request to ghostworker.")
+                        route = [types.ActionQueryWorker( 
+                            prompt=route_request_action.request,
+                            llm_response_profile = route_request_action.llm_response_profile                            
+                        )] # type: List[types.Action]
+                    case types.AIAgent.CODER:
+                        logger.info(f"Routing request to ghostcoder.")
+                        route = [types.ActionQueryCoder(
+                            prompt = route_request_action.request,
+                            llm_response_profile = route_request_action.llm_response_profile
+                        )]
+                return types.ActionResultMoreActions(
+                    actions = route
+                )
             case types.ActionHandleCodeResponsePart() as code_action:
                 logger.info(f"Handling code response part.")
                 logger.debug(
@@ -261,7 +279,11 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                 logger.info(f"Waiting on shell command.")
                 return worker_wait_on_shell_command(prog, wait_on_shell_command_action)
             case types.ActionQueryCoder() as query_coder_action:
-                return execute_query_coder(prog, query_coder_action)
+                logger.info(f"Querying the coder backend.")
+                return coder_query(prog, query_coder_action)
+            case types.ActionQueryWorker() as query_worker_action:
+                logger.info(f"Querying the worker backend.")
+                return worker_query(prog, query_worker_action)
             case _:
                 # Handle unknown action types
                 failure_message = f"Received an unknown action type: {type(action).__name__}. This action cannot be executed."
@@ -369,7 +391,7 @@ def apply_edit_file(
     )
 
 
-def execute_query_coder(
+def coder_query(
     prog: Program, query_coder_action: types.ActionQueryCoder
 ) -> types.ActionResult:
     print_function = mock_print if query_coder_action.hidden else prog.print
@@ -772,6 +794,16 @@ Please determine the state of the latest interaction in the above shell interact
 
 Provide a short, descriptive reason for your assesment along with your response. In the case of giving a process more time to finish, provide a reasonable amount of time to wait. Once this time has completed, you will be asked to reassess the state of the shell interaction.
 """
+
+
+def worker_route_request(prog: Program, request: str) -> types.AIAgent:
+    """Classify a request as belonging to worker or coder."""
+    return types.AIAgent.CODER
+
+def worker_query(prog: Program, worker_query_action: types.ActionQueryWorker) -> types.ActionResult:
+    """Send a query to the worker backend."""
+    return types.ActionResultOk()
+
 
 def worker_wait_on_shell_command(prog: Program, wait_action: types.ActionWaitOnShellCommand) -> types.ActionResult:
     """Waits for a shell command to finish or cancels it if it takes too long."""
