@@ -757,7 +757,21 @@ Generate only the title. Do not generate additional output except for the title 
 
 def make_prompt_worker_wait_shell(prog: Program, time_elapsed: float) -> str:
     """Build a prompt to ask a worker wether a shell command has finished, should be waited on further, or should be killed."""
-    return ""
+    return f"""    ## Shell Interaction History
+
+Below are the outputs of one or more shell interactions, presented in JSON format.
+
+```json
+{prog.tty.history.show_json()}
+```
+
+Please determine the state of the latest interaction in the above shell interaction history by picking which of the following is true and generating the appropriate response part.
+  - The most recent shell interaction Has hinished
+  - The most recent shell interaction is ongoing and requires more time to finish.
+  - The most recent shell interaction is ongoing and unlikely to finish, either ever or within a reasonable time frame, and should be terminated (killed).
+
+Provide a short, descriptive reason for your assesment along with your response. In the case of giving a process more time to finish, provide a reasonable amount of time to wait. Once this time has completed, you will be asked to reassess the state of the shell interaction.
+"""
 
 def worker_wait_on_shell_command(prog: Program, wait_action: types.ActionWaitOnShellCommand) -> types.ActionResult:
     """Waits for a shell command to finish or cancels it if it takes too long."""
