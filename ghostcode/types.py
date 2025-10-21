@@ -752,7 +752,7 @@ class InteractionHistory(BaseModel):
     )
 
     tag: Optional[str] = Field(
-        default_factory=lambda: make_mnemonic(3),
+        default_factory=lambda: make_mnemonic(max_length=3, min_length=2),
         description="An easy to remember, somewhat unique string that can be used to retrieve the conversation history. If any ambiguity is encountered, the unique_id is used as a fallback. Can also be set by users.",
     )
 
