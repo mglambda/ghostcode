@@ -6,3 +6,4 @@ from .shell import VirtualTerminal
 from .progress_printer import ProgressPrinter
 from .internal_testing import *
 from .slash_commands import *
+from .prompts import *
