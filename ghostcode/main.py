@@ -1100,10 +1100,18 @@ def _main():
         default=None,
         help="Initial prompt for the interactive session. If provided, it bypasses the first user input.",
     )
+    interact_parser.add_argument(
+        "--skip-to-coder",
+        action="store_true",
+        help="Skip prompt routing and directly query the Coder LLM.",
+    )
+    interact_parser.add_argument(
+        "--skip-to-worker",
+        action="store_true",
+        help="Skip prompt routing and directly query the Worker LLM.",
+    )
     interact_parser.set_defaults(
-        func=lambda args: InteractCommand(
-            actions=args.actions, initial_prompt=args.prompt
-        )
+        func=lambda args: _create_interact_command(args, actions=args.actions)
     )
 
     # Talk command
@@ -1118,8 +1126,18 @@ def _main():
         default=None,
         help="Initial prompt for the interactive session. If provided, it bypasses the first user input.",
     )
+    talk_parser.add_argument(
+        "--skip-to-coder",
+        action="store_true",
+        help="Skip prompt routing and directly query the Coder LLM.",
+    )
+    talk_parser.add_argument(
+        "--skip-to-worker",
+        action="store_true",
+        help="Skip prompt routing and directly query the Worker LLM.",
+    )
     talk_parser.set_defaults(
-        func=lambda args: InteractCommand(actions=False, initial_prompt=args.prompt)
+        func=lambda args: _create_interact_command(args, actions=False)
     )
 
     # Log command
@@ -1136,6 +1154,7 @@ def _main():
     args = parser.parse_args()
 
     # --- Determine project_root early for logging configuration ---
+
     current_project_root: Optional[str] = None
     if args.command == "init":
         # For init, the project_root is the path being initialized
@@ -1266,5 +1285,27 @@ def _main():
     project.save_to_root(prog_instance.project_root)
 
 
+def _create_interact_command(args: argparse.Namespace, actions: bool) -> InteractCommand:
+    """Helper function to create InteractCommand, handling skip_to logic and mutual exclusivity."""
+    skip_to_agent: Optional[types.AIAgent] = None
+
+    if args.skip_to_coder and args.skip_to_worker:
+        msg = "Cannot use both --skip-to-coder and --skip-to-worker simultaneously."
+        logger.error(msg)
+        print(msg)
+        sys.exit(1)
+    elif args.skip_to_coder:
+        skip_to_agent = types.AIAgent.CODER
+    elif args.skip_to_worker:
+        skip_to_agent = types.AIAgent.WORKER
+
+    return InteractCommand(
+        actions=actions,
+        initial_prompt=args.prompt,
+        skip_to=skip_to_agent
+    )
+
+
 if __name__ == "__main__":
     _main()
+    
