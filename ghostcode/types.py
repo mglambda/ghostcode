@@ -341,6 +341,11 @@ class ProjectConfig(BaseModel):
         description = "Maximum time (in seconds) that the worker will wait for a shell command to finish, or None for no limit."
     )        
 
+    prompt_log_lines: int = Field(
+        default = 50,
+        description = "How many lines from the tail of the logs to show to an LLM backend when prompting."
+    )
+    
 # --- Type Definitions ---
 class ContextFile(BaseModel):
     """Abstract representation of a filepath along with metadata. Context files are sent to the cloud LLM for prompts."""
@@ -385,12 +390,12 @@ class ContextFiles(BaseModel):
                 with open(context_file.filepath, "r") as f:
                     contents = f.read()
             except Exception as e:
-                logging.error(
+                logger.error(
                     f"Could not read file {context_file.filepath}. Skipping. Reason: {e}"
                 )
                 continue
 
-            w += f"""# {context_file.filepath}
+            w += f"""## {context_file.filepath}
 
 ```{language_from_extension(context_file.filepath)}
 {contents}
@@ -793,11 +798,11 @@ class InteractionHistory(BaseModel):
                 ]
             )
         )
-
-    def show(self, include_code: bool = True) -> str:
+    
+    def show(self, include_code: bool = True, drop_last: int = 0) -> str:
         """Returns a human readable text representation of the history."""
         return "\n".join(
-            [item.show(include_code=include_code) for item in self.contents]
+            [item.show(include_code=include_code) for item in self.contents[: len(self.contents) - drop_last]]
         )
 
 ### Actions ###
@@ -1707,7 +1712,7 @@ class Project(BaseModel):
         logger.info(f"Ghostcode project saved successfully to {root}.")
 
     def new_interaction_history(self) -> InteractionHistory:
-        """Create a new InteractionHistory and return its ID."""
+        """Create a new InteractionHistory and return a reference to it."""
         self.interactions.append(interaction_history := InteractionHistory())
         return interaction_history
 
@@ -2007,13 +2012,24 @@ class Program:
 
         return os.path.join(ghostcode_dir, relative_filepath)
 
-    def show_log(self, tail: Optional[int] = None) -> Optional[str]:
+    def get_config_or_default(self) -> ProjectConfig:
+        """Returns the project config or a default config if retrieving the project config fails."""
+        fail = ProjectConfig()
+
+        if self.project is None:
+            logger.warning("Null project when trying to get config. This means that a default config is used.")
+            return fail
+
+        
+        return self.project.config
+
+    def show_log(self, tail: Optional[int] = None) -> str:
         """Returns the current event log if available.
         If tail is given, show only the tail latest number of log lines.
         """
         if self.project is None:
             logger.warn("Null project while trying to read logs.")
-            return None
+            return ""
         try:
             with open(self.get_data(self.project._LOG_FILE), "r") as f:
                 log = f.read()
@@ -2025,4 +2041,4 @@ class Program:
 
         except Exception as e:
             logger.warning(f"Failed to read log file. Reason: {e}")
-            return None
+            return ""

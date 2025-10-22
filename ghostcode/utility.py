@@ -383,3 +383,20 @@ def make_mnemonic(max_length: int = 1, min_length: int = 1) -> str:
 
 def mock_print(text_that_will_not_be_printed: str, end: str = "\n", flush=True, **kwargs) -> None:
     return
+
+
+def quoted_if_nonempty(*, text: str, heading: str = "", heading_level: int = 2, type_tag: str = "", trailing_newline: str = "\n") -> str:
+    """Returns a given text string in triple quotes if it has content, returns empty string if not.
+    Optionally, will append a tag like 'json' or 'txt' to the triple quotes."""
+    if not(text):
+        return ""
+
+
+    if heading:
+        heading_str = (heading_level * "#") + (" " if heading_level > 0 else "") + heading + "\n\n"
+    else:
+        heading_str = ""
+    return f"""{heading_str}```{type_tag}
+{text}
+```{trailing_newline}
+"""

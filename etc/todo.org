@@ -21,6 +21,7 @@ function to show arbitrary text to user in a buffer
 special buffer to share extra context
 investigate other uses
 ** CLI
+Redo the entire action_queue printing stuff properly
 Add /help command.
 ** coder
 Investigate wether structured output degrades performance.

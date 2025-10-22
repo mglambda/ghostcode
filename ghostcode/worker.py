@@ -15,6 +15,7 @@ from ghostcode.utility import (
     levenshtein,
     time_function_with_logging,
     show_model,
+    quoted_if_nonempty,
     timestamp_now_iso8601,
     foldl,
     mock_print,
@@ -797,6 +798,115 @@ Please determine the state of the latest interaction in the above shell interact
 Provide a short, descriptive reason for your assesment along with your response. In the case of giving a process more time to finish, provide a reasonable amount of time to wait. Once this time has completed, you will be asked to reassess the state of the shell interaction.
 """
 
+def make_blocks_project_metadata(prog) -> str:
+    """Returns a text terpesentation of the project metadata.
+    Intended to provide reusable text blocks for building LLM prompts. Blocks never include the heading for their content (e.g. ## History).    
+    Will return empty string if any null projects or failures are encoutnered."""
+    fail = ""
+
+    if prog.project is None:
+        return fail
+
+    if prog.project.project_metadata is None:
+        return fail
+
+    return show_model(prog.project.project_metadata)
+
+def make_blocks_interaction_history(prog: Program, interaction_history_id: Optional[str]) -> Tuple[str, str]:
+    """Returns pair of <interaction history string, user prompt string> based on a provided unique_id for an interaction.
+    Intended to provide reusable text blocks for building LLM prompts. Blocks never include the heading for their content (e.g. ## History).
+    An empty interaction history will yield an empty string. Similarly for null projects etc. If no actual UserInteractionHistoryItem is found, the user prompt string will contain an error message to indicate this to an LLM."""
+    error_msg = """No user prompt was found. Perhaps indicate an error to the user or end the interaction."""    
+    fail = ("", error_msg)
+    
+    if prog.project is None:
+        logger.warning(f"Tried to build interaction history with null project.")
+        return fail
+
+    if interaction_history_id is None:
+        logger.warning("Tried to build interaction history blocks with null interaction_history_id.")
+        return fail
+
+    if (interaction_history := prog.project.get_interaction_history(interaction_history_id)) is None:
+        logger.warning(f"Interaction history with ID {interaction_history_id} not found while trying to build blocks.")
+        return fail
+
+    if interaction_history.empty():
+        logger.info("Tried to build blocks for interaction history with empty history.")
+        return fail
+
+    last = interaction_history.contents[-1]
+    if not(isinstance(last, types.UserInteractionHistoryItem)):
+        logger.warning("Couldn't get a user interaction history item while trying to build blocks for an interaction history.")
+        # we could try all kinds of things to repair here, but we don't want to encourage relying on that
+        return fail
+
+    # assert = universe
+    return interaction_history.show(drop_last=1), last.prompt
+def make_blocks_shell(prog: Program) -> str:
+    """Returns an LLM readable string representation of the virtual terminal activity, including stdout and stderr. Empty string if no history present.
+    Blocks are intended as reusable items in building prompts for LLMs. A block does not include a heading."""
+    return prog.tty.history.show_json()
+    
+def make_blocks_context_files_short(prog: Program) -> str:
+    """Return a string representation of files in the current context, or empty string if unavailable.
+    Blocks are intended as reusable items in building prompts for LLMs. A block does not include a heading."""
+    fail = ""
+
+    if prog.project is None:
+        logger.warning("Tried to get short context files block with null project.")
+        return fail
+    
+    return prog.project.context_files.to_plaintext()
+
+def make_prompt_worker_query(prog: Program, interaction_history_id: Optional[str] = None) -> str:
+    """Creates a general prompt for the worker based on a user request."""
+    # assumption: worker history is cleared before a prompt is sent. This means we generally need to include more context in a worker query.
+    # e.g. we don't usually send the logs to the coder.
+    # problem: worker backend usually can't process as big of a context window
+    config = prog.get_config_or_default()
+
+    history_items, user_prompt_str = make_blocks_interaction_history(prog, interaction_history_id)
+    history_str = quoted_if_nonempty(
+        text=history_items,
+        heading="Interaction History"
+    )
+    project_metadata_str = quoted_if_nonempty(
+        text=make_blocks_project_metadata(prog),
+        heading="Project Metadata"
+    )
+    
+    context_files_str = quoted_if_nonempty(
+        text=make_blocks_context_files_short(prog),
+        heading="Files in Context"
+    )
+
+    log_excerpt_str = quoted_if_nonempty(
+        text=prog.show_log(tail=config.prompt_log_lines),
+        heading=f"Program Logs (most recent {config.prompt_log_lines} lines)"
+    )
+
+    shell_str = quoted_if_nonempty(
+        text=make_blocks_shell(prog),
+        heading="Virtual Terminal",
+        type_tag="json"
+    )
+    
+    return f"""# System
+
+The user has made a request that was routed to you. Below is the current context of the project and ghostcode, followed by the current user prompt. Please fulfill it as best as you can while taking the context into account, and generate an end-of-interaction response if you think you cannot fulfill the request.
+
+# Project Context
+
+{project_metadata_str}{context_files_str}    
+# Ghostcode Context
+
+{history_str}    {shell_str}{log_excerpt_str}
+# User Prompt
+
+{user_prompt_str}    
+
+"""    
 
 def worker_route_request(prog: Program, request: str) -> types.AIAgent:
     """Classify a request as belonging to worker or coder."""
@@ -811,6 +921,16 @@ def worker_query(prog: Program, query_worker_action: types.ActionQueryWorker) ->
                              postfix_message=f"{prog.last_print_text}",                             
                              print_function= prog.make_tagged_printer("action_queue")): #type: ignore                             
             profile = query_worker_action.llm_response_profile
+            # FIXME: right now we are ignoring the profile and always generating actions.
+            prog.worker_box.clear_history()
+            worker_response = prog.worker_box.new(
+                types.WorkerResponse,
+                make_prompt_worker_query(prog, query_worker_action.interaction_history_id)
+            )
+            actions = actions_from_response_parts(prog, worker_response.contents)
+            return types.ActionResultMoreActions(
+                actions = actions
+            )
     except:
         pass
     # placeholder
@@ -831,7 +951,7 @@ def worker_wait_on_shell_command(prog: Program, wait_action: types.ActionWaitOnS
         logger.debug(f"Sleeping for {min_t} seconds.")
         time.sleep(min_t)
 
-    with ProgressPrinter(message=f"{prog.last_print_text} Querying 🔧 ",
+    with ProgressPrinter(message=f"{prog.last_print_text} Querying Executing ",
                              postfix_message=f"{prog.last_print_text}",                         
                          print_function=prog.make_tagged_printer("action_queue")):                                    
         while (time_elapsed := time.perf_counter() - start_t) < max_t:
@@ -840,6 +960,7 @@ def worker_wait_on_shell_command(prog: Program, wait_action: types.ActionWaitOnS
                 additional_wait_time -= 1.0
 
             try:
+                prog.worker_box.clear_history()
                 response = prog.worker_box.new(
                     types.ShellWaitResponse,
                     make_prompt_worker_wait_shell(prog, time_elapsed)
@@ -889,7 +1010,7 @@ def worker_recover(
     try:
         logger.info("Querying ghostworker for recovery.")
         prog.worker_box.clear_history()
-        with ProgressPrinter(message=f"{prog.last_print_text} Querying 🔧 ",
+        with ProgressPrinter(message=f"{prog.last_print_text} Recovering 🔧 ",
                              postfix_message=f"{prog.last_print_text}",                             
                              print_function=prog.make_tagged_printer("action_queue")):
             worker_response = prog.worker_box.new(
@@ -939,6 +1060,7 @@ def worker_generate_title(prog: Program, interaction: types.InteractionHistory) 
         with ProgressPrinter(message=f"{prog.last_print_text} Querying 🔧 ",
                              postfix_message=f"{prog.last_print_text}",
                              print_function=prog.make_tagged_printer("action_queue")):
+            prog.worker_box.clear_history()
             return prog.worker_box.text(make_prompt_interaction_title(interaction))
     except Exception as e:
         logger.exception(
