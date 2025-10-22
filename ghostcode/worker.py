@@ -237,14 +237,12 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                     case types.AIAgent.WORKER:
                         logger.info(f"Routing user request to ghostworker.")
                         route = [types.ActionQueryWorker( 
-                            prompt=route_request_action.prompt,
-                            llm_response_profile = route_request_action.llm_response_profile                            
+                            **route_request_action.model_dump()
                         )] # type: List[types.Action]
                     case types.AIAgent.CODER:
                         logger.info(f"Routing request to ghostcoder.")
                         route = [types.ActionQueryCoder(
-                            prompt = route_request_action.prompt,
-                            llm_response_profile = route_request_action.llm_response_profile
+                            **route_request_action.model_dump()
                         )]
                 return types.ActionResultMoreActions(
                     actions = route
@@ -908,8 +906,57 @@ The user has made a request that was routed to you. Below is the current context
 
 """    
 
-def worker_route_request(prog: Program, request: str) -> types.AIAgent:
+def make_prompt_route_request(prog: Program, prompt: str) -> str:
+    return f"""The following is a user prompt. Your task is to decide who the prompt should be routed to, ghostworker, a worker LLM that is used for low-level busywork tasks that don't require a lot of intelligence, or ghostcoder, a cloud LLM with powerful reasoning abilities.
+
+To help you decide, here are some examples for tasks that should go to either ghostcoder or ghostworker:
+
+    # ghostcoder tasks
+ - high level planning
+ - code generation
+ - Generating edits to files
+ - Generating new files    
+ - brainstorming and discussion
+ - refactoring
+ - code review
+ - Tasks that require lots of tokens
+    
+    # ghostworker tasks
+ - Applying diffs
+ - Executing file system actions like creation or deletion    
+ - Executing shell commands
+ - Interacting with the git repository
+ - Web searches
+ - Code execution    
+ - Running tests
+ - Changing the context by adding or removing files from it
+ - Recovering from errors
+ - Tasks that require few tokens
+    
+Here is the prompt:
+
+```    
+{prompt}
+```
+
+    Please decide where to route the request!
+"""
+
+def worker_route_request(prog: Program, prompt: str) -> types.AIAgent:
     """Classify a request as belonging to worker or coder."""
+    with ProgressPrinter(message=f"{prog.last_print_text} Routing 🔧 ",
+                         postfix_message=f"{prog.last_print_text}",                             
+                         print_function= prog.make_tagged_printer("action_queue")): #type: ignore                             
+        try:
+            result = prog.worker_box.new(
+                types.UserPromptClassification,
+                make_prompt_route_request(prog, prompt)
+            )
+            return result.classification
+        except Exception as e:
+            logger.exception(f"Unhandled exception while routing request. Defaulting to ghostcoder. Reason: {e}")
+            # this is not fatal, we just default to the backend, since this routing request probably went to the worker
+            prog.cosmetic_state = types.CosmeticProgramState.PROBLEM
     return types.AIAgent.CODER
 
 def worker_query(prog: Program, query_worker_action: types.ActionQueryWorker) -> types.ActionResult:
