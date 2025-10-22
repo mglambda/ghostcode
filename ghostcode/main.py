@@ -631,9 +631,7 @@ class LogCommand(BaseModel, CommandInterface):
 class InteractCommand(BaseModel, CommandInterface):
     """Launches an interactive session with the Coder LLM."""
 
-    interaction_history: Optional[types.InteractionHistory] = Field(
-        default = None
-    )
+    interaction_history: Optional[types.InteractionHistory] = Field(default=None)
 
     # wether we will perform actions
     # disabling this will make the backend do talking instead of generating code parts etc
@@ -641,10 +639,14 @@ class InteractCommand(BaseModel, CommandInterface):
 
     initial_prompt: Optional[str] = Field(
         default=None,
-        description="An optional initial prompt to start the interactive session. If provided, it bypasses the first user input."
+        description="An optional initial prompt to start the interactive session. If provided, it bypasses the first user input.",
     )
 
-    
+    skip_to: Optional[types.AIAgent] = Field(
+        default=None,
+        description="If this is set to either coder or worker, interaction will skip prompt routing and query the specified AI directly.",
+    )
+
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         if not prog.project_root or not prog.project:
@@ -658,8 +660,11 @@ class InteractCommand(BaseModel, CommandInterface):
             result.print("Aborting interaction.")
             return result
 
-
-        actions_str = " Talk only, no actions will be performed in this interaction." if not(self.actions) else ""
+        actions_str = (
+            " Talk only, no actions will be performed in this interaction."
+            if not (self.actions)
+            else ""
+        )
         result.print("Starting interactive session with 👻." + actions_str)
         result.print("API keys checked. All good.")
 
@@ -691,17 +696,25 @@ class InteractCommand(BaseModel, CommandInterface):
         # this is why we check the history.
         # ghostbox will then use the var injection to keep the preamble at the start of the context up-to-date
         if self.interaction_history is None:
-            logger.warning(f"Tried to construct preamble with null interaction history in interaction.")
+            logger.warning(
+                f"Tried to construct preamble with null interaction history in interaction."
+            )
             return ""
-        
+
         if self.interaction_history.empty():
             return "{{project_metadata}\n\n}{{preamble_injection}}" + prompt
         return prompt
 
     def _dump_interaction(self, prog: Program) -> None:
-        """Dumps interaction history to .ghostcode/current_interaction.txt and .ghostcode/current_interaction.json""" 
-        if prog.project is not None and prog.project_root is not None and self.interaction_history is not None:
-            with ProgressPrinter(message=" Saving interaction ", print_function=prog.print):
+        """Dumps interaction history to .ghostcode/current_interaction.txt and .ghostcode/current_interaction.json"""
+        if (
+            prog.project is not None
+            and prog.project_root is not None
+            and self.interaction_history is not None
+        ):
+            with ProgressPrinter(
+                message=" Saving interaction ", print_function=prog.print
+            ):
                 current_interaction_history_filepath = os.path.join(
                     prog.project_root,
                     ".ghostcode",
@@ -724,34 +737,57 @@ class InteractCommand(BaseModel, CommandInterface):
             logger.warning(
                 f"Null project_root while trying to dump current itneraction history. Create a project root or no dump for you!"
             )
-        
+
     def _save_interaction(self, prog: Program) -> None:
         if self.interaction_history is None:
-            logger.warning(f"Tried to save null interaction history during interaction.")
+            logger.warning(
+                f"Tried to save null interaction history during interaction."
+            )
             return
-            
+
         if self.interaction_history.empty():
             # nothing to do
             return
-        
+
         logger.info(f"Finishing interaction.")
         new_title = worker.worker_generate_title(prog, self.interaction_history)
-        self.interaction_history.title = new_title if new_title else self.interaction_history.title
-        
+        self.interaction_history.title = (
+            new_title if new_title else self.interaction_history.title
+        )
+
     def _make_llm_response_profile(self) -> types.LLMResponseProfile:
-        if not(self.actions):
+        if not (self.actions):
             return types.LLMResponseProfile.text_only()
 
         # default is return whatever is the default
         return types.LLMResponseProfile()
-            
+
+    def _make_initial_action(self, **kwargs) -> types.Action:
+        """Create the initial action to place on the action queue.
+        Arguments are passed directly through to query constructors, like ActionQueryCoder, ActionQueryWorker, or ActionRouteRequest.
+        """
+        if self.skip_to == types.AIAgent.CODER:
+            return types.ActionQueryCoder(**kwargs)
+
+        if self.skip_to == types.AIAgent.WORKER:
+            return types.ActionQueryWorker(**kwargs)
+
+        # routing
+        return types.ActionRouteRequest(**kwargs)
+
     def _process_user_input(self, prog: types.Program, user_input: str) -> None:
         """Helper method to encapsulate the logic for sending user input to the LLM."""
         if prog.project is None:
-            raise RuntimeError(f"Project seems to be null during interaction. This shouldn't happen, but just in case, you may want to do `ghostcode init` in your project's directory.")
-        
+            raise RuntimeError(
+                f"Project seems to be null during interaction. This shouldn't happen, but just in case, you may want to do `ghostcode init` in your project's directory."
+            )
+
         preamble = prog.project.context_files.show()
-        metadata_str = prog.project.project_metadata.show() if prog.project.project_metadata else ""
+        metadata_str = (
+            prog.project.project_metadata.show()
+            if prog.project.project_metadata
+            else ""
+        )
 
         prompt_to_send = self._make_user_prompt(prog, user_input)
         prog.coder_box.set_vars(
@@ -772,11 +808,15 @@ class InteractCommand(BaseModel, CommandInterface):
         logger.info(f"Preparing action queue.")
         prog.discard_actions()
         prog.queue_action(
-            types.ActionQueryCoder(
-                prompt = prompt_to_send,
-                interaction_history_id = self.interaction_history.unique_id if self.interaction_history is not None else "000-000-000-000",
-                hidden = False,
-                llm_response_profile = self._make_llm_response_profile()
+            self._make_initial_action(
+                prompt=prompt_to_send,
+                interaction_history_id=(
+                    self.interaction_history.unique_id
+                    if self.interaction_history is not None
+                    else "000-000-000-000"
+                ),
+                hidden=False,
+                llm_response_profile=self._make_llm_response_profile(),
             )
         )
         worker.run_action_queue(prog)
@@ -793,61 +833,64 @@ class InteractCommand(BaseModel, CommandInterface):
 
         prog.print(intermediate_result.text)
         self.interaction_history = prog.project.new_interaction_history()
-        
+
         # Initial prompt handling
         if self.initial_prompt is not None:
             current_user_input = self.initial_prompt
-            self.initial_prompt = None # Consume the initial prompt
+            self.initial_prompt = None  # Consume the initial prompt
         else:
             current_user_input = ""
-            
 
         if current_user_input:
             # If an initial prompt was provided, process it immediately
             self._process_user_input(prog, current_user_input)
             # After processing, the loop will continue to ask for more input
-            current_user_input = "" # Clear for subsequent inputs
-        
+            current_user_input = ""  # Clear for subsequent inputs
+
         # Main interactive loop
         prog.print(
             "Multiline mode enabled. Type your prompt over multiple lines.\nType a single '\\' and hit enter to submit.\nType /quit or CTRL+D to quit."
         )
-        
+
         while True:
             try:
                 prog.print(prog._get_cli_prompt(), end="")
                 line = input()
             except EOFError:
-                break # User pressed CTRL+D, exit interaction
+                break  # User pressed CTRL+D, exit interaction
 
             # Handle slash commands
             match slash_commands.try_command(prog, self.interaction_history, line):
                 case slash_commands.SlashCommandResult.OK:
-                    continue # Command handled, go to next loop iteration (ask for input)
+                    continue  # Command handled, go to next loop iteration (ask for input)
                 case slash_commands.SlashCommandResult.HALT:
-                    break # Command halted, exit interaction
+                    break  # Command halted, exit interaction
                 case slash_commands.SlashCommandResult.COMMAND_NOT_FOUND:
                     prog.print(f"Unrecognized command: {line}")
                     continue
                 case slash_commands.SlashCommandResult.BAD_ARGUMENTS:
-                    prog.print(f"Invalid arguments. Try /help COMMAND for more information.")
+                    prog.print(
+                        f"Invalid arguments. Try /help COMMAND for more information."
+                    )
                     continue
                 case _:
-                    pass # Not a slash command, accumulate input
+                    pass  # Not a slash command, accumulate input
 
             # Accumulate user input
             if line != "\\":
                 current_user_input += "\n" + line
-                continue # Keep accumulating
+                continue  # Keep accumulating
 
             # If we reach here, it means user typed '\\' to submit
             if not current_user_input.strip():
-                prog.print("Empty prompt. Please provide some input or a slash command.")
-                continue # Ask for input again
+                prog.print(
+                    "Empty prompt. Please provide some input or a slash command."
+                )
+                continue  # Ask for input again
 
             self._process_user_input(prog, current_user_input)
-            current_user_input = "" # Clear buffer for next turn
-            self._dump_interaction(prog) # Save state after each turn
+            current_user_input = ""  # Clear buffer for next turn
+            self._dump_interaction(prog)  # Save state after each turn
 
         # End of interaction
         self._save_interaction(prog)
@@ -1057,11 +1100,16 @@ def _main():
         default=None,
         help="Initial prompt for the interactive session. If provided, it bypasses the first user input.",
     )
-    interact_parser.set_defaults(func=lambda args: InteractCommand(actions=args.actions, initial_prompt=args.prompt))
+    interact_parser.set_defaults(
+        func=lambda args: InteractCommand(
+            actions=args.actions, initial_prompt=args.prompt
+        )
+    )
 
     # Talk command
     talk_parser = subparsers.add_parser(
-        "talk", help="Launches an interactive session with the Coder LLM, but without performing any actions. This is shorthand for ghostcode interact --no-actions"
+        "talk",
+        help="Launches an interactive session with the Coder LLM, but without performing any actions. This is shorthand for ghostcode interact --no-actions",
     )
     talk_parser.add_argument(
         "-p",
@@ -1070,7 +1118,9 @@ def _main():
         default=None,
         help="Initial prompt for the interactive session. If provided, it bypasses the first user input.",
     )
-    talk_parser.set_defaults(func=lambda args: InteractCommand(actions=False, initial_prompt=args.prompt))
+    talk_parser.set_defaults(
+        func=lambda args: InteractCommand(actions=False, initial_prompt=args.prompt)
+    )
 
     # Log command
     log_parser = subparsers.add_parser("log", help="Display past interaction history.")

@@ -233,17 +233,17 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
         match action:
             case types.ActionRouteRequest() as route_request_action:
                 logger.info(f"Determining route.")
-                match worker_route_request(prog, route_request_action.request):
+                match worker_route_request(prog, route_request_action.prompt):
                     case types.AIAgent.WORKER:
                         logger.info(f"Routing user request to ghostworker.")
                         route = [types.ActionQueryWorker( 
-                            prompt=route_request_action.request,
+                            prompt=route_request_action.prompt,
                             llm_response_profile = route_request_action.llm_response_profile                            
                         )] # type: List[types.Action]
                     case types.AIAgent.CODER:
                         logger.info(f"Routing request to ghostcoder.")
                         route = [types.ActionQueryCoder(
-                            prompt = route_request_action.request,
+                            prompt = route_request_action.prompt,
                             llm_response_profile = route_request_action.llm_response_profile
                         )]
                 return types.ActionResultMoreActions(

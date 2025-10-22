@@ -1032,13 +1032,23 @@ class ActionRouteRequest(BaseModel):
     """Decide on wether to route a user request to the ghostcoder or ghostworker."""
     clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.AUTOMATIC
     
-    request: str = Field(
+    prompt: str = Field(
         description = "The user prompt to route."
     )
 
     llm_response_profile: LLMResponseProfile = Field(
         default_factory= LLMResponseProfile,
         description = "The response profile that will be passed through to the route receiving LLM."
+    )
+
+    hidden: bool = Field(
+        default=False,
+        description="Hidden queries are not shown to the user. Unhidden queries will have their response parts displayed with the various show_cli methods.",
+    )
+
+    interaction_history_id: Optional[str] = Field(
+        default = None,
+        description = "ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history."
     )
     
 type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest
