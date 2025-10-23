@@ -864,6 +864,16 @@ class InteractCommand(BaseModel, CommandInterface):
                         f"Invalid arguments. Try /help COMMAND for more information."
                     )
                     continue
+                case slash_commands.SlashCommandResult.ACTIONS_OFF:
+                    if self.actions:
+                        prog.print("Enabled talk mode. Coder backend will generate text only, no file edits.")
+                    else:
+                        prog.print("Talk mode already enabled, use /interact to switch to interactive mode.")
+                case slash_commands.SlashCommandResult.ACTIONS_ON:
+                    if not(self.actions):
+                        prog.print("Interact mode enabled. Coder backend will generate code and produce file edits.")
+                    else:
+                        prog.print("Interact mode already enabled. Use /talk to disable code generation and file edits.")
                 case _:
                     pass  # Not a slash command, accumulate input
 

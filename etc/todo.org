@@ -1,4 +1,5 @@
 * work-in-progress (WIP, limit 5)
+Create /talk and /interact commands to switch mid session
 make proper multiline mode utility function
 Properly test worker recovery.
 * todo
