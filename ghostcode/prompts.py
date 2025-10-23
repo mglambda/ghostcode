@@ -422,7 +422,8 @@ To help you decide, here are some examples for tasks that should go to either gh
  - Changing the context by adding or removing files from it
  - Recovering from errors
  - Tasks that require few tokens
-    
+
+    Also, as an additional guideline: If the user's request deals with the content of a code file, it is generally safe to assess this as a coder responsibility, as only the coder has the necessary context size to handle large code files.
 Here is the prompt:
 
 ```    

@@ -20,6 +20,7 @@ from ghostcode.utility import (
     show_model,
     PydanticEnumDumper,
     make_mnemonic,
+    quoted_if_nonempty
 )
 from ghostcode import shell
 import appdirs  # Added for platform-specific config directory
@@ -893,7 +894,24 @@ class ActionFileEdit(BaseModel):
         description="The text that will be inserted as a replacement for the text between replace_pos_begin and replace_pos_end."
     )
 
+    def get_original_info(self) -> Tuple[str, Tuple[int, int]]:
+        """Returns < original code, < first line affected, last line affected> >.
+        Returns < "", <0, 0>> on error.
+        This is intended as a helper for user confirmation dialogs. Don't use this to make actual file edits/levenshtein calculations.
+        """
+        try:
+            with open(self.filepath) as f:
+                w = f.read()
 
+            newlines_to_begin = len([c for c in w[:self.replace_pos_begin] if c == "\n"])
+            newlines_to_end = len([c for c in w[:self.replace_pos_end] if c == "\n"])
+            original_code = w[self.replace_pos_begin:self.replace_pos_end]
+            return (original_code, (newlines_to_begin, newlines_to_end))
+        except Exception as e:
+            logger.exception(f"Couldn't open file for original info during edit action. Reason: {e}. Continuing.")
+        return ("", (0, 0))
+
+        
 class ActionShellCommand(BaseModel):
     """Action for executing shell commands.
     This is one security nightmare, but I guess we are doing this!
@@ -1121,7 +1139,40 @@ def action_show_user_message(
             result = action_show_short(action)
     return result + delimiter
 
+def action_show_confirmation_data(action: Action, first_showing: bool = True, abridge: Optional[int] = None) -> str:
+    """Returns a string representation to show on the command line during a dialog that confirms the execution of the action.
+    The abridge parameters can limit long parts of action's attributes to a certain character limit."""
 
+    # for many we just default as they don't need confirm often
+    # but some (like file kedit) get special careeid
+    match action:
+        case ActionFileEdit() as file_edit_action:
+            if first_showing:
+                return quoted_if_nonempty(
+                    text=file_edit_action.insert_text,
+                    heading=file_edit_action.filepath + " (new code)",
+                    heading_level=1
+                )
+            else:
+                # give much more information
+                # FIXME: show diff
+                (original_code, (first_line, last_line)) = file_edit_action.get_original_info()
+                w = f"# {file_edit_action.filepath}\nlines {first_line} - {last_line}\n\n"
+                w += quoted_if_nonempty(
+                    text = original_code,
+                    heading="Original Code",
+                    heading_level=2
+                    )
+                w += quoted_if_nonempty(
+                    text = file_edit_action.insert_text,
+                    heading="New Code",
+                    heading_level = 2
+                )
+                
+                return w
+        case _:
+            return show_model(action, heading=action.__class__.__name__, abridge=abridge)
+    
 class ActionResultOk(BaseModel):
     """Represents a successfully executed action."""
 
@@ -1987,18 +2038,21 @@ class Program:
                     case "q":
                         logger.info("User canceled all action requests.")
                         return UserConfirmation.CANCEL
+                    case "d":
+                        # secret debug option
+                        print(show_model(action,                                 heading=action.__class__.__name__, abridge=None))
+                        continue
                     case _:
                         # cover "?", empty input, and anything else, as showing more nformation is generally a safe option.
                         print(
-                            show_model(
+                            action_show_confirmation_data(
                                 action,
-                                heading=action.__class__.__name__,
+                                first_showing=(abridge is not None),
                                 abridge=abridge,
                             )
                         )
                         # we only show abridge once. user can do enter twice to see full strings
                         abridge = None
-
                         continue
         except EOFError as e:
             self.print(f"Canceled.")
