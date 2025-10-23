@@ -382,7 +382,7 @@ class ContextFiles(BaseModel):
         context_files = [ContextFile(filepath=fp, rag=False) for fp in filepaths]
         return ContextFiles(data=context_files)
 
-    def show(self, **kwargs) -> str:
+    def show(self, heading_level: int = 3, **kwargs) -> str:
         """Renders file contents of the context files to a string, in a format that is suitable for an LLM."""
         w = ""
         for context_file in self.data:
@@ -395,7 +395,7 @@ class ContextFiles(BaseModel):
                 )
                 continue
 
-            w += f"""## {context_file.filepath}
+            w += (heading_level * "#") + f""" {context_file.filepath}
 
 ```{language_from_extension(context_file.filepath)}
 {contents}

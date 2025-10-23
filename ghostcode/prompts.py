@@ -1,16 +1,168 @@
 from typing import *
+from pydantic import BaseModel, Field
 from ghostcode import types
 from ghostcode.types import Program
-from ghostcode.utility import (
-    quoted_if_nonempty,
-    show_model,
-timestamp_now_iso8601    
-    )
+from ghostcode.utility import quoted_if_nonempty, show_model, timestamp_now_iso8601
 import logging
 
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.prompts")
 
+
+class PromptConfig(BaseModel):
+    """Small helper type to package prompt selection parameters together.
+    Essentially you can set flags in this type to customize a prompt. Some attributes require a choice (e.g. history), in which case you must provide a literal.
+    By default, the most verbose options are chosen, e.g. all flags enabled and full history shown.
+    """
+
+    system_text: str = Field(
+        default="",
+        description="Text that is printed at the top of the prompt under a '# System' heading. If empty, no system heading is printed. This is not the same as the system prompt, which can't be modified with this config.",
+    )
+
+    user_prompt_text: str = Field(
+        default="",
+        description="If nonempty, will be shown at the very bottom of the prompt with a 'User Prompt' heading. This will give it special emphasis for the LLM. May be overwritten or adjusted by other PromptConfig options.",
+    )
+
+    # project context
+    project_metadata: bool = True
+    context_files: Literal["full", "filenames", "none"] = Field(
+        default = "full",
+        description = "How to display files that are in the ghostcode context. Full means full contents of the files are displayed. filenames means only a list of filenames is shown. none omits context files entirely."
+    )
+
+    # ghostcode program context
+    interaction_history_id: str = Field(
+        default="",
+        description="The unique ID of the interaction history you want to display in the prompt. This must be provided if you set interaction_history to anything other than 'none'.",
+    )
+
+    interaction_history: Literal["full", "split", "none"] = Field(
+        default="full",
+        description="How to display the history. Requires interaction_history_id to be provided. full means entire history is sent. split means the entire history except the last message is sent, and the last message is appended to the user prompt. none means no history is sent.",
+    )
+    
+    shell: bool = True
+    logs: bool = True
+
+    @staticmethod
+    def maximal(**kwargs) -> 'PromptConfig':
+        """Create a default PromptConfig with maximum erbosity."""
+        return PromptConfig(**kwargs)
+
+
+    @staticmethod
+    def minimal(**kwargs) -> 'PromptConfig':
+        """Create a PromptConfig with minimum verbosity."""
+        default_config_data = PromptConfig().model_dump()
+        min_config_data: Dict[str, Any] = {} 
+        for k, v in default_config_data.items():
+            # we can rely on certain conventions, e.g. literal fields will be "none" for minimum verbosity
+            match v:
+                case str(w):
+                    if get_origin(PromptConfig.model_fields[k].annotation) is Literal:
+                        min_config_data[k] = "none"
+                    else:
+                        # regular string like system_text
+                        min_config_data[k] = ""
+                case bool(b):
+                    min_config_data[k] = False
+
+        # the above is safe thanks to pydantic having our backs
+        return PromptConfig(**(min_config_data | kwargs))
+    
+def make_prompt(
+    prog: Program,
+    prompt_config: PromptConfig,
+) -> str:
+    """Most general way to create a prompt for an LLM. See the PromptConfig docstring for more."""
+    config = prog.get_config_or_default()
+
+    # all vars ending with _str are the final value being spliced into the prompt at the bottom
+    system_str = quoted_if_nonempty(
+        text=prompt_config.system_text, heading="System", heading_level=1
+    )
+
+    # this one is the user prompt which, if nonempty, will be displayed at the very very bottom for the LLM
+    user_prompt_str = quoted_if_nonempty(
+        text=prompt_config.user_prompt_text, heading="User Prompt", heading_level=1
+    )
+
+    if prompt_config.interaction_history_id:
+        match prompt_config.interaction_history:
+            case "split":
+                history_items, user_prompt_str = make_blocks_interaction_history_split(
+                    prog, prompt_config.interaction_history_id
+                )
+                history_str = quoted_if_nonempty(
+                    text=history_items, heading="Interaction History"
+                )
+            case "full":
+                history_items, _ = make_blocks_interaction_history(
+                    prog, prompt_config.interaction_history_id
+                )
+                history_str = quoted_if_nonempty(
+                    text=history_items, heading="Interaction History"
+                )
+            case "none":
+                history_str = ""
+            case _ as unreachable1:
+                assert_never(unreachable1)
+    else:
+        if prompt_config.interaction_history != "none":
+            logger.warning(
+                f"Trying to build prompt with interaction_history set to '{prompt_config.interaction_history}, but no interaction history ID provided. Defaulting to 'none' instead."
+            )
+        history_str = ""
+
+    if prompt_config.project_metadata:
+        project_metadata_str = quoted_if_nonempty(
+            text=make_blocks_project_metadata(prog), heading="Project Metadata"
+        )
+    else:
+        project_metadata = ""
+
+    match prompt_config.context_files:
+        case "full":
+            # this one needs no quoted because the individual files are themselves quoted
+            context_files_str = make_blocks_context_files_full(
+                prog, heading="Files in Context"
+            )
+        case "filenames":
+            context_files_str = quoted_if_nonempty(
+                text=make_blocks_context_files_short(prog), heading="Files in Context"
+            )
+        case "none":
+            context_files_str = ""
+        case _ as unreachable2:
+            assert_never(unreachable2)
+
+    if prompt_config.logs:
+        log_excerpt_str = quoted_if_nonempty(
+            text=prog.show_log(tail=config.prompt_log_lines),
+            heading=f"Program Logs (most recent {config.prompt_log_lines} lines)",
+        )
+    else:
+        log_excerpt_str = ""
+
+    if prompt_config.shell:
+        shell_str = quoted_if_nonempty(
+            text=make_blocks_shell(prog), heading="Virtual Terminal", type_tag="json"
+        )
+    else:
+        shell_str = ""
+
+    return f"""{system_str}
+    # Project Context
+
+{project_metadata_str}{context_files_str}    
+# Ghostcode Context
+
+{history_str}    {shell_str}{log_excerpt_str}
+{user_prompt_str}    
+
+"""
 
 
 def make_prompt_worker_recover(
@@ -134,7 +286,7 @@ def make_blocks_project_metadata(prog) -> str:
 
 
 def make_blocks_interaction_history(
-    prog: Program, interaction_history_id: Optional[str]
+    prog: Program, interaction_history_id: Optional[str], drop_last: int = 0
 ) -> Tuple[str, str]:
     """Returns pair of <interaction history string, user prompt string> based on a provided unique_id for an interaction.
     Intended to provide reusable text blocks for building LLM prompts. Blocks never include the heading for their content (e.g. ## History).
@@ -176,7 +328,14 @@ def make_blocks_interaction_history(
         return fail
 
     # assert = universe
-    return interaction_history.show(drop_last=1), last.prompt
+    return interaction_history.show(drop_last=drop_last), last.prompt
+
+
+def make_blocks_interaction_history_split(
+    prog: Program, interaction_history_id: Optional[str]
+) -> Tuple[str, str]:
+    """Returns interaction < history string without last propmt, last prompt >."""
+    return make_blocks_interaction_history(prog, interaction_history_id, drop_last=1)
 
 
 def make_blocks_shell(prog: Program) -> str:
@@ -184,6 +343,21 @@ def make_blocks_shell(prog: Program) -> str:
     Blocks are intended as reusable items in building prompts for LLMs. A block does not include a heading.
     """
     return prog.tty.history.show_json()
+
+
+def make_blocks_context_files_full(
+    prog: Program, *, heading: str, heading_level: int = 2, subheading_levels: int = 3
+) -> str:
+    fail = ""
+
+    if prog.project is None:
+        logger.warning("Tried to get short context files block with null project.")
+        return fail
+    heading_str = (heading_level * "#") + f" {heading}"
+    return f"""{heading_str}
+
+{    prog.project.context_files.show(heading_level=subheading_levels)}
+"""
 
 
 def make_blocks_context_files_short(prog: Program) -> str:
@@ -205,46 +379,19 @@ def make_prompt_worker_query(
     """Creates a general prompt for the worker based on a user request."""
     # assumption: worker history is cleared before a prompt is sent. This means we generally need to include more context in a worker query.
     # e.g. we don't usually send the logs to the coder.
-    # problem: worker backend usually can't process as big of a context window
+
     config = prog.get_config_or_default()
-
-    history_items, user_prompt_str = make_blocks_interaction_history(
-        prog, interaction_history_id
-    )
-    history_str = quoted_if_nonempty(text=history_items, heading="Interaction History")
-    project_metadata_str = quoted_if_nonempty(
-        text=make_blocks_project_metadata(prog), heading="Project Metadata"
-    )
-
-    context_files_str = quoted_if_nonempty(
-        text=make_blocks_context_files_short(prog), heading="Files in Context"
+    prompt_config = PromptConfig.minimal(
+        system_text = "The user has made a request that was routed to you. Below is the current context of the project and ghostcode, followed by the current user prompt. Please fulfill it as best as you can while taking the context into account, and generate an end-of-interaction response if you think you cannot fulfill the request.",
+        project_metadata = True,
+        context_files = "filenames",
+        interaction_history_id = interaction_history_id if interaction_history_id is not None else "",
+        interaction_history = "split",
+        shell = True,
+        logs = True,
     )
 
-    log_excerpt_str = quoted_if_nonempty(
-        text=prog.show_log(tail=config.prompt_log_lines),
-        heading=f"Program Logs (most recent {config.prompt_log_lines} lines)",
-    )
-
-    shell_str = quoted_if_nonempty(
-        text=make_blocks_shell(prog), heading="Virtual Terminal", type_tag="json"
-    )
-
-    return f"""# System
-
-The user has made a request that was routed to you. Below is the current context of the project and ghostcode, followed by the current user prompt. Please fulfill it as best as you can while taking the context into account, and generate an end-of-interaction response if you think you cannot fulfill the request.
-
-# Project Context
-
-{project_metadata_str}{context_files_str}    
-# Ghostcode Context
-
-{history_str}    {shell_str}{log_excerpt_str}
-# User Prompt
-
-{user_prompt_str}    
-
-"""
-
+    return make_prompt(prog, prompt_config)
 
 def make_prompt_route_request(prog: Program, prompt: str) -> str:
     return f"""The following is a user prompt. Your task is to decide who the prompt should be routed to, ghostworker, a worker LLM that is used for low-level busywork tasks that don't require a lot of intelligence, or ghostcoder, a cloud LLM with powerful reasoning abilities.
