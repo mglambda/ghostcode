@@ -28,8 +28,8 @@ class PromptConfig(BaseModel):
     # project context
     project_metadata: bool = True
     context_files: Literal["full", "filenames", "none"] = Field(
-        default = "full",
-        description = "How to display files that are in the ghostcode context. Full means full contents of the files are displayed. filenames means only a list of filenames is shown. none omits context files entirely."
+        default="full",
+        description="How to display files that are in the ghostcode context. Full means full contents of the files are displayed. filenames means only a list of filenames is shown. none omits context files entirely.",
     )
 
     # ghostcode program context
@@ -42,21 +42,20 @@ class PromptConfig(BaseModel):
         default="full",
         description="How to display the history. Requires interaction_history_id to be provided. full means entire history is sent. split means the entire history except the last message is sent, and the last message is appended to the user prompt. none means no history is sent.",
     )
-    
+
     shell: bool = True
     logs: bool = True
 
     @staticmethod
-    def maximal(**kwargs: Any) -> 'PromptConfig':
+    def maximal(**kwargs: Any) -> "PromptConfig":
         """Create a default PromptConfig with maximum erbosity."""
         return PromptConfig(**kwargs)
 
-
     @staticmethod
-    def minimal(**kwargs: Any) -> 'PromptConfig':
+    def minimal(**kwargs: Any) -> "PromptConfig":
         """Create a PromptConfig with minimum verbosity."""
         default_config_data = PromptConfig().model_dump()
-        min_config_data: Dict[str, Any] = {} 
+        min_config_data: Dict[str, Any] = {}
         for k, v in default_config_data.items():
             # we can rely on certain conventions, e.g. literal fields will be "none" for minimum verbosity
             match v:
@@ -71,7 +70,8 @@ class PromptConfig(BaseModel):
 
         # the above is safe thanks to pydantic having our backs
         return PromptConfig(**(min_config_data | kwargs))
-    
+
+
 def make_prompt(
     prog: Program,
     prompt_config: PromptConfig,
@@ -382,16 +382,19 @@ def make_prompt_worker_query(
 
     config = prog.get_config_or_default()
     prompt_config = PromptConfig.minimal(
-        system_text = "The user has made a request that was routed to you. Below is the current context of the project and ghostcode, followed by the current user prompt. Please fulfill it as best as you can while taking the context into account, and generate an end-of-interaction response if you think you cannot fulfill the request.",
-        project_metadata = True,
-        context_files = "filenames",
-        interaction_history_id = interaction_history_id if interaction_history_id is not None else "",
-        interaction_history = "split",
-        shell = True,
-        logs = True,
+        system_text="The user has made a request that was routed to you. Below is the current context of the project and ghostcode, followed by the current user prompt. Please fulfill it as best as you can while taking the context into account, and generate an end-of-interaction response if you think you cannot fulfill the request.",
+        project_metadata=True,
+        context_files="filenames",
+        interaction_history_id=(
+            interaction_history_id if interaction_history_id is not None else ""
+        ),
+        interaction_history="split",
+        shell=True,
+        logs=True,
     )
 
     return make_prompt(prog, prompt_config)
+
 
 def make_prompt_route_request(prog: Program, prompt: str) -> str:
     return f"""The following is a user prompt. Your task is to decide who the prompt should be routed to, ghostworker, a worker LLM that is used for low-level busywork tasks that don't require a lot of intelligence, or ghostcoder, a cloud LLM with powerful reasoning abilities.

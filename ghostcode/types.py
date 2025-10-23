@@ -130,7 +130,7 @@ class LLMResponseProfile(BaseModel):
     )
 
     @staticmethod
-    def forbid_all() -> 'LLMResponseProfile':
+    def forbid_all() -> "LLMResponseProfile":
         """Returns an LLMResponseProfile that disables all response types."""
         # it is good to be lazy
         default = LLMResponseProfile()
@@ -173,9 +173,11 @@ class UserConfirmation(Enum):
     def is_confirmation(value: "UserConfirmation") -> bool:
         return value in [UserConfirmation.YES, UserConfirmation.ALL]
 
+
 class AIAgent(StrEnum):
     WORKER = "worker"
     CODER = "coder"
+
 
 class UserConfig(BaseModel):
     """Stores user specific data, like names, emails, and api keys.
@@ -330,22 +332,22 @@ class ProjectConfig(BaseModel):
         description="The clearance level that the worker LLM has by default. If the worker's clearance level meets or exceeds the clearance requirement for a given action, it is permitted to perform that action without user confirmation.",
     )
 
-
     shell_wait_time_minimum: Optional[float] = Field(
-        default = 1.0,
-        description = "Minimum time (in seconds) that the worker will wait for a shell command to execute, or None for no minimum."
+        default=1.0,
+        description="Minimum time (in seconds) that the worker will wait for a shell command to execute, or None for no minimum.",
     )
 
     shell_wait_time_maximum: Optional[float] = Field(
-        default= 240.0,
-        description = "Maximum time (in seconds) that the worker will wait for a shell command to finish, or None for no limit."
-    )        
+        default=240.0,
+        description="Maximum time (in seconds) that the worker will wait for a shell command to finish, or None for no limit.",
+    )
 
     prompt_log_lines: int = Field(
-        default = 50,
-        description = "How many lines from the tail of the logs to show to an LLM backend when prompting."
+        default=50,
+        description="How many lines from the tail of the logs to show to an LLM backend when prompting.",
     )
-    
+
+
 # --- Type Definitions ---
 class ContextFile(BaseModel):
     """Abstract representation of a filepath along with metadata. Context files are sent to the cloud LLM for prompts."""
@@ -395,13 +397,16 @@ class ContextFiles(BaseModel):
                 )
                 continue
 
-            w += (heading_level * "#") + f""" {context_file.filepath}
+            w += (
+                (heading_level * "#")
+                + f""" {context_file.filepath}
 
 ```{language_from_extension(context_file.filepath)}
 {contents}
 ```
 
 """
+            )
         return w
 
     def show_cli(self, **kwargs: Any) -> str:
@@ -798,12 +803,16 @@ class InteractionHistory(BaseModel):
                 ]
             )
         )
-    
+
     def show(self, include_code: bool = True, drop_last: int = 0) -> str:
         """Returns a human readable text representation of the history."""
         return "\n".join(
-            [item.show(include_code=include_code) for item in self.contents[: len(self.contents) - drop_last]]
+            [
+                item.show(include_code=include_code)
+                for item in self.contents[: len(self.contents) - drop_last]
+            ]
         )
+
 
 ### Actions ###
 # These are put on the action queue and sequentially resolved.
@@ -892,50 +901,57 @@ class ActionShellCommand(BaseModel):
         description="The various parameters required to invoke subprocess.Popen. Stored in a Part object for convenience and reuse."
     )
 
+
 # helper classes for waiting on shell commands
+
 
 class ShellWaitResponsePartKeepWaiting(BaseModel):
     """A response part indicating that a currently executing shell process should be given more time to finish execution."""
 
     reason: str = Field(
-        description = "The reason that the shell command is likely to finish within a reasonable time, or the reason why it is advisable to keep waiting for the execution to finish a little longer."
+        description="The reason that the shell command is likely to finish within a reasonable time, or the reason why it is advisable to keep waiting for the execution to finish a little longer."
     )
 
     time_to_wait_seconds: float = Field(
-        description = "How many seconds to wait for the process to finish. After the time has elapsed, another check will be made to see if execution of the shell command is likely to ever finish."
+        description="How many seconds to wait for the process to finish. After the time has elapsed, another check will be made to see if execution of the shell command is likely to ever finish."
     )
+
 
 class ShellWaitResponsePartKillProcess(BaseModel):
     """A response part indicating that the running shell process is unlikely to finish and should be killed."""
 
-    reason: str = Field(
-        description = "Why the shell process is unlikely to finish."
-    )
+    reason: str = Field(description="Why the shell process is unlikely to finish.")
+
 
 class ShellWaitResponsePartFinished(BaseModel):
     """A response part indicating that the shell process has finished execution."""
 
     reason: str = Field(
-        description = "Why it is reasonable to assume that the process has finished."
+        description="Why it is reasonable to assume that the process has finished."
     )
 
+
 type ShellWaitResponsePart = ShellWaitResponsePartKeepWaiting | ShellWaitResponsePartKillProcess | ShellWaitResponsePartFinished
+
 
 class ShellWaitResponse(BaseModel):
     """Determines wether a shell command has finished, is still in progress and should be waited on further, or is unlikely to ever succeed and should be canceled."""
 
     content: ShellWaitResponsePart = Field(
-        description = "The response part that indicates how to proceed with the shell command."
+        description="The response part that indicates how to proceed with the shell command."
     )
-    
+
+
 class ActionWaitOnShellCommand(BaseModel):
     """Wait for an executing shell command to finish, periodically checking the output to judge progress."""
+
     clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.AUTOMATIC
-    
+
     original_command: ActionShellCommand = Field(
-        description = "The original shell command that was invoked is not being waited for."
+        description="The original shell command that was invoked is not being waited for."
     )
-    
+
+
 # These are a bunch of small classes for a ContextAlteration type
 # I wish we had less verbose ways to do sum types but oh well
 
@@ -970,7 +986,7 @@ class ActionQueryCoder(BaseModel):
     """
 
     clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.INFORM
-    
+
     prompt: str = Field(
         description="The full prompt that will be sent to the coder LLM backend. Facilitating the query will be done by ghostbox, which may do substitutions for special strings."
     )
@@ -986,17 +1002,16 @@ class ActionQueryCoder(BaseModel):
     )
 
     interaction_history_id: Optional[str] = Field(
-        default = None,
-        description = "ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history."
+        default=None,
+        description="ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history.",
     )
 
 
 class ActionQueryWorker(BaseModel):
-    """Query the ghostworker backend for something.
-    """
+    """Query the ghostworker backend for something."""
 
     clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.INFORM
-    
+
     prompt: str = Field(
         description="The full prompt that will be sent to the worker LLM backend. Facilitating the query will be done by ghostbox, which may do substitutions for special strings."
     )
@@ -1012,33 +1027,33 @@ class ActionQueryWorker(BaseModel):
     )
 
     interaction_history_id: Optional[str] = Field(
-        default = None,
-        description = "ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history."
+        default=None,
+        description="ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history.",
     )
-    
+
+
 class UserPromptClassification(BaseModel):
     """Represents wether a user prompt is to be classified as being a 'worker' responsibility, or a 'coder' responsibility."""
 
     request: str = Field(
-        description = "The original user prompt that was classified as either 'worker' or 'coder'."
+        description="The original user prompt that was classified as either 'worker' or 'coder'."
     )
 
     classification: AIAgent = Field(
-        description = "The category that the user request belongs to."
+        description="The category that the user request belongs to."
     )
 
-    
+
 class ActionRouteRequest(BaseModel):
     """Decide on wether to route a user request to the ghostcoder or ghostworker."""
+
     clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.AUTOMATIC
-    
-    prompt: str = Field(
-        description = "The user prompt to route."
-    )
+
+    prompt: str = Field(description="The user prompt to route.")
 
     llm_response_profile: LLMResponseProfile = Field(
-        default_factory= LLMResponseProfile,
-        description = "The response profile that will be passed through to the route receiving LLM."
+        default_factory=LLMResponseProfile,
+        description="The response profile that will be passed through to the route receiving LLM.",
     )
 
     hidden: bool = Field(
@@ -1047,11 +1062,13 @@ class ActionRouteRequest(BaseModel):
     )
 
     interaction_history_id: Optional[str] = Field(
-        default = None,
-        description = "ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history."
+        default=None,
+        description="ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history.",
     )
-    
+
+
 type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest
+
 
 def action_show_short(action: Action) -> str:
     """Gives a short representation of an action.
@@ -1726,7 +1743,9 @@ class Project(BaseModel):
         self.interactions.append(interaction_history := InteractionHistory())
         return interaction_history
 
-    def get_interaction_history(self, unique_id: Optional[str] = None, tag: Optional[str] = None) -> Optional[InteractionHistory]:
+    def get_interaction_history(
+        self, unique_id: Optional[str] = None, tag: Optional[str] = None
+    ) -> Optional[InteractionHistory]:
         """Returns an InteractionHistory if it can be retrieved by either ID or tag, None otherwise. If both tag and ID are supplied, the ID is prefered."""
         if unique_id is None and tag is None:
             logger.warning("Tried to get interaction history without ID or tag.")
@@ -1737,23 +1756,35 @@ class Project(BaseModel):
             if unique_id is not None:
                 if interaction_history.unique_id == unique_id:
                     return interaction_history
-                
+
             if interaction_history.tag == tag:
                 return interaction_history
         return None
 
-    def append_interaction_history_item(self, unique_id: Optional[str] = None, item: Optional[InteractionHistoryItem] = None) -> None:
+    def append_interaction_history_item(
+        self,
+        unique_id: Optional[str] = None,
+        item: Optional[InteractionHistoryItem] = None,
+    ) -> None:
         """Appends a given interaction history item to an existing interaction history with a specified unique_id.
-        Raises index error if the interaction history with that unique_id is not found."""
+        Raises index error if the interaction history with that unique_id is not found.
+        """
         if unique_id is None or item is None:
-            raise RuntimeError(f"Need all arguments supplied in call to append_interaction_history_item.")
-        
-        if (interaction_history := self.get_interaction_history(unique_id = unique_id)) is None:
-            logger.error(        msg := f"Could not append to interaction history with id: {unique_id}: ID not found.")
+            raise RuntimeError(
+                f"Need all arguments supplied in call to append_interaction_history_item."
+            )
+
+        if (
+            interaction_history := self.get_interaction_history(unique_id=unique_id)
+        ) is None:
+            logger.error(
+                msg := f"Could not append to interaction history with id: {unique_id}: ID not found."
+            )
             raise IndexError(msg)
 
         interaction_history.contents.append(item)
-        
+
+
 class CosmeticProgramState(Enum):
     """A vague indicator of program state. This is used to e.g. color certain outputs in the interface. Do not use this to query program state programmatically."""
 
@@ -1806,7 +1837,7 @@ class Program:
     last_print_tag: Optional[str] = None
     # always holds the last printed text, or empty string
     last_print_text: str = ""
-    
+
     # used to color the interface and cannot be relied on except for cosmetics
     cosmetic_state: CosmeticProgramState = field(
         default_factory=lambda: CosmeticProgramState.IDLE
@@ -1999,12 +2030,12 @@ class Program:
                 print("")
 
         print(text, end=end, flush=flush)
-        self.last_print_text = text        
+        self.last_print_text = text
         self.last_print_tag = tag
 
     def make_tagged_printer(self, tag: str) -> Callable[[str], None]:
-        return lambda text, end="\n", flush=True: self.print(text, end=end, flush=flush, tag=tag) # type: ignore
-        
+        return lambda text, end="\n", flush=True: self.print(text, end=end, flush=flush, tag=tag)  # type: ignore
+
     def get_data(self, relative_filepath: str) -> str:
         """Returns a filepath relative to the hidden ghostcode directory.
             Example: get_data("log.txt") -> ".ghostcode/log.txt"
@@ -2027,10 +2058,11 @@ class Program:
         fail = ProjectConfig()
 
         if self.project is None:
-            logger.warning("Null project when trying to get config. This means that a default config is used.")
+            logger.warning(
+                "Null project when trying to get config. This means that a default config is used."
+            )
             return fail
 
-        
         return self.project.config
 
     def show_log(self, tail: Optional[int] = None) -> str:

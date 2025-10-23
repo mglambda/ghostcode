@@ -177,8 +177,12 @@ def run_action_queue(prog: Program) -> None:
 
 def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
     # small helper for this context
-    def fail(failure_reason: str, error_messages: List[str]=[], action: types.Action=action) -> types.ActionResultFailure:
-        return types.ActionResultFailure( 
+    def fail(
+        failure_reason: str,
+        error_messages: List[str] = [],
+        action: types.Action = action,
+    ) -> types.ActionResultFailure:
+        return types.ActionResultFailure(
             original_action=action,
             error_messages=error_messages,
             failure_reason=failure_reason,
@@ -308,7 +312,12 @@ def apply_create_file(
     prog: Program, create_action: types.ActionFileCreate
 ) -> types.ActionResult:
     """Apply an ActionFileCreate to actually write a new file to disk."""
-    def fail(failure_reason: str, error_messages: List[str] = [], create_action: types.ActionFileCreate = create_action) -> types.ActionResultFailure:
+
+    def fail(
+        failure_reason: str,
+        error_messages: List[str] = [],
+        create_action: types.ActionFileCreate = create_action,
+    ) -> types.ActionResultFailure:
         return types.ActionResultFailure(
             original_action=create_action,
             error_messages=error_messages,
@@ -467,7 +476,12 @@ def handle_code_part(
     prog: Program, code_action: types.ActionHandleCodeResponsePart
 ) -> types.ActionResult:
     """Executes an ActionHandleCodeResponsePart action."""
-    def fail(failure_reason: str, error_messages: List[str] = [], code_action: types.ActionHandleCodeResponsePart = code_action) -> types.ActionResultFailure:
+
+    def fail(
+        failure_reason: str,
+        error_messages: List[str] = [],
+        code_action: types.ActionHandleCodeResponsePart = code_action,
+    ) -> types.ActionResultFailure:
         return types.ActionResultFailure(
             original_action=code_action,
             error_messages=error_messages,
@@ -709,7 +723,8 @@ def worker_route_request(prog: Program, prompt: str) -> types.AIAgent:
     ):
         try:
             result = prog.worker_box.new(
-                types.UserPromptClassification, prompts.make_prompt_route_request(prog, prompt)
+                types.UserPromptClassification,
+                prompts.make_prompt_route_request(prog, prompt),
             )
             return result.classification
         except Exception as e:
@@ -900,7 +915,9 @@ def worker_generate_title(prog: Program, interaction: types.InteractionHistory) 
             print_function=prog.make_tagged_printer("action_queue"),
         ):
             prog.worker_box.clear_history()
-            return prog.worker_box.text(prompts.make_prompt_interaction_title(interaction))
+            return prog.worker_box.text(
+                prompts.make_prompt_interaction_title(interaction)
+            )
     except Exception as e:
         logger.exception(
             f"Uncaught exception while trying to generate title for interaction {interaction.unique_id}. Reason: {e}"

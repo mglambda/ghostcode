@@ -34,11 +34,11 @@ logger: logging.Logger  # Declare logger globally, will be assigned later
 class ExceptionListHandler(logging.Handler):
     """Stores exceptions in a global list."""
 
-    def __init__(self, level=logging.NOTSET): # type: ignore
+    def __init__(self, level=logging.NOTSET):  # type: ignore
         super().__init__(level)
         self.exceptions: Queue[str] = Queue()
 
-    def emit(self, record): # type: ignore
+    def emit(self, record):  # type: ignore
         if record.exc_info:
             # record.exc_info is (type, value, tb)
             formatted_exc = "".join(traceback.format_exception(*record.exc_info))
@@ -54,7 +54,7 @@ class ExceptionListHandler(logging.Handler):
 
 
 # Global exception handler. kWould be nicer to store in Program type but unfortunately we might handle exceptions ebfore program is fully constructed.
-EXCEPTION_HANDLER = ExceptionListHandler() # type: ignore
+EXCEPTION_HANDLER = ExceptionListHandler()  # type: ignore
 
 
 def _configure_logging(
@@ -79,7 +79,7 @@ def _configure_logging(
 
     # Custom filter to suppress exc_info for other handlers
     class SuppressExcInfoFilter(logging.Filter):
-        def filter(self, record): # type: ignore
+        def filter(self, record):  # type: ignore
             # This filter is applied to handlers *after* EXCEPTION_HANDLER has processed it.
             # So, EXCEPTION_HANDLER gets the original record with exc_info.
             # For subsequent handlers, we clear exc_info so they don't print it.
@@ -93,7 +93,7 @@ def _configure_logging(
     logging.addLevelName(TIMING_LEVEL_NUM, "TIMING")
 
     # Add a convenience method to the Logger class
-    def timing_log(self, message, *args, **kwargs): # type: ignore
+    def timing_log(self, message, *args, **kwargs):  # type: ignore
         if self.isEnabledFor(TIMING_LEVEL_NUM):
             self._log(TIMING_LEVEL_NUM, message, args, **kwargs)
 
@@ -679,13 +679,13 @@ class InteractCommand(BaseModel, CommandInterface):
         """Plaintext context that is inserted before the user prompt - though only once."""
         return prompts.make_prompt(
             prog,
-            prompt_config = prompts.PromptConfig.minimal(
+            prompt_config=prompts.PromptConfig.minimal(
                 project_metadata=True,
-                context_files="full"
+                context_files="full",
                 # could add shell here?
-            )
+            ),
         )
-    
+
     def _make_user_prompt(self, prog: Program, prompt: str) -> str:
         """Prepare a user prompt to be sent to the backend."""
         # atm we only add a var hook for injections with ghostbox
@@ -783,9 +783,7 @@ class InteractCommand(BaseModel, CommandInterface):
 
         preamble = self._make_preamble(prog)
         prompt_to_send = self._make_user_prompt(prog, user_input)
-        prog.coder_box.set_vars(
-{"preamble_injection": preamble}
-        )
+        prog.coder_box.set_vars({"preamble_injection": preamble})
 
         if self.interaction_history is not None:
             self.interaction_history.contents.append(
@@ -1279,7 +1277,9 @@ def _main() -> None:
         project.save_to_root(prog_instance.project_root)
 
 
-def _create_interact_command(args: argparse.Namespace, actions: bool) -> InteractCommand:
+def _create_interact_command(
+    args: argparse.Namespace, actions: bool
+) -> InteractCommand:
     """Helper function to create InteractCommand, handling skip_to logic and mutual exclusivity."""
     skip_to_agent: Optional[types.AIAgent] = None
 
@@ -1294,12 +1294,9 @@ def _create_interact_command(args: argparse.Namespace, actions: bool) -> Interac
         skip_to_agent = types.AIAgent.WORKER
 
     return InteractCommand(
-        actions=actions,
-        initial_prompt=args.prompt,
-        skip_to=skip_to_agent
+        actions=actions, initial_prompt=args.prompt, skip_to=skip_to_agent
     )
 
 
 if __name__ == "__main__":
     _main()
-    

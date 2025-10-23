@@ -1,5 +1,4 @@
 * work-in-progress (WIP, limit 5)
-Refactor prompt creation into prompts.py
 make proper multiline mode utility function
 Properly test worker recovery.
 * todo
@@ -64,3 +63,4 @@ emacs integration (use server and emacslisp generation with "emacs -e").
 Add ActionShellCommand to execute_action match case.
 Create prompt for worker waiting on shell command
 Create worker routing
+Refactor prompt creation into prompts.py
