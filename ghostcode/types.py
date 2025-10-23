@@ -201,6 +201,11 @@ class UserConfig(BaseModel):
         description="Use with Gemini and the Google AI Studio API. Get your API key at https://aistudio.google.com\nIf this key is set and you use google as your backend, it will have precedence over the generic api_key.",
     )
 
+    newbie: bool = Field(
+        default=True,
+        description="If true, ghostcode will occasionally print out helpful tips and be generally more verbose and nanny-like. Finding this setting and successfully setting it to False is your trial-by-fire to transcend the newbie stage.",
+    )
+
     _GHOSTCODE_CONFIG_FILE: ClassVar[str] = ".ghostcodeconfig"
 
     def save(self, user_config_path: Optional[str] = None) -> None:

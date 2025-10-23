@@ -1,11 +1,9 @@
 * work-in-progress (WIP, limit 5)
-Create /talk and /interact commands to switch mid session
-make proper multiline mode utility function
+Improve file edit displays
 Properly test worker recovery.
 * todo
 ** general
 make unique_ids into a newtype (e.g. InteractionID)
-Improve file edit displays
 Simulate file edits and show diffs
 Figure out a way to run tests/run the program so AI can get feedback and see errors
 Add doc comment injections to yaml config files.
@@ -65,3 +63,5 @@ Add ActionShellCommand to execute_action match case.
 Create prompt for worker waiting on shell command
 Create worker routing
 Refactor prompt creation into prompts.py
+Create /talk and /interact commands to switch mid session
+make proper multiline mode utility function (discarded - I like the logic in _loop_interact)

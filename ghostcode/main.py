@@ -845,7 +845,9 @@ class InteractCommand(BaseModel, CommandInterface):
 
         while True:
             try:
-                prog.print(prog._get_cli_prompt(), end="")
+                if current_user_input == "":
+                    # don't print this if user is building multi-line input
+                    prog.print(prog._get_cli_prompt(), end="")
                 line = input()
             except EOFError:
                 break  # User pressed CTRL+D, exit interaction
@@ -880,6 +882,11 @@ class InteractCommand(BaseModel, CommandInterface):
             # Accumulate user input
             if line != "\\":
                 current_user_input += "\n" + line
+
+                if prog.user_config.newbie and current_user_input.endswith("\n\n"):
+                    # user may be frantically trying to submit
+                    prog.print("(Hint: Enter a single backslash (\\) and hit enter to submit your prompt. Disable this message with `ghostcode config set newbie False`)")
+
                 continue  # Keep accumulating
 
             # If we reach here, it means user typed '\\' to submit
