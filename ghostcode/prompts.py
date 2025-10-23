@@ -47,13 +47,13 @@ class PromptConfig(BaseModel):
     logs: bool = True
 
     @staticmethod
-    def maximal(**kwargs) -> 'PromptConfig':
+    def maximal(**kwargs: Any) -> 'PromptConfig':
         """Create a default PromptConfig with maximum erbosity."""
         return PromptConfig(**kwargs)
 
 
     @staticmethod
-    def minimal(**kwargs) -> 'PromptConfig':
+    def minimal(**kwargs: Any) -> 'PromptConfig':
         """Create a PromptConfig with minimum verbosity."""
         default_config_data = PromptConfig().model_dump()
         min_config_data: Dict[str, Any] = {} 
@@ -270,7 +270,7 @@ Provide a short, descriptive reason for your assesment along with your response.
 """
 
 
-def make_blocks_project_metadata(prog) -> str:
+def make_blocks_project_metadata(prog: Program) -> str:
     """Returns a text terpesentation of the project metadata.
     Intended to provide reusable text blocks for building LLM prompts. Blocks never include the heading for their content (e.g. ## History).
     Will return empty string if any null projects or failures are encoutnered."""

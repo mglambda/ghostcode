@@ -96,10 +96,10 @@ class ShellInteraction(BaseModel):
         end_str = f"timestanp-end=\"{self.time_end}\"" if self.time_end is not None else ""
         exit_code_str = f"exit-code=\"{self.exit_code}\"" if self.exit_code is not None else ""
         status_str = 'status="running"' if self.exit_code is None else 'status="finished"'
-        wrap_cdata = lambda w: f"<![CDATA[\n{w}\n]]>"
-        stdin_str = wrap_cdata("\n".join([msg.text for msg in self.stdin])) if self.stdin else ""
-        stdout_str = wrap_cdata("\n".join([msg.text for msg in self.stdout])) if self.stdout else ""
-        stderr_str = wrap_cdata("\n".join([msg.text for msg in self.stderr])) if self.stderr else ""
+        wrap_cdata = lambda w: f"<![CDATA[\n{w}\n]]>" 
+        stdin_str = wrap_cdata("\n".join([msg.text for msg in self.stdin])) if self.stdin else "" # type: ignore
+        stdout_str = wrap_cdata("\n".join([msg.text for msg in self.stdout])) if self.stdout else "" # type: ignore
+        stderr_str = wrap_cdata("\n".join([msg.text for msg in self.stderr])) if self.stderr else "" # type: ignore
         
         return f"""<shell-interaction timestamp-start="{self.time_start}" {end_str} {status_str} {exit_code_str}>
 <command>
@@ -126,8 +126,8 @@ class ShellInteraction(BaseModel):
         data["command"] = data["original_command"]
         del data["original_command"]
 
-        def text_only(key):
-            data[key] = "\n".join([msg["text"] for msg in data[key]])
+        def text_only(key: str) -> None:
+            data[key] = "\n".join([msg["text"] for msg in data[key]]) # type: ignore
             
         for k in ["stdin", "stdout", "stderr"]:
             text_only(k)
@@ -176,7 +176,7 @@ class ShellInteractionHistory(BaseModel):
         self.past_interactions.append(self.current_interaction)
         self.current_interaction = None
 
-    def new(self, original_command: str, **kwargs) -> None:
+    def new(self, original_command: str, **kwargs: Any) -> None:
         """Construct a new current interaction in-place."""
         if self.current_interaction is not None:
             self.save()
@@ -192,7 +192,7 @@ class VirtualTerminal:
     Intended to be used by LLMs.
     This type never raises errors. Check VirtualTerminal.is_ready() and VirtualTerminal.error for the VirtualTerminalError type."""
     
-    env: os._Environ = field(
+    env: os._Environ[Any] = field(
         default_factory=lambda: os.environ,
     )
 
@@ -287,7 +287,7 @@ class VirtualTerminal:
         self._poll_done.clear() # Clear the done flag for the new poll cycle
         self._poll_running.set() # Set the running flag
 
-        def update_history():
+        def update_history() -> None:
             if self._process is None:
                 return
            
@@ -310,7 +310,7 @@ class VirtualTerminal:
                     )
                 )
                 
-        def poll():
+        def poll() -> None:
             """Read stdout and stderr of the underlying shell and log it in the history."""
             logger.debug("Virtual terminal polling thread started.")
             while self._poll_running.is_set():
@@ -332,9 +332,9 @@ class VirtualTerminal:
                 if self._kill_flag.is_set():
                     self._kill_flag.clear()
                     # process was killed, we do some creative history editing here
-                    if (current_history := self.history.current_history) is not None:
-                        current_history.stdout.append("Killed.")
-                        current_history.stderr.append("Killed.")
+                    if (current_history := self.history.current_interaction) is not None:
+                        current_history.stdout.append(InteractionLine(text="Killed."))
+                        current_history.stderr.append(InteractionLine(text="Killed."))
                         # by convention, 143 is the exit code that indicates that a SIGTERM was received by the process
                         current_history.exit_code = 143
 

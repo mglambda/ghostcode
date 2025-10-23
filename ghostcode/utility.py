@@ -198,7 +198,7 @@ def language_from_extension(filepath: str) -> str:
     # If the extension is not found, default to "text".
     return EXTENSION_TO_LANGUAGE_MAP.get(clean_ext, "text")
 
-def timestamp_now_iso8601(timespec="seconds") -> str:
+def timestamp_now_iso8601(timespec: Literal["seconds", "minutes", "hours"] = "seconds") -> str:
     """Returns an ISO8601 compliant representation of the point in time the function was called.
     The string representation is guaranteed to include the optional timezone string at the end (e.g. '+02:00' for CET). The timezone will be the system's local timezone.
     By default, the time of day will have a precision up to seconds. You can extend this with the timespec parameter. See the datetime.datetime.isoformat method documentation for more."""
@@ -249,13 +249,13 @@ def levenshtein(a: str, b: str) -> int:
     # The bottom-right cell contains the Levenshtein distance
     return dp[m][n]
 
-def time_function_with_logging(func):
+def time_function_with_logging(func: Any) -> Any:
     """
     A decorator that times a function's execution and logs the duration
     using the custom 'TIMING' log level.
     """
     @functools.wraps(func) # Preserves the original function's metadata (name, docstring, etc.)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         # Get a logger for the module where the decorated function is defined
         logger = logging.getLogger(func.__module__)
 
@@ -264,7 +264,7 @@ def time_function_with_logging(func):
         end_time = time.perf_counter()
 
         elapsed_time = end_time - start_time
-        logger.timing(f"{func.__name__} executed in {elapsed_time:.2f} seconds.")
+        logger.timing(f"{func.__name__} executed in {elapsed_time:.2f} seconds.") # type: ignore
 
         return result
     return wrapper
@@ -273,7 +273,7 @@ def time_function_with_logging(func):
 # Strings longer than this OR containing newlines will be literal block style (|).
 LONG_STRING_THRESHOLD = 50
 
-def conditional_string_representer(dumper, data):
+def conditional_string_representer(dumper: Any, data: Any) -> Any:
     """
     Custom representer for strings:
     - Forces multi-line or long strings (over THRESHOLD) to literal block style (|).
@@ -306,7 +306,7 @@ CustomConditionalDumper.add_representer(str, conditional_string_representer)
 
 # this dumper is used in the Program class to serialize config files
 # This representer will dump Enum members as their underlying value (int, str, etc.)
-def enum_value_representer(dumper, data):
+def enum_value_representer(dumper: Any, data: Any) -> Any:
     """
     Represents an Enum member as its value.
     """
@@ -381,7 +381,7 @@ def make_mnemonic(max_length: int = 1, min_length: int = 1) -> str:
         
 
 
-def mock_print(text_that_will_not_be_printed: str, end: str = "\n", flush=True, **kwargs) -> None:
+def mock_print(text_that_will_not_be_printed: str, end: str = "\n", flush: bool =True, **kwargs: Any) -> None:
     return
 
 

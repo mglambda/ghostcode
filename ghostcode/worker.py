@@ -1,6 +1,6 @@
 # ghostcode/worker.py
 from typing import *
-from ghostbox.commands import showTime  # type: ignore
+from ghostbox.commands import showTime
 import traceback
 import os
 import shutil
@@ -177,11 +177,12 @@ def run_action_queue(prog: Program) -> None:
 
 def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
     # small helper for this context
-    fail = lambda failure_reason, error_messages=[], action=action: types.ActionResultFailure(
-        original_action=action,
-        error_messages=error_messages,
-        failure_reason=failure_reason,
-    )
+    def fail(failure_reason: str, error_messages: List[str]=[], action: types.Action=action) -> types.ActionResultFailure:
+        return types.ActionResultFailure( 
+            original_action=action,
+            error_messages=error_messages,
+            failure_reason=failure_reason,
+        )
 
     logger.debug(f"Executing action: {action.__class__.__name__}")
 
@@ -307,11 +308,12 @@ def apply_create_file(
     prog: Program, create_action: types.ActionFileCreate
 ) -> types.ActionResult:
     """Apply an ActionFileCreate to actually write a new file to disk."""
-    fail = lambda failure_reason, error_messages=[], create_action=create_action: types.ActionResultFailure(
-        original_action=create_action,
-        error_messages=error_messages,
-        failure_reason=failure_reason,
-    )
+    def fail(failure_reason: str, error_messages: List[str] = [], create_action: types.ActionFileCreate = create_action) -> types.ActionResultFailure:
+        return types.ActionResultFailure(
+            original_action=create_action,
+            error_messages=error_messages,
+            failure_reason=failure_reason,
+        )
 
     try:
         os.makedirs(os.path.dirname(create_action.filepath), exist_ok=True)
@@ -403,7 +405,7 @@ def coder_query(
             message=f"{prog.last_print_text} Querying 👻 ",
             postfix_message=f"{prog.last_print_text}",
             print_function=prog.make_tagged_printer("action_queue"),
-        ):  # type: ignore
+        ):
             profile = query_coder_action.llm_response_profile
             if profile.actions and profile.text:
                 # this is the default, offer the coder the full menu of parts to generate
@@ -465,12 +467,12 @@ def handle_code_part(
     prog: Program, code_action: types.ActionHandleCodeResponsePart
 ) -> types.ActionResult:
     """Executes an ActionHandleCodeResponsePart action."""
-    # small helper for this context
-    fail = lambda failure_reason, error_messages=[], code_action=code_action: types.ActionResultFailure(
-        original_action=code_action,
-        error_messages=error_messages,
-        failure_reason=failure_reason,
-    )
+    def fail(failure_reason: str, error_messages: List[str] = [], code_action: types.ActionHandleCodeResponsePart = code_action) -> types.ActionResultFailure:
+        return types.ActionResultFailure(
+            original_action=code_action,
+            error_messages=error_messages,
+            failure_reason=failure_reason,
+        )
 
     # first rule out some easy cases
     if code_action.content.filepath is None:
@@ -704,7 +706,7 @@ def worker_route_request(prog: Program, prompt: str) -> types.AIAgent:
         message=f"{prog.last_print_text} Routing 🔧 ",
         postfix_message=f"{prog.last_print_text}",
         print_function=prog.make_tagged_printer("action_queue"),
-    ):  # type: ignore
+    ):
         try:
             result = prog.worker_box.new(
                 types.UserPromptClassification, prompts.make_prompt_route_request(prog, prompt)
@@ -730,7 +732,7 @@ def worker_query(
             message=f"{prog.last_print_text} Querying 🔧 ",
             postfix_message=f"{prog.last_print_text}",
             print_function=prog.make_tagged_printer("action_queue"),
-        ):  # type: ignore
+        ):
             profile = query_worker_action.llm_response_profile
             # FIXME: right now we are ignoring the profile and always generating actions.
             prog.worker_box.clear_history()

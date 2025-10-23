@@ -1,4 +1,5 @@
 import os
+import sys
 from enum import IntEnum
 
 # --- ANSI Escape Codes ---
@@ -124,13 +125,13 @@ def colored(
 # --- Helper for Windows (optional, for older terminals) ---
 # On modern Windows terminals (Windows Terminal, VS Code terminal),
 # ANSI codes work natively. For older cmd.exe, colorama might be needed.
-def enable_ansi_on_windows():
+def enable_ansi_on_windows() -> None:
     if os.name == 'nt':
         try:
             import colorama
             colorama.init()
         except ImportError:
-            print("Warning: 'colorama' not found. ANSI colors might not work on older Windows terminals.", file=os.stderr)
+            print("Warning: 'colorama' not found. ANSI colors might not work on older Windows terminals.", file=sys.stderr)
 
 # Call this once at the start of your application if you need Windows compatibility
 # enable_ansi_on_windows()

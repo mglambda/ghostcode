@@ -4,14 +4,15 @@ import traceback
 from ghostcode import types, worker
 from ghostcode import slash_commands
 from ghostcode.progress_printer import ProgressPrinter
+from ghostcode import prompts
 
 # don't want the types. prefix for these
 from ghostcode.types import Program
 import ghostbox
 import os
-from ghostbox import Ghostbox  # type: ignore
-from ghostbox.definitions import BrokenBackend  # type: ignore
-from ghostbox.commands import showTime  # type: ignore
+from ghostbox import Ghostbox
+from ghostbox.definitions import BrokenBackend
+from ghostbox.commands import showTime
 from dataclasses import dataclass, field
 import argparse
 import logging
@@ -33,11 +34,11 @@ logger: logging.Logger  # Declare logger globally, will be assigned later
 class ExceptionListHandler(logging.Handler):
     """Stores exceptions in a global list."""
 
-    def __init__(self, level=logging.NOTSET):
+    def __init__(self, level=logging.NOTSET): # type: ignore
         super().__init__(level)
-        self.exceptions = Queue()
+        self.exceptions: Queue[str] = Queue()
 
-    def emit(self, record):
+    def emit(self, record): # type: ignore
         if record.exc_info:
             # record.exc_info is (type, value, tb)
             formatted_exc = "".join(traceback.format_exception(*record.exc_info))
@@ -53,7 +54,7 @@ class ExceptionListHandler(logging.Handler):
 
 
 # Global exception handler. kWould be nicer to store in Program type but unfortunately we might handle exceptions ebfore program is fully constructed.
-EXCEPTION_HANDLER = ExceptionListHandler()
+EXCEPTION_HANDLER = ExceptionListHandler() # type: ignore
 
 
 def _configure_logging(
@@ -61,7 +62,7 @@ def _configure_logging(
     project_root: Optional[str],
     is_init: bool = False,
     secondary_log_filepath: Optional[str] = None,
-):
+) -> None:
     """
     Configures the root logger based on the specified mode and project root.
     Primary logging is always directed to .ghostcode/log.txt if a project root exists and is writable.
@@ -78,7 +79,7 @@ def _configure_logging(
 
     # Custom filter to suppress exc_info for other handlers
     class SuppressExcInfoFilter(logging.Filter):
-        def filter(self, record):
+        def filter(self, record): # type: ignore
             # This filter is applied to handlers *after* EXCEPTION_HANDLER has processed it.
             # So, EXCEPTION_HANDLER gets the original record with exc_info.
             # For subsequent handlers, we clear exc_info so they don't print it.
@@ -92,7 +93,7 @@ def _configure_logging(
     logging.addLevelName(TIMING_LEVEL_NUM, "TIMING")
 
     # Add a convenience method to the Logger class
-    def timing_log(self, message, *args, **kwargs):
+    def timing_log(self, message, *args, **kwargs): # type: ignore
         if self.isEnabledFor(TIMING_LEVEL_NUM):
             self._log(TIMING_LEVEL_NUM, message, args, **kwargs)
 
@@ -676,17 +677,15 @@ class InteractCommand(BaseModel, CommandInterface):
 
     def _make_preamble(self, prog: Program) -> str:
         """Plaintext context that is inserted before the user prompt - though only once."""
-        if prog.project is None:
-            logger.warning(
-                f"Encountered null project in program while creating preamble."
+        return prompts.make_prompt(
+            prog,
+            prompt_config = prompts.PromptConfig.minimal(
+                project_metadata=True,
+                context_files="full"
+                # could add shell here?
             )
-            return ""
-        return f"""{prog.project.context_files.show()}
-
-# User Prompt
-
-"""
-
+        )
+    
     def _make_user_prompt(self, prog: Program, prompt: str) -> str:
         """Prepare a user prompt to be sent to the backend."""
         # atm we only add a var hook for injections with ghostbox
@@ -702,7 +701,7 @@ class InteractCommand(BaseModel, CommandInterface):
             return ""
 
         if self.interaction_history.empty():
-            return "{{project_metadata}\n\n}{{preamble_injection}}" + prompt
+            return "{{preamble_injection}}" + f"# User Prompt\n\n{prompt}"
         return prompt
 
     def _dump_interaction(self, prog: Program) -> None:
@@ -762,7 +761,7 @@ class InteractCommand(BaseModel, CommandInterface):
         # default is return whatever is the default
         return types.LLMResponseProfile()
 
-    def _make_initial_action(self, **kwargs) -> types.Action:
+    def _make_initial_action(self, **kwargs: Any) -> types.Action:
         """Create the initial action to place on the action queue.
         Arguments are passed directly through to query constructors, like ActionQueryCoder, ActionQueryWorker, or ActionRouteRequest.
         """
@@ -782,16 +781,10 @@ class InteractCommand(BaseModel, CommandInterface):
                 f"Project seems to be null during interaction. This shouldn't happen, but just in case, you may want to do `ghostcode init` in your project's directory."
             )
 
-        preamble = prog.project.context_files.show()
-        metadata_str = (
-            prog.project.project_metadata.show()
-            if prog.project.project_metadata
-            else ""
-        )
-
+        preamble = self._make_preamble(prog)
         prompt_to_send = self._make_user_prompt(prog, user_input)
         prog.coder_box.set_vars(
-            {"project_metadata": metadata_str, "preamble_injection": preamble}
+{"preamble_injection": preamble}
         )
 
         if self.interaction_history is not None:
@@ -949,7 +942,7 @@ class VerifyCommand(BaseModel):
         return result
 
 
-def _main():
+def _main() -> None:
     parser = argparse.ArgumentParser(
         prog="ghostcode",
         description="A command line tool to help programmers code using LLMs.",
@@ -1282,7 +1275,8 @@ def _main():
     # Run the command
     out = command_obj.run(prog_instance)
     print(out.text)
-    project.save_to_root(prog_instance.project_root)
+    if prog_instance.project_root is not None:
+        project.save_to_root(prog_instance.project_root)
 
 
 def _create_interact_command(args: argparse.Namespace, actions: bool) -> InteractCommand:

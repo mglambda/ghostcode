@@ -10,8 +10,8 @@ import traceback
 import json
 import yaml
 import logging
-import ghostbox.definitions  # type: ignore
-from ghostbox.definitions import LLMBackend  # type: ignore
+import ghostbox.definitions
+from ghostbox.definitions import LLMBackend
 from ghostcode.ansi_colors import Color256, colored
 from ghostbox import Ghostbox
 from ghostcode.utility import (
@@ -37,10 +37,10 @@ class Showable(Protocol):
     By convention, the CLI method turns objects into strings in a way that is slightly less verbose and more friendly to humans, though it is not required that show and show_cli have different return values at all.
     """
 
-    def show_cli(self, **kwargs) -> str:
+    def show_cli(self, **kwargs: Any) -> str:
         pass
 
-    def show(self, **kwargs) -> str:
+    def show(self, **kwargs: Any) -> str:
         pass
 
 
@@ -130,7 +130,7 @@ class LLMResponseProfile(BaseModel):
     )
 
     @staticmethod
-    def forbid_all():
+    def forbid_all() -> 'LLMResponseProfile':
         """Returns an LLMResponseProfile that disables all response types."""
         # it is good to be lazy
         default = LLMResponseProfile()
@@ -382,7 +382,7 @@ class ContextFiles(BaseModel):
         context_files = [ContextFile(filepath=fp, rag=False) for fp in filepaths]
         return ContextFiles(data=context_files)
 
-    def show(self, heading_level: int = 3, **kwargs) -> str:
+    def show(self, heading_level: int = 3, **kwargs: Any) -> str:
         """Renders file contents of the context files to a string, in a format that is suitable for an LLM."""
         w = ""
         for context_file in self.data:
@@ -404,7 +404,7 @@ class ContextFiles(BaseModel):
 """
         return w
 
-    def show_cli(self, **kwargs) -> str:
+    def show_cli(self, **kwargs: Any) -> str:
         """Shows the list of filepaths in a short, command line interface friendly manner."""
         return "(" + " ".join([item.filepath for item in self.data]) + ")"
 
@@ -413,7 +413,7 @@ class ProjectMetadata(BaseModel):
     name: str
     description: str
 
-    def show(self, **kwargs) -> str:
+    def show(self, **kwargs: Any) -> str:
         """Returns a human-readable string representation of the project metadata."""
         return f"## Project Metadata\n{show_model(self)}\n"
 
@@ -473,7 +473,7 @@ class CodeResponsePart(BaseModel):
         description="A short, descriptive title for the code block or the change it represents.",
     )
 
-    def show_cli(self, **kwargs) -> str:
+    def show_cli(self, **kwargs: Any) -> str:
         """Return a (short) representation that is suitable for the CLI interface."""
         filepath_str = f"({self.filepath})" if self.filepath else ""
         notes_str = (
@@ -483,7 +483,7 @@ class CodeResponsePart(BaseModel):
         )
         return f"## {self.title} {filepath_str}{notes_str}"
 
-    def show(self, include_code: bool = True, **kwargs) -> str:
+    def show(self, include_code: bool = True, **kwargs: Any) -> str:
         missing_msg = "<Code Redacted>"
         """Returns a comprehensive string representation of the part."""
         filepath_str = f" ({self.filepath})" if self.filepath else ""
@@ -528,12 +528,12 @@ class TextResponsePart(BaseModel):
         description="An optional filepath. Use this to explicitly mark the generated text as refering to one of the files in the context.",
     )
 
-    def show_cli(self, **kwargs) -> str:
+    def show_cli(self, **kwargs: Any) -> str:
         """A (short) CLI representation for the part."""
         filepath_str = f"## {self.filepath}\n" if self.filepath else ""
         return f"{filepath_str}{self.text}"
 
-    def show(self, **kwargs) -> str:
+    def show(self, **kwargs: Any) -> str:
         """Comprehensive longform string representation for the part."""
         filepath_str = f"## {self.filepath}\n\n" if self.filepath else ""
         return f"""{filepath_str}{self.text}
@@ -553,7 +553,7 @@ class ShellCommandPart(BaseModel):
         description="A short, informative statement that describes the reason and intent behind this shell command. This will be shown to the user and stored in the logs."
     )
 
-    def show_cli(self, **kwargs) -> str:
+    def show_cli(self, **kwargs: Any) -> str:
         return f"""## Shell command
 {self.reason}
 
@@ -562,7 +562,7 @@ class ShellCommandPart(BaseModel):
 ```
         """
 
-    def show(self, **kwargs) -> str:
+    def show(self, **kwargs: Any) -> str:
         return show_model(self)
 
 
@@ -573,12 +573,12 @@ class FilesLoadPart(BaseModel):
         description="One or more  filepaths relative to the project root which will be loaded into context."
     )
 
-    def show_cli(self, **kwargs) -> str:
+    def show_cli(self, **kwargs: Any) -> str:
         return f"""## Load Files into Context
 {" -> ".join(self.filepaths)}
 """
 
-    def show(self, **kwargs) -> str:
+    def show(self, **kwargs: Any) -> str:
         return show_model(self)
 
 
@@ -591,12 +591,12 @@ class FilesUnloadPart(BaseModel):
         description="One or more filepaths relative to the project root that should be unloaded from the current context."
     )
 
-    def show_cli(self, **kwargs) -> str:
+    def show_cli(self, **kwargs: Any) -> str:
         return f"""## Unload files from context
 {" <- ".join(self.filepaths)}
 """
 
-    def show(self, **kwargs) -> str:
+    def show(self, **kwargs: Any) -> str:
         return show_model(self)
 
 
@@ -617,10 +617,10 @@ class CoderResponse(BaseModel):
         description="A list of response parts returned by the backend coder LLM. This may contain code and/or text.",
     )
 
-    def show_cli(self, **kwargs) -> str:
+    def show_cli(self, **kwargs: Any) -> str:
         return "\n".join([part.show_cli(**kwargs) for part in self.contents])
 
-    def show(self, **kwargs) -> str:
+    def show(self, **kwargs: Any) -> str:
         return "\n".join([part.show(**kwargs) for part in self.contents])
 
 
@@ -637,7 +637,7 @@ class WorkerCoderRequestPart(BaseModel):
         description="A short, informative message describing the reason for the request. This message will be displayed to the user and stored in the logs."
     )
 
-    def show_cli(self):
+    def show_cli(self) -> str:
         return f"""## Request from ghostworker to ghostcoder
 
 ```
@@ -708,7 +708,7 @@ class CoderInteractionHistoryItem(BaseModel):
         description="The commit that was checked out at the time this interaction took place.",
     )
 
-    def show(self, **kwargs) -> str:
+    def show(self, **kwargs: Any) -> str:
         """Returns a human readable string representation of the item."""
         return f"""[{self.timestamp}] {self.context.show_cli()}
   {self.model}@{self.backend} >
@@ -739,7 +739,7 @@ class UserInteractionHistoryItem(BaseModel):
         description="The actual user prompt. This includes only the plain text created directly by the user at the time of the interaction."
     )
 
-    def show(self, **kwargs) -> str:
+    def show(self, **kwargs: Any) -> str:
         return f"""[{self.timestamp}] {self.context.show_cli()}
   user >
         {self.prompt}
