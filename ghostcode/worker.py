@@ -29,7 +29,7 @@ logger = logging.getLogger("ghostcode.worker")
 def actions_from_response_parts(
     prog: Program, parts: Sequence[types.LLMResponsePart]
 ) -> List[types.Action]:
-    """Transform a list of response parts from the coder LLM into a list of actions.
+    """Transform a list of response parts from either coder or worker LLM into a list of actions.
     This is not a 1 to 1 mapping. You may end up with an empty list if e.g. all the response parts are just discussion text. Only code parts and similar are transformed into actions.
     """
     # atm we have prog only because we might need more context here in the future
@@ -80,6 +80,7 @@ def actions_from_response_parts(
                     )
                 ]
             case _:
+                logger.warning(f"Match case fallthrough on response part: {part.__class__.__name__}")
                 return []
 
     return foldl(lambda part, actions: actions_from_part(part) + actions, [], parts)
@@ -231,7 +232,7 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
             return fail(f"Action {action.__class__.__name__} denied by user.")
     else:
         logger.info(
-            f"Worker clearance of {clearance_level} meets or exceeds clearance requirement {clearance_requirement} for {action.__class__.__name__} action. Proceeding without user confirmation."
+            f"Worker clearance of {clearance_level.name} meets or exceeds clearance requirement {clearance_requirement.name} for {action.__class__.__name__} action. Proceeding without user confirmation."
         )
 
     try:
@@ -757,6 +758,7 @@ def worker_query(
                     prog, query_worker_action.interaction_history_id
                 ),
             )
+            logger.debug(f"Dump of worker query response: \n{show_model(worker_response)}")
             actions = actions_from_response_parts(prog, worker_response.contents)
             return types.ActionResultMoreActions(actions=actions)
     except:

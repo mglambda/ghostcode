@@ -1,5 +1,4 @@
 * work-in-progress (WIP, limit 5)
-Improve file edit displays
 Properly test worker recovery.
 * todo
 ** general
@@ -65,3 +64,4 @@ Create worker routing
 Refactor prompt creation into prompts.py
 Create /talk and /interact commands to switch mid session
 make proper multiline mode utility function (discarded - I like the logic in _loop_interact)
+Improve file edit displays
