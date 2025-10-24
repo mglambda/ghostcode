@@ -80,7 +80,9 @@ def actions_from_response_parts(
                     )
                 ]
             case _:
-                logger.warning(f"Match case fallthrough on response part: {part.__class__.__name__}")
+                logger.warning(
+                    f"Match case fallthrough on response part: {part.__class__.__name__}"
+                )
                 return []
 
     return foldl(lambda part, actions: actions_from_part(part) + actions, [], parts)
@@ -207,7 +209,7 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
         return fail("Worker encountered action with 'forbidden' clearance requirement.")
     elif clearance_level.value < clearance_requirement.value:
         logger.info(
-            "Worker clearance of {clearance_level} insufficient for clearance requirement {clearance_requirement} of {action.__class__.__name__} action. Seeking user confirmation."
+            f"Worker clearance of {clearance_level.name} insufficient for clearance requirement {clearance_requirement} of {action.__class__.__name__} action. Seeking user confirmation."
         )
         user_response = prog.confirm_action(
             action, agent_clearance_level=clearance_level, agent_name="Ghostworker"
@@ -223,11 +225,11 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
             if user_response == types.UserConfirmation.ALL:
                 prog.action_queue_yolo = True
             logger.info(
-                f"User confirmed {action.__class__.__name__} for worker with clearance level {clearance_level}."
+                f"User confirmed-all for {action.__class__.__name__} for worker with clearance level {clearance_level.name} (YOLO)."
             )
         else:
             logger.info(
-                f"User denied {action.__class__.__name__} for worker with clearance level {clearance_level}."
+                f"User denied {action.__class__.__name__} for worker with clearance level {clearance_level.name}."
             )
             return fail(f"Action {action.__class__.__name__} denied by user.")
     else:
@@ -267,19 +269,24 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                 # No operation needed for ActionDoNothing
                 logger.info("Action: Do Nothing")
                 return types.ActionResultOk()
-            case types.ActionShellCommand as shell_command_action:
+            case types.ActionAlterContext() as alter_context_action:
+                logger.info(
+                    f"Change of context with {alter_context_action.context_alteration.__class__.__name__}."
+                )
+                return apply_alter_context(prog, alter_context_action)
+            case types.ActionShellCommand() as shell_command_action:
                 logger.info(
                     f"Running shell command: {shell_command_action.content.command}"
                 )
-                logger.debu(
+                logger.debug(
                     f"Full dump of shell command action: {show_model(shell_command_action)}"
                 )
-                prog.tty.write_line(shell_command_action.command)
+                prog.tty.write_line(shell_command_action.content.command)
 
                 return types.ActionResultMoreActions(
                     actions=[
                         types.ActionWaitOnShellCommand(
-                            original_action=shell_command_action
+                            original_command=shell_command_action
                         )
                     ]
                 )
@@ -307,6 +314,45 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
         return types.ActionResultFailure(
             original_action=action, failure_reason=f"Caught exception: {e}"
         )
+
+
+def apply_alter_context(
+    prog: Program, alter_context_action: types.ActionAlterContext
+) -> types.ActionResult:
+    """Change the files currently in context."""
+    if prog.project is None:
+        msg = f"Null project while trying to alter the project context files."
+        logger.error(msg)
+        return types.ActionResultFailure(
+            failure_reason=msg, original_action=alter_context_action
+        )
+
+    match alter_context_action.context_alteration:
+        case types.ContextAlterationLoadFile() as load_file:
+            prog.project.context_files.add_or_alter(
+                types.ContextFile(filepath=load_file.filepath)
+            )
+            return types.ActionResultOk(
+                success_message=f"Added {load_file.filepath} to context."
+            )
+        case types.ContextAlterationUnloadFile() as unload_file:
+            if prog.project.context_files.remove(unload_file.filepath):
+                # it wasn't found
+                return types.ActionResultFailure(
+                    failure_reason=f"Could not remove {unload_file.filepath} from context: No such filepath in context.",
+                    original_action=alter_context_action,
+                )
+            return types.ActionResultOk(
+                success_message=f"Removed {unload_file.filepath} from context."
+            )
+        case types.ContextAlterationFlagFile() as flag_file:
+            return types.ActionResultFailure(
+                failure_reason="Not implemented yet.",
+                original_action=alter_context_action,
+            )
+        case _ as unreachable:
+            # trigger mypy error
+            assert_never(unreachable)
 
 
 def apply_create_file(
@@ -758,7 +804,9 @@ def worker_query(
                     prog, query_worker_action.interaction_history_id
                 ),
             )
-            logger.debug(f"Dump of worker query response: \n{show_model(worker_response)}")
+            logger.debug(
+                f"Dump of worker query response: \n{show_model(worker_response)}"
+            )
             actions = actions_from_response_parts(prog, worker_response.contents)
             return types.ActionResultMoreActions(actions=actions)
     except:

@@ -419,6 +419,31 @@ class ContextFiles(BaseModel):
         """Shows the list of filepaths in a short, command line interface friendly manner."""
         return "(" + " ".join([item.filepath for item in self.data]) + ")"
 
+    def add_or_alter(self, context_file: ContextFile) -> None:
+        """Add a single filepath to the context during program execution.
+        If the filepath already exists in context, it is replaced with the supplied file instead, possibly changing its attributes."""
+        logger.debug(f"Trying to add {context_file.filepath} to context.")
+        for i in range(0, len(self.data)):
+            if self.data[i].filepath == context_file.filepath:
+                logger.info(f"Changing properties for context file {context_file.filepath}")
+                self.data[i] = context_file
+                return
+
+        # we did not find it
+        logger.info(f"Adding {context_file.filepath} to context.")
+        self.data.append(context_file)
+
+    def remove(self, filepath: str) -> bool:
+        """Remove a file from context during program execution.
+        Returns true if the file was not found."""
+        for i in range(0, len(self.data)):
+            if self.data[i].filepath == filepath:
+                logger.debug(f"Removing {filepath} from context.")
+                del self.data[i]
+                return False
+
+        logger.warning(f"Tried to remove {filepath} from context but no such file was found.")
+        return True
 
 class ProjectMetadata(BaseModel):
     name: str

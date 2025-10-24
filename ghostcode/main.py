@@ -62,6 +62,7 @@ def _configure_logging(
     project_root: Optional[str],
     is_init: bool = False,
     secondary_log_filepath: Optional[str] = None,
+    is_debug: bool = False,
 ) -> None:
     """
     Configures the root logger based on the specified mode and project root.
@@ -99,8 +100,11 @@ def _configure_logging(
 
     logging.Logger.timing = timing_log  # type: ignore
 
-    # Set the root logger level to INFO by default
-    logging.root.setLevel(logging.INFO)
+    # Set the root logger level
+    if is_debug:
+        logging.root.setLevel(logging.DEBUG)
+    else:
+        logging.root.setLevel(logging.INFO)
 
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -989,6 +993,12 @@ def _main() -> None:
         help="Path for secondary file logging when --logging is set to 'file'.",
     )
 
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging, showing verbose internal messages."
+    )
+
     subparsers = parser.add_subparsers(
         dest="command", required=True, help="Available commands"
     )
@@ -1177,6 +1187,7 @@ def _main() -> None:
         current_project_root,
         is_init=args.command == "init",
         secondary_log_filepath=args.secondary_log_filepath,
+        is_debug=args.debug,
     )
 
     # Now that logging is configured, get the main logger instance
