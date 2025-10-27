@@ -18,9 +18,11 @@ from ghostcode.utility import (
     language_from_extension,
     timestamp_now_iso8601,
     show_model,
+    show_model_nt,
+    show_model_nt,
     PydanticEnumDumper,
     make_mnemonic,
-    quoted_if_nonempty
+    quoted_if_nonempty,
 )
 from ghostcode import shell
 import appdirs  # Added for platform-specific config directory
@@ -130,6 +132,10 @@ class LLMResponseProfile(BaseModel):
         description="The LLM may generate actions. This is a way to do tool calling through structured output.",
     )
 
+    @staticmethod
+    def allow_all() -> 'LLMResponseProfile':
+        return LLMResponseProfile()
+    
     @staticmethod
     def forbid_all() -> "LLMResponseProfile":
         """Returns an LLMResponseProfile that disables all response types."""
@@ -421,11 +427,14 @@ class ContextFiles(BaseModel):
 
     def add_or_alter(self, context_file: ContextFile) -> None:
         """Add a single filepath to the context during program execution.
-        If the filepath already exists in context, it is replaced with the supplied file instead, possibly changing its attributes."""
+        If the filepath already exists in context, it is replaced with the supplied file instead, possibly changing its attributes.
+        """
         logger.debug(f"Trying to add {context_file.filepath} to context.")
         for i in range(0, len(self.data)):
             if self.data[i].filepath == context_file.filepath:
-                logger.info(f"Changing properties for context file {context_file.filepath}")
+                logger.info(
+                    f"Changing properties for context file {context_file.filepath}"
+                )
                 self.data[i] = context_file
                 return
 
@@ -442,8 +451,11 @@ class ContextFiles(BaseModel):
                 del self.data[i]
                 return False
 
-        logger.warning(f"Tried to remove {filepath} from context but no such file was found.")
+        logger.warning(
+            f"Tried to remove {filepath} from context but no such file was found."
+        )
         return True
+
 
 class ProjectMetadata(BaseModel):
     name: str
@@ -468,6 +480,8 @@ class CodeResponsePart(BaseModel):
     This 'original_code' block is used by GhostWorker to precisely locate the section of code
     to be replaced within the specified 'filepath'. Without an exact or very close match
     for 'original_code', the partial replacement operation will fail.
+
+    Note to ghostcoder: Use this response part when you want to generate code that should replace existing files in the context or create new files.
     """
 
     type: Literal["full", "partial"] = Field(
@@ -555,6 +569,7 @@ class TextResponsePart(BaseModel):
     """A text chunk that is part of a response by the LLM backend.
     Use this for general discussions, explanations, open questions, brainstorming, warnings, or any information not directly tied to a code change.
     Examples include: overall architectural thoughts, design decisions, potential issues, alternative approaches, or responses to user questions that don't require code.
+    Note to ghostworker: Use this when you want to tell the user something. This is the only response part that will be directly displayed to the user.
     """
 
     text: str = Field(default="", description="The text payload.")
@@ -579,7 +594,13 @@ class TextResponsePart(BaseModel):
 class ShellCommandPart(BaseModel):
     """Represents a shell command that will be run.
     The output of the command will either be used for further processing by the worker, sent to the coder backend, shown to the user, or stored in a file.
-    By default, commands are run relative to the project root directory."""
+    By default, commands are run relative to the project root directory.
+    Note to ghostworker and ghostcoder: Use this in the following situations:
+        1. If the user directly requests a shell command to be run.
+        2. If running a shell command is the easiest, most direct, or obvious way to fulfill the users request (e.g. If the user asks 'How much space do I have on my hard drive' - don't write a python script that calculates the space, just run 'df -h'
+        3. If there was an error or failure that you are trying to recover from, and running a shell command will aid the recovery.
+        4. If there was an error, failure, or you were unable to fulfill a user request with the current context, and running a shell command may give you the additional information you need, like running a test, checking wether a package is isntalled, or inspecting the git logs.
+    """
 
     command: str = Field(
         description="The full shell command that will be run in a virtual terminal."
@@ -603,7 +624,8 @@ class ShellCommandPart(BaseModel):
 
 
 class FilesLoadPart(BaseModel):
-    """Represents a request to load files into context so that their contents become available to the coder LLM."""
+    """Represents a request to load files into context so that their contents become available to the coder LLM.
+    Note to ghostcoder and ghostworker: Use this if the context information you have is not sufficient to fulfill the request."""
 
     filepaths: List[str] = Field(
         description="One or more  filepaths relative to the project root which will be loaded into context."
@@ -621,7 +643,9 @@ class FilesLoadPart(BaseModel):
 class FilesUnloadPart(BaseModel):
     """Represents a request to unload one or more files from the current context.
     Unloading files reduces the amount of tokens sent to the coder LLM backend, which will improve performance and may save on token costs.
-    Files should only be unloaded if they really are unnecessary to the current task."""
+    Files should only be unloaded if they really are unnecessary to the current task.
+    Note to ghostworker: Use this if there is a failure that may be recovered from by reducing token use or shrinking the context. Pick files to unload that are unlikely to be relevant to the current request.
+    """
 
     filepaths: List[str] = Field(
         description="One or more filepaths relative to the project root that should be unloaded from the current context."
@@ -663,10 +687,11 @@ class CoderResponse(BaseModel):
 class WorkerCoderRequestPart(BaseModel):
     """Represents a request that should be send to the coder LLM backend.
     This allows the worker to communicate with the coder for e.g. clarification, refactoring, adjustment to the user prompt, or anything else that requires the coders capabilities.
+Note to ghostworker: Use this response part to indicate that you are bouncing a request, and delegating it to the coder LLM. Only do this if you think the other response parts are unable to fulfill the user's request, or if you think they are inadqeuate to recover from an error or failure.
     """
 
     text: str = Field(
-        description="The plaintext prompt that will be send verbatim to the coder LLM."
+        description="The plaintext prompt that will be sent to the coder LLM."
     )
 
     reason: str = Field(
@@ -687,7 +712,9 @@ class WorkerCoderRequestPart(BaseModel):
 
 
 class EndInteractionPart(BaseModel):
-    """Represents a signal to end the current interaction."""
+    """Represents a signal to end the current interaction.
+Note to ghostcoder and ghostworker: Use this reponse part if a user request has been fulfilled and you deem the interaction to be completely finished.
+    """
 
     reason: str = Field(description="The reason for ending the interaction.")
 
@@ -928,15 +955,19 @@ class ActionFileEdit(BaseModel):
             with open(self.filepath) as f:
                 w = f.read()
 
-            newlines_to_begin = len([c for c in w[:self.replace_pos_begin] if c == "\n"])
-            newlines_to_end = len([c for c in w[:self.replace_pos_end] if c == "\n"])
-            original_code = w[self.replace_pos_begin:self.replace_pos_end]
+            newlines_to_begin = len(
+                [c for c in w[: self.replace_pos_begin] if c == "\n"]
+            )
+            newlines_to_end = len([c for c in w[: self.replace_pos_end] if c == "\n"])
+            original_code = w[self.replace_pos_begin : self.replace_pos_end]
             return (original_code, (newlines_to_begin, newlines_to_end))
         except Exception as e:
-            logger.exception(f"Couldn't open file for original info during edit action. Reason: {e}. Continuing.")
+            logger.exception(
+                f"Couldn't open file for original info during edit action. Reason: {e}. Continuing."
+            )
         return ("", (0, 0))
 
-        
+
 class ActionShellCommand(BaseModel):
     """Action for executing shell commands.
     This is one security nightmare, but I guess we are doing this!
@@ -1091,6 +1122,9 @@ class UserPromptClassification(BaseModel):
         description="The category that the user request belongs to."
     )
 
+    reason: str = Field(
+        description = "The reason the prompt should be classified this way."
+    )
 
 class ActionRouteRequest(BaseModel):
     """Decide on wether to route a user request to the ghostcoder or ghostworker."""
@@ -1116,7 +1150,7 @@ class ActionRouteRequest(BaseModel):
 
 
 type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest
-
+type QueryAction = ActionQueryCoder | ActionQueryWorker
 
 def action_show_short(action: Action) -> str:
     """Gives a short representation of an action.
@@ -1164,9 +1198,13 @@ def action_show_user_message(
             result = action_show_short(action)
     return result + delimiter
 
-def action_show_confirmation_data(action: Action, first_showing: bool = True, abridge: Optional[int] = None) -> str:
+
+def action_show_confirmation_data(
+    action: Action, first_showing: bool = True, abridge: Optional[int] = None
+) -> str:
     """Returns a string representation to show on the command line during a dialog that confirms the execution of the action.
-    The abridge parameters can limit long parts of action's attributes to a certain character limit."""
+    The abridge parameters can limit long parts of action's attributes to a certain character limit.
+    """
 
     # for many we just default as they don't need confirm often
     # but some (like file kedit) get special careeid
@@ -1176,28 +1214,31 @@ def action_show_confirmation_data(action: Action, first_showing: bool = True, ab
                 return quoted_if_nonempty(
                     text=file_edit_action.insert_text,
                     heading=file_edit_action.filepath + " (new code)",
-                    heading_level=1
+                    heading_level=1,
                 )
             else:
                 # give much more information
                 # FIXME: show diff
-                (original_code, (first_line, last_line)) = file_edit_action.get_original_info()
+                (original_code, (first_line, last_line)) = (
+                    file_edit_action.get_original_info()
+                )
                 w = f"# {file_edit_action.filepath}\nlines {first_line} - {last_line}\n\n"
                 w += quoted_if_nonempty(
-                    text = original_code,
-                    heading="Original Code",
-                    heading_level=2
-                    )
-                w += quoted_if_nonempty(
-                    text = file_edit_action.insert_text,
-                    heading="New Code",
-                    heading_level = 2
+                    text=original_code, heading="Original Code", heading_level=2
                 )
-                
+                w += quoted_if_nonempty(
+                    text=file_edit_action.insert_text,
+                    heading="New Code",
+                    heading_level=2,
+                )
+
                 return w
         case _:
-            return show_model(action, heading=action.__class__.__name__, abridge=abridge)
-    
+            return show_model_nt(
+                action, heading=action.__class__.__name__, abridge=abridge
+            )
+
+
 class ActionResultOk(BaseModel):
     """Represents a successfully executed action."""
 
@@ -1924,6 +1965,9 @@ class Program:
         default_factory=lambda: CosmeticProgramState.IDLE
     )
 
+    _DEBUG_DIR: ClassVar[str] = ".ghostcode/debug"
+
+    
     def _get_cli_prompt(self) -> str:
         """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
         # some ghostbox internal magic to get the token count
@@ -2065,7 +2109,11 @@ class Program:
                         return UserConfirmation.CANCEL
                     case "d":
                         # secret debug option
-                        print(show_model(action,                                 heading=action.__class__.__name__, abridge=None))
+                        print(
+                            show_model_nt(
+                                action, heading=action.__class__.__name__, abridge=None
+                            )
+                        )
                         continue
                     case _:
                         # cover "?", empty input, and anything else, as showing more nformation is generally a safe option.
@@ -2120,6 +2168,19 @@ class Program:
     def make_tagged_printer(self, tag: str) -> Callable[[str], None]:
         return lambda text, end="\n", flush=True: self.print(text, end=end, flush=flush, tag=tag)  # type: ignore
 
+    def announce(self, text: str, *, agent: AIAgent) -> None:
+        """Alternative to print that announces some kind of system event to the user from the perspective of an AI agent.
+        This method is intended to be used by deeply nested processing in the action queue to keep the user informed when unusual things happen. Announcements should therefore use simple language, and be used in addition to logging, not instead of it.
+        """
+        delimiter = colored(">>=", self.cosmetic_state.to_color())
+        match agent:
+            case AIAgent.WORKER:
+                self.print(f" 🔧 {delimiter} {text}")
+            case AIAgent.CODER:
+                self.print(f" 👻 {delimiter} {text}")
+            case _ as unreachable:
+                assert_never(unreachable)
+
     def get_data(self, relative_filepath: str) -> str:
         """Returns a filepath relative to the hidden ghostcode directory.
             Example: get_data("log.txt") -> ".ghostcode/log.txt"
@@ -2168,3 +2229,30 @@ class Program:
         except Exception as e:
             logger.warning(f"Failed to read log file. Reason: {e}")
             return ""
+
+
+    def debug_dump(self) -> None:
+        """Save some debugging output into .ghostcode/debug/"""
+        # FIXME: make this conditional on self.debug which should be set with --debug
+        if self.project_root is None:
+            logger.error(f"Cannot dump debug information: Project root is null.")
+            return
+
+        debug_dir = os.path.join(self.project_root, self._DEBUG_DIR)
+        try:
+            os.makedirs(debug_dir, exist_ok=True)
+        except Exception as e:
+            logger.exception(f"Couldn't create directories {debug_dir} while dumping debug information. Reason: {e}")
+
+        # we dump the logs for both boxes
+        def save_box_history(box_name: str, box: Ghostbox) -> None:
+            filename= f"{box_name}-{timestamp_now_iso8601()}"
+            content = "\n---\n".join([show_model_nt(chat_message) for chat_message in box.get_history()])
+            try:
+                with open(os.path.join(debug_dir, filename), "w") as f:
+                    f.write(content)
+            except Exception as e:
+                logger.exception(f"Couldn't dump {box_name} history. Reason: {e}")
+
+        save_box_history("coder_box", self.coder_box)
+        save_box_history("worker_box", self.worker_box)

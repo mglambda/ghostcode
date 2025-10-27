@@ -382,7 +382,7 @@ def make_prompt_worker_query(
 
     config = prog.get_config_or_default()
     prompt_config = PromptConfig.minimal(
-        system_text="The user has made a request that was routed to you. Below is the current context of the project and ghostcode, followed by the current user prompt. Please fulfill it as best as you can while taking the context into account, and generate an end-of-interaction response if you think you cannot fulfill the request.",
+        system_text="The user has made a request that was routed to you. Below is the current context of the project and ghostcode, followed by the current user prompt. Please fulfill it as best as you can while taking the context into account, and generate an end-of-interaction response if you think you cannot fulfill the request.\nImportant: You **must** generate response parts. Do not produce an empty contents list for your response.",
         project_metadata=True,
         context_files="filenames",
         interaction_history_id=(
@@ -397,7 +397,12 @@ def make_prompt_worker_query(
 
 
 def make_prompt_route_request(prog: Program, prompt: str) -> str:
-    return f"""The following is a user prompt. Your task is to decide who the prompt should be routed to, ghostworker, a worker LLM that is used for low-level busywork tasks that don't require a lot of intelligence, or ghostcoder, a cloud LLM with powerful reasoning abilities.
+    # much trial and error
+    # here i just keep some text snippets that somehow didn't make it
+
+    # The following is a user prompt. Your task is to decide who the prompt should be routed to,  ghostworker, a worker LLM that is used for low-level busywork tasks that don't require a lot of intelligence, or ghostcoder, a cloud LLM with powerful reasoning abilities.
+    
+    return f"""Below is a user prompt. Your task is not to fulfill it, but to decide which LLM the prompt should be routed to: ghostworker or ghostcoder.
 
 To help you decide, here are some examples for tasks that should go to either ghostcoder or ghostworker:
 
@@ -414,7 +419,7 @@ To help you decide, here are some examples for tasks that should go to either gh
     # ghostworker tasks
  - Applying diffs
  - Executing file system actions like creation or deletion    
- - Executing shell commands
+ - Generating and executing shell commands
  - Interacting with the git repository
  - Web searches
  - Code execution    
@@ -423,8 +428,8 @@ To help you decide, here are some examples for tasks that should go to either gh
  - Recovering from errors
  - Tasks that require few tokens
 
-    Also, as an additional guideline: If the user's request deals with the content of a code file, it is generally safe to assess this as a coder responsibility, as only the coder has the necessary context size to handle large code files.
-Here is the prompt:
+    Also, as an additional guideline: If the user's request requires contents of many code files, it is generally safe to assess this as a coder responsibility, as only the coder has the necessary context size to handle large code files.
+Here is the user prompt:
 
 ```    
 {prompt}
@@ -432,3 +437,75 @@ Here is the prompt:
 
     Please decide where to route the request!
 """
+
+def make_prompt_worker_coder_query(
+        prog: Program,
+        worker_coder_request_part: types.WorkerCoderRequestPart,
+        original_action: types.Action # this is actually types.QueryAction but we can't narrow it call site
+        ) -> str:
+    """Create a prompt to the coder backend based on a worker generated request.
+    Often, these types of requests happen because a query bounced off of the worker, or because there was an error and the worker delegated the recovery to the coder.
+    """
+
+    # this is the most maximal prompt config we can make since the coder may need to recover
+    prompt_config = PromptConfig.maximal()
+    if prog.coder_box.get_var("preamble") is not None:
+        # however, some stuff may be in the preamble, so we turn it off        
+        prompt_config.project_metadata = False
+        prompt_config.context_files = "none"
+        
+    prompt_config.user_prompt_text = ""
+    # system text will contain the actual query
+    # its content now branches depending on wether we have an original prompt, such as from a user to a worker or coder
+    # in most cases, we will, but the calling code handles actions for the most general case, so we have to match here anyway
+
+    match original_action:
+        case types.ActionQueryCoder() as query_coder_action:
+            prompt_config.interaction_history_id = w if (w := original_action.interaction_history_id) is not None else ""
+            original_prompt_str = query_coder_action.prompt
+        case types.ActionQueryWorker() as query_worker_action:
+            prompt_config.interaction_history_id = w if (w := original_action.interaction_history_id) is not None else ""
+            original_prompt_str = query_worker_action.prompt
+        case _:
+            original_prompt_str = ""
+    if original_prompt_str:
+        prompt_config.system_text = f"""The worker was unable to fulfill the following request:
+
+```
+{original_prompt_str}
+```
+
+    It has delegated the fulfillment of this query to you for the following reason:
+
+    ```
+    {worker_coder_request_part.reason}
+```
+
+Additionally, the worker has the following to tell you:
+
+```
+{worker_coder_request_part.text}
+```
+
+Below follows additional context which may be relevant to the request. Please try to generate a response that rectifies the situation and fulfills the request.
+"""    
+    else:
+        prompt_config.system_text = f"""The worker is making the following request to you:
+
+```
+{worker_coder_request_part.text}
+```
+
+        It is making this request for the following stated reason:
+
+```
+{worker_coder_request_part.reason}
+```        
+
+Below follows additional context which may be relevant to the request. Please try to generate a response that rectifies the situation and fulfills the request.
+"""    
+
+    return make_prompt(prog, prompt_config)
+
+
+    

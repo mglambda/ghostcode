@@ -1,5 +1,6 @@
 from typing import *
 import os
+import nestedtext
 import random
 from enum import Enum
 from datetime import datetime, timezone
@@ -324,6 +325,7 @@ class PydanticEnumDumper(yaml.SafeDumper):
 # Register this representer for the base Enum class with our custom Dumper.
 PydanticEnumDumper.add_representer(Enum, enum_value_representer)
 
+
 def show_model(obj: BaseModel, heading: str ="", abridge: Optional[int] = 80) -> str:
     """Generic way to pretty print a pydantic model.
     If the abridge parameter is set to a positive integer, strings found in the object will be abridged to show a maximum value that is equal to the abridge value (with abridgement happening in the middle, showing beginning and end of that string equally). If it is None no abridgement will take place."""
@@ -400,3 +402,7 @@ def quoted_if_nonempty(*, text: str, heading: str = "", heading_level: int = 2, 
 {text}
 ```{trailing_newline}
 """
+
+def show_model_nt(obj: Any, heading: str = "", abridge: Optional[int] = None) -> str:
+    heading_str = f"# [{heading}]\n" if heading else ""
+    return heading_str + nestedtext.dumps(obj.model_dump())

@@ -1,4 +1,9 @@
 * work-in-progress (WIP, limit 5)
+Debug/test raw prompts.
+Test shell command actions.
+Make recovery an action.
+Narrow the type of Action in actions_from_response_part (since it's a response it must be a query action)
+Remove branching code in make_prompt_worker_coder_request after original_action type has been narrowed
 Properly test worker recovery.
 * todo
 ** general
@@ -65,3 +70,4 @@ Refactor prompt creation into prompts.py
 Create /talk and /interact commands to switch mid session
 make proper multiline mode utility function (discarded - I like the logic in _loop_interact)
 Improve file edit displays
+Implement context altering.

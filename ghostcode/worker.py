@@ -27,20 +27,21 @@ logger = logging.getLogger("ghostcode.worker")
 
 
 def actions_from_response_parts(
-    prog: Program, parts: Sequence[types.LLMResponsePart]
+        prog: Program, parts: Sequence[types.LLMResponsePart], *, original_action: types.Action
 ) -> List[types.Action]:
     """Transform a list of response parts from either coder or worker LLM into a list of actions.
     This is not a 1 to 1 mapping. You may end up with an empty list if e.g. all the response parts are just discussion text. Only code parts and similar are transformed into actions.
     """
     # atm we have prog only because we might need more context here in the future
     logger.debug(
-        f"actions_from_response_parts with {len(parts)} parts: {[parts.__class__.__name__ for part in parts]}"
+        f"actions_from_response_parts with {len(parts)} parts: {[part.__class__.__name__ for part in parts]} from original {original_action.__class__.__name__}"
     )
 
     if not (parts):
         return []
 
     def actions_from_part(part: types.LLMResponsePart) -> List[types.Action]:
+        logger.info(f"Finding actions for {part.__class__.__name__}.")
         match part:
             case types.TextResponsePart() as text_part:
                 # no action necessary
@@ -79,6 +80,22 @@ def actions_from_response_parts(
                         announce=True,
                     )
                 ]
+            case types.WorkerCoderRequestPart() as worker_coder_request_part:
+                # this means the worker is bouncing some query to the coder, unusual enough to log and notify the user
+                logger.info(f"Reason for WorkerCoderRequestPart: {worker_coder_request_part.reason}")
+                prog.announce(
+                    text=f"Bounced query to 👻. Reason: {worker_coder_request_part.reason}",
+                    agent=types.AIAgent.WORKER
+                )
+                # FIXME: narrow the type of original_action to ActionQuery, then remove the type: ignores below
+                # we can safely narrow because this is literally handling a response part -> so there must have been a query
+                # the only thing that prevents this atm is that recovery is not an action
+                return [types.ActionQueryCoder(
+                    prompt=prompts.make_prompt_worker_coder_query(prog, worker_coder_request_part, original_action),
+                    llm_response_profile=types.LLMResponseProfile.allow_all(), # maximum allowed because it might be needed for recovery
+                    hidden=original_action.hidden, # type: ignore
+                    interaction_history_id=original_action.interaction_history_id, # type: ignore
+                )]
             case _:
                 logger.warning(
                     f"Match case fallthrough on response part: {part.__class__.__name__}"
@@ -514,7 +531,7 @@ def coder_query(
 
     print_function((response.show_cli()))
     return types.ActionResultMoreActions(
-        actions=actions_from_response_parts(prog, response.contents)
+        actions=actions_from_response_parts(prog, response.contents, original_action=query_coder_action)
     )
 
 
@@ -773,6 +790,7 @@ def worker_route_request(prog: Program, prompt: str) -> types.AIAgent:
                 types.UserPromptClassification,
                 prompts.make_prompt_route_request(prog, prompt),
             )
+            logger.info(f"Prompt classified as '{result.classification}'. Reason: {result.reason}")
             return result.classification
         except Exception as e:
             logger.exception(
@@ -807,7 +825,9 @@ def worker_query(
             logger.debug(
                 f"Dump of worker query response: \n{show_model(worker_response)}"
             )
-            actions = actions_from_response_parts(prog, worker_response.contents)
+            if not(worker_response.contents):
+                logger.warning(f"Empty response from worker query.")
+            actions = actions_from_response_parts(prog, worker_response.contents, original_action=query_worker_action)
             return types.ActionResultMoreActions(actions=actions)
     except:
         pass
@@ -922,7 +942,7 @@ def worker_recover(
         logger.timing(f"ghostworker performance statistics:\n{showTime(prog.worker_box._plumbing, [])}")  # type: ignore
 
         # FIXME: should we add response to the interaction_history?
-        actions = actions_from_response_parts(prog, worker_response.contents)
+        actions = actions_from_response_parts(prog, worker_response.contents, original_action=failure.original_action)
 
         # we could just return a list of actions
         # but using the types.MoreActions wrapper we can keep a semantic grouping for actions

@@ -872,11 +872,13 @@ class InteractCommand(BaseModel, CommandInterface):
                     continue
                 case slash_commands.SlashCommandResult.ACTIONS_OFF:
                     if self.actions:
+                        self.actions = False
                         prog.print("Enabled talk mode. Coder backend will generate text only, no file edits.")
                     else:
                         prog.print("Talk mode already enabled, use /interact to switch to interactive mode.")
                 case slash_commands.SlashCommandResult.ACTIONS_ON:
                     if not(self.actions):
+                        self.actions = True
                         prog.print("Interact mode enabled. Coder backend will generate code and produce file edits.")
                     else:
                         prog.print("Interact mode already enabled. Use /talk to disable code generation and file edits.")
@@ -903,9 +905,10 @@ class InteractCommand(BaseModel, CommandInterface):
             self._process_user_input(prog, current_user_input)
             current_user_input = ""  # Clear buffer for next turn
             self._dump_interaction(prog)  # Save state after each turn
-
         # End of interaction
+        prog.debug_dump()                
         self._save_interaction(prog)
+
         return CommandOutput(text="Finished interaction.")
 
 
