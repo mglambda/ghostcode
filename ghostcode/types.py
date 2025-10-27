@@ -904,6 +904,10 @@ class InteractionHistory(BaseModel):
             ]
         )
 
+    def to_chat_messages(self) -> List[ghostbox.ChatMessage]:
+        """Turn an InteractionHistory into a ghostbox chat message history compatible with ghostbox.set_history."""
+        return [part.to_chat_message() for part in self.contents]
+    
 
 ### Actions ###
 # These are put on the action queue and sequentially resolved.
@@ -913,7 +917,6 @@ class InteractionHistory(BaseModel):
 # 2. Actions have clearance and user confirmation logic associated with them. LLM ResponseParts do not (we can't keep an LLM from generating a part).
 # 3. Actions can fail.
 # 4. A ResponsePart may map to 0 or more actions.
-
 
 class ActionDoNothing(BaseModel):
     """Action that represents a noop.
