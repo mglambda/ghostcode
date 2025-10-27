@@ -66,6 +66,11 @@ class HasClearance(Protocol):
     clearance_required: ClassVar["ClearanceRequirement"]
 
 
+class CanBeChatMessage(Protocol):
+    def to_chat_message(self) -> ghostbox.ChatMessage:
+        pass
+
+
 ### --- Default Configurations ---
 # Default configuration for the coder LLM (e.g., for planning, complex reasoning)
 DEFAULT_CODER_LLM_CONFIG = {
@@ -133,9 +138,9 @@ class LLMResponseProfile(BaseModel):
     )
 
     @staticmethod
-    def allow_all() -> 'LLMResponseProfile':
+    def allow_all() -> "LLMResponseProfile":
         return LLMResponseProfile()
-    
+
     @staticmethod
     def forbid_all() -> "LLMResponseProfile":
         """Returns an LLMResponseProfile that disables all response types."""
@@ -625,7 +630,8 @@ class ShellCommandPart(BaseModel):
 
 class FilesLoadPart(BaseModel):
     """Represents a request to load files into context so that their contents become available to the coder LLM.
-    Note to ghostcoder and ghostworker: Use this if the context information you have is not sufficient to fulfill the request."""
+    Note to ghostcoder and ghostworker: Use this if the context information you have is not sufficient to fulfill the request.
+    """
 
     filepaths: List[str] = Field(
         description="One or more  filepaths relative to the project root which will be loaded into context."
@@ -686,8 +692,8 @@ class CoderResponse(BaseModel):
 
 class WorkerCoderRequestPart(BaseModel):
     """Represents a request that should be send to the coder LLM backend.
-    This allows the worker to communicate with the coder for e.g. clarification, refactoring, adjustment to the user prompt, or anything else that requires the coders capabilities.
-Note to ghostworker: Use this response part to indicate that you are bouncing a request, and delegating it to the coder LLM. Only do this if you think the other response parts are unable to fulfill the user's request, or if you think they are inadqeuate to recover from an error or failure.
+        This allows the worker to communicate with the coder for e.g. clarification, refactoring, adjustment to the user prompt, or anything else that requires the coders capabilities.
+    Note to ghostworker: Use this response part to indicate that you are bouncing a request, and delegating it to the coder LLM. Only do this if you think the other response parts are unable to fulfill the user's request, or if you think they are inadqeuate to recover from an error or failure.
     """
 
     text: str = Field(
@@ -713,7 +719,7 @@ Note to ghostworker: Use this response part to indicate that you are bouncing a 
 
 class EndInteractionPart(BaseModel):
     """Represents a signal to end the current interaction.
-Note to ghostcoder and ghostworker: Use this reponse part if a user request has been fulfilled and you deem the interaction to be completely finished.
+    Note to ghostcoder and ghostworker: Use this reponse part if a user request has been fulfilled and you deem the interaction to be completely finished.
     """
 
     reason: str = Field(description="The reason for ending the interaction.")
@@ -763,7 +769,7 @@ class CoderInteractionHistoryItem(BaseModel):
     )
 
     response: CoderResponse = Field(
-        description="The full response returned by the LLM. as aprt of this interaction."
+        description="The full response returned by the LLM. as part of this interaction."
     )
 
     git_commit_hash: Optional[str] = Field(
@@ -777,6 +783,27 @@ class CoderInteractionHistoryItem(BaseModel):
   {self.model}@{self.backend} >
 {        self.response.show(**kwargs)}
 """
+
+    def to_chat_message(self) -> ghostbox.ChatMessage:
+        """Turn this coder interaction into a ghostbox compatible chat message."""
+        # we need to find actual text
+        text_parts = []
+        for content in self.response.contents:
+            match content:
+                case TextResponsePart() as text_response_part:
+                    text_parts.append(text_response_part.text)
+                case _:
+                    # This is tricky. We mighth ave code parts here, or file edits, and we don't want to clutter up the history with now outdated, and high-token data.
+                    # on the other hand we usually use chat messages like this to reconstruct a past interaction history for the user to resumse, and they probably want the same context they had originally.
+                    # for now, we just turn the part into json and show it to the model. with a heading
+                    text_parts.append(
+                        quoted_if_nonempty(
+                            text=json.dumps(content), heading=content.__class__.__name__
+                        )
+                    )
+
+        # Note: context is omitted intentionally.
+        return ghostbox.ChatMessage(role="assistant", content="\n\n".join(text_parts))
 
 
 class UserInteractionHistoryItem(BaseModel):
@@ -793,6 +820,7 @@ class UserInteractionHistoryItem(BaseModel):
         description="The context that was current at the time the interaction was made."
     )
 
+    # FIXME: preamble should probably be removed here and tracked in some different way (on the entire chat history for example)
     preamble: str = Field(
         default="",
         description="The plaintext of the context that was added automatically before the user prompt. This is usually long and not present in every interaction",
@@ -807,6 +835,11 @@ class UserInteractionHistoryItem(BaseModel):
   user >
         {self.prompt}
 """
+
+    def to_chat_message(self) -> ghostbox.ChatMessage:
+        """Convert a user interaction item to a ghostbox chatmessage, allowing it to be injected into a ghostbox history."""
+        # Note that we only include the prompt here, omitting e.g. context files and preamble. This is not a mistake, it is intentional.
+        return ghostbox.ChatMessage(role="user", content=self.prompt)
 
 
 type InteractionHistoryItem = UserInteractionHistoryItem | CoderInteractionHistoryItem
@@ -1123,8 +1156,9 @@ class UserPromptClassification(BaseModel):
     )
 
     reason: str = Field(
-        description = "The reason the prompt should be classified this way."
+        description="The reason the prompt should be classified this way."
     )
+
 
 class ActionRouteRequest(BaseModel):
     """Decide on wether to route a user request to the ghostcoder or ghostworker."""
@@ -1151,6 +1185,7 @@ class ActionRouteRequest(BaseModel):
 
 type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest
 type QueryAction = ActionQueryCoder | ActionQueryWorker
+
 
 def action_show_short(action: Action) -> str:
     """Gives a short representation of an action.
@@ -1967,7 +2002,6 @@ class Program:
 
     _DEBUG_DIR: ClassVar[str] = ".ghostcode/debug"
 
-    
     def _get_cli_prompt(self) -> str:
         """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
         # some ghostbox internal magic to get the token count
@@ -2230,7 +2264,6 @@ class Program:
             logger.warning(f"Failed to read log file. Reason: {e}")
             return ""
 
-
     def debug_dump(self) -> None:
         """Save some debugging output into .ghostcode/debug/"""
         # FIXME: make this conditional on self.debug which should be set with --debug
@@ -2242,12 +2275,16 @@ class Program:
         try:
             os.makedirs(debug_dir, exist_ok=True)
         except Exception as e:
-            logger.exception(f"Couldn't create directories {debug_dir} while dumping debug information. Reason: {e}")
+            logger.exception(
+                f"Couldn't create directories {debug_dir} while dumping debug information. Reason: {e}"
+            )
 
         # we dump the logs for both boxes
         def save_box_history(box_name: str, box: Ghostbox) -> None:
-            filename= f"{box_name}-{timestamp_now_iso8601()}"
-            content = "\n---\n".join([show_model_nt(chat_message) for chat_message in box.get_history()])
+            filename = f"{box_name}-{timestamp_now_iso8601()}"
+            content = "\n---\n".join(
+                [show_model_nt(chat_message) for chat_message in box.get_history()]
+            )
             try:
                 with open(os.path.join(debug_dir, filename), "w") as f:
                     f.write(content)
