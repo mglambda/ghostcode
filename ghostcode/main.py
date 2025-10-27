@@ -657,7 +657,7 @@ class InteractCommand(BaseModel, CommandInterface):
         description="Unique ID or tag of a past interaction to load and continue.",
     )
 
-    _initial_interaction_length: int = Field(
+    initial_interaction_history_length: int = Field(
         default = 0,
         description = "Number of messages in initial interaction. For new interactions this is always zero. It may be nonzero if an existing interaction is loaded. Used primarily to check wether there was any real change at all and if the current interaction needs to be saved."
     )
@@ -699,7 +699,7 @@ class InteractCommand(BaseModel, CommandInterface):
                 sys.exit(1)
             else:
                 self.interaction_history = loaded_history
-                self._initial_interaction_history_length = len(self.interaction_history.contents)
+                self.initial_interaction_history_length = len(self.interaction_history.contents)
                 # need to add the preamble injection
                 ghostbox_history = self.interaction_history.to_chat_messages()
                 if ghostbox_history:
@@ -795,7 +795,7 @@ class InteractCommand(BaseModel, CommandInterface):
             # nothing to do
             return
 
-        if len(self.interaction_history.contents) == self._initial_interaction_history_length:
+        if len(self.interaction_history.contents) == self.initial_interaction_history_length:
             # history may have been loaded and wasn't change -> do nothing
             return
         
