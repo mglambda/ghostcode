@@ -5,7 +5,7 @@ from ghostcode import types, worker
 from ghostcode import slash_commands
 from ghostcode.progress_printer import ProgressPrinter
 from ghostcode import prompts
-
+from ghostcode.utility import show_model_nt
 # don't want the types. prefix for these
 from ghostcode.types import Program
 import ghostbox
@@ -652,6 +652,16 @@ class InteractCommand(BaseModel, CommandInterface):
         description="If this is set to either coder or worker, interaction will skip prompt routing and query the specified AI directly.",
     )
 
+    interaction_identifier: Optional[str] = Field(
+        default=None,
+        description="Unique ID or tag of a past interaction to load and continue.",
+    )
+
+    _initial_interaction_length: int = Field(
+        default = 0,
+        description = "Number of messages in initial interaction. For new interactions this is always zero. It may be nonzero if an existing interaction is loaded. Used primarily to check wether there was any real change at all and if the current interaction needs to be saved."
+    )
+    
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         if not prog.project_root or not prog.project:
@@ -671,14 +681,43 @@ class InteractCommand(BaseModel, CommandInterface):
             else ""
         )
         result.print("Starting interactive session with 👻." + actions_str)
-        result.print("API keys checked. All good.")
+        prog.print("API keys checked. All good.")
+
+        # Load existing interaction history if an identifier is provided
+        if self.interaction_identifier:
+            if prog.project is None:
+                logger.error("Project is null, cannot load interaction history.")
+                sys.exit(1)
+
+            loaded_history = prog.project.get_interaction_history(
+                unique_id=self.interaction_identifier,
+                tag=self.interaction_identifier
+            )
+
+            if loaded_history is None:
+                prog.print(f"Error: No interaction found with ID or tag '{self.interaction_identifier}'.")
+                sys.exit(1)
+            else:
+                self.interaction_history = loaded_history
+                self._initial_interaction_history_length = len(self.interaction_history.contents)
+                # need to add the preamble injection
+                ghostbox_history = self.interaction_history.to_chat_messages()
+                if ghostbox_history:
+                    content = ghostbox_history[0].content                    
+                    if isinstance(content, str):
+                        ghostbox_history[0].content = self._prefix_preamble_string(content)
+                    else:
+                        # technically the content can be a list or a dict, but we never use this
+                        logger.warning(f"Non-string content field in first ghostbox history message. This means we didn't add the preamble injection string.")
+                prog.coder_box.set_history(ghostbox_history)
+                prog.print(f"Continuing interaction '{self.interaction_history.title}' (ID: {self.interaction_history.unique_id}).")
 
         # start the actual loop in another method
         return self._interact_loop(result, prog)
 
         # This code is unreachable but in the future error handling/control flow of this method might become more complicated and we may need it
         return result
-
+    
     def _make_preamble(self, prog: Program) -> str:
         """Plaintext context that is inserted before the user prompt - though only once."""
         return prompts.make_prompt(
@@ -690,6 +729,10 @@ class InteractCommand(BaseModel, CommandInterface):
             ),
         )
 
+
+    def _prefix_preamble_string(self, prompt: str) -> str:
+        return "{{preamble_injection}}" + f"# User Prompt\n\n{prompt}"
+    
     def _make_user_prompt(self, prog: Program, prompt: str) -> str:
         """Prepare a user prompt to be sent to the backend."""
         # atm we only add a var hook for injections with ghostbox
@@ -705,7 +748,7 @@ class InteractCommand(BaseModel, CommandInterface):
             return ""
 
         if self.interaction_history.empty():
-            return "{{preamble_injection}}" + f"# User Prompt\n\n{prompt}"
+            return self._prefix_preamble_string(prompt)
         return prompt
 
     def _dump_interaction(self, prog: Program) -> None:
@@ -752,6 +795,10 @@ class InteractCommand(BaseModel, CommandInterface):
             # nothing to do
             return
 
+        if len(self.interaction_history.contents) == self._initial_interaction_history_length:
+            # history may have been loaded and wasn't change -> do nothing
+            return
+        
         logger.info(f"Finishing interaction.")
         new_title = worker.worker_generate_title(prog, self.interaction_history)
         self.interaction_history.title = (
@@ -827,7 +874,8 @@ class InteractCommand(BaseModel, CommandInterface):
             return intermediate_result
 
         prog.print(intermediate_result.text)
-        self.interaction_history = prog.project.new_interaction_history()
+        if self.interaction_history is None:
+            self.interaction_history = prog.project.new_interaction_history()
 
         # Initial prompt handling
         if self.initial_prompt is not None:
@@ -1131,6 +1179,13 @@ def _main() -> None:
         action="store_true",
         help="Skip prompt routing and directly query the Worker LLM.",
     )
+    interact_parser.add_argument(
+        "-i",
+        "--interaction",
+        type=str,
+        default=None,
+        help="Optional unique ID or tag of a past interaction to continue.",
+    )
     interact_parser.set_defaults(
         func=lambda args: _create_interact_command(args, actions=args.actions)
     )
@@ -1156,6 +1211,13 @@ def _main() -> None:
         "--skip-to-worker",
         action="store_true",
         help="Skip prompt routing and directly query the Worker LLM.",
+    )
+    talk_parser.add_argument(
+        "-i",
+        "--interaction",
+        type=str,
+        default=None,
+        help="Optional unique ID or tag of a past interaction to continue.",
     )
     talk_parser.set_defaults(
         func=lambda args: _create_interact_command(args, actions=False)
@@ -1325,7 +1387,10 @@ def _create_interact_command(
         skip_to_agent = types.AIAgent.WORKER
 
     return InteractCommand(
-        actions=actions, initial_prompt=args.prompt, skip_to=skip_to_agent
+        actions=actions,
+        initial_prompt=args.prompt,
+        skip_to=skip_to_agent,
+        interaction_identifier=args.interaction,
     )
 
 

@@ -798,7 +798,7 @@ class CoderInteractionHistoryItem(BaseModel):
                     # for now, we just turn the part into json and show it to the model. with a heading
                     text_parts.append(
                         quoted_if_nonempty(
-                            text=json.dumps(content), heading=content.__class__.__name__
+                            text=json.dumps(content.model_dump()), heading=content.__class__.__name__
                         )
                     )
 
@@ -1245,7 +1245,7 @@ def action_show_confirmation_data(
     """
 
     # for many we just default as they don't need confirm often
-    # but some (like file kedit) get special careeid
+    # but some (like file kedit) get special care
     match action:
         case ActionFileEdit() as file_edit_action:
             if first_showing:
@@ -2154,7 +2154,7 @@ class Program:
                         continue
                     case _:
                         # cover "?", empty input, and anything else, as showing more nformation is generally a safe option.
-                        print(
+                        self.print(
                             action_show_confirmation_data(
                                 action,
                                 first_showing=(abridge is not None),
