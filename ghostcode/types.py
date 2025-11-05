@@ -1763,6 +1763,38 @@ class Project(BaseModel):
             interactions=interactions,
         )
 
+    def save_project_metadata(self) -> None:
+        """Saves the current project metadata to the ghostcode directory."""
+        root = self.find_project_root()
+        if root is None:
+            logger.error(f"Couldn't find project root while trying to save metadata.")
+            return
+        ghostcode_dir = Project._get_ghostcode_path(root)
+        project_metadata_path = os.path.join(
+            ghostcode_dir, Project._PROJECT_METADATA_FILE
+        )
+        if self.project_metadata:
+            try:
+                with open(project_metadata_path, "w") as f:
+                    yaml.dump(
+                        self.project_metadata.model_dump(mode="json"),
+                        f,
+                        Dumper=PydanticEnumDumper,
+                        indent=2,
+                        sort_keys=False,
+                        default_flow_style=False,
+                    )
+                logger.debug(f"Saved project metadata to {project_metadata_path}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to save project metadata to {project_metadata_path}: {e}",
+                    exc_info=True,
+                )
+                raise
+        else:
+            logger.warning(f"No project metadata to save for {root}.")
+        
+    
     def save_to_root(self, root: str) -> None:
         """
         Serializes all the contained types and saves them to the .ghostcode folder
@@ -1845,30 +1877,8 @@ class Project(BaseModel):
             raise
 
         # 5. Save project_metadata.yaml
-        project_metadata_path = os.path.join(
-            ghostcode_dir, Project._PROJECT_METADATA_FILE
-        )
-        if self.project_metadata:
-            try:
-                with open(project_metadata_path, "w") as f:
-                    yaml.dump(
-                        self.project_metadata.model_dump(mode="json"),
-                        f,
-                        Dumper=PydanticEnumDumper,
-                        indent=2,
-                        sort_keys=False,
-                        default_flow_style=False,
-                    )
-                logger.debug(f"Saved project metadata to {project_metadata_path}")
-            except Exception as e:
-                logger.error(
-                    f"Failed to save project metadata to {project_metadata_path}: {e}",
-                    exc_info=True,
-                )
-                raise
-        else:
-            logger.warning(f"No project metadata to save for {root}.")
-
+        # we used to do this but it would overwrite user data, so currently we don't save it
+        
         # 6. Save config.yaml
         project_config_path = os.path.join(ghostcode_dir, Project._PROJECT_CONFIG_FILE)
         try:
