@@ -724,6 +724,7 @@ class InteractCommand(BaseModel, CommandInterface):
             prog,
             prompt_config=prompts.PromptConfig.minimal(
                 project_metadata=True,
+                style_file = True,
                 context_files="full",
                 # could add shell here?
             ),

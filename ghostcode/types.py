@@ -1364,7 +1364,8 @@ class Project(BaseModel):
     _CURRENT_INTERACTION_HISTORY_FILE: ClassVar[str] = "current.json"
     _CURRENT_INTERACTION_PLAINTEXT_FILE: ClassVar[str] = "current.txt"
     _LOG_FILE: ClassVar[str] = "log.txt"
-
+    _STYLE_FILE: ClassVar[str] = "style.md"
+    
     _WORKER_SYSTEM_MSG: ClassVar[str] = (
         "You are GhostWorker, a helpful AI assistant focused on executing specific, local programming tasks. Your primary role is to interact with the file system, run shell commands, and perform other environment-specific operations as instructed by GhostCoder. Be concise, precise, and report results clearly. Do not engage in high-level planning or code generation unless explicitly asked to generate a small snippet for a tool."
     )
@@ -1482,7 +1483,16 @@ class Project(BaseModel):
                 )
             logger.info(f"Created default project metadata at {project_metadata_path}")
 
-            # 6. Create config.yaml (YAML, with default ProjectConfig)
+            # 5.1 Create empty style.md
+            style_file_path = os.path.join(
+                ghostcode_dir, Project._STYLE_FILE
+            )
+            default_style_file = ""
+            with open(style_file_path, "w") as f:
+                f.write(default_style_file)
+            logger.info(f"Wrote default empty style file {style_file_path}")
+            
+            # 6. Create config.yaml (YAML, with default ProjectConfig) 
             project_config_path = os.path.join(
                 ghostcode_dir, Project._PROJECT_CONFIG_FILE
             )
@@ -1944,6 +1954,21 @@ class Project(BaseModel):
 
         interaction_history.contents.append(item)
 
+    def get_style(self) -> str:
+        """Return contents of the style file. If the file is not found or unreadable, returns an empty string."""
+        try:
+            if (root := self.find_project_root()) is None:
+                logger.warning(f"Can't find project root while trying to get style file path.")
+                return ""
+            
+            style_file_path = os.path.join(self._get_ghostcode_path(root), self._STYLE_FILE)
+
+            with open(style_file_path, "r") as f:
+                return f.read()
+        except Exception as e:
+            # this is not a big deal
+            logger.warning(f"CouldN't open style.md file. Reason: {e}")
+        return ""
 
 class CosmeticProgramState(Enum):
     """A vague indicator of program state. This is used to e.g. color certain outputs in the interface. Do not use this to query program state programmatically."""

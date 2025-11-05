@@ -27,6 +27,11 @@ class PromptConfig(BaseModel):
 
     # project context
     project_metadata: bool = True
+    style_file: bool = Field(
+        default = True,
+        description = "Include contents of .ghostcode/style.md. This is intended to influence coding style, and generally only included in code generation requests."
+    )
+    
     context_files: Literal["full", "filenames", "none"] = Field(
         default="full",
         description="How to display files that are in the ghostcode context. Full means full contents of the files are displayed. filenames means only a list of filenames is shown. none omits context files entirely.",
@@ -123,6 +128,12 @@ def make_prompt(
     else:
         project_metadata = ""
 
+    if prompt_config.style_file:
+        style_file_str = make_blocks_style_file(prog)
+    else:
+        style_file_str = ""
+
+        
     match prompt_config.context_files:
         case "full":
             # this one needs no quoted because the individual files are themselves quoted
@@ -156,7 +167,7 @@ def make_prompt(
     return f"""{system_str}
     # Project Context
 
-{project_metadata_str}{context_files_str}    
+{project_metadata_str}{style_file_str}{context_files_str}    
 # Ghostcode Context
 
 {history_str}    {shell_str}{log_excerpt_str}
@@ -284,7 +295,26 @@ def make_blocks_project_metadata(prog: Program) -> str:
 
     return show_model(prog.project.project_metadata)
 
+def make_blocks_style_file(prog: Program) -> str:
+    """Returns a reusable text block for the style file. If no style file is found, returns an empty string."""
+    fail = ""
+    
+    if prog.project is None:
+        return fail
 
+    style_str = quoted_if_nonempty(
+        text = prog.project.get_style()
+    )
+    if not style_str:
+        return fail
+    
+    return f"""# Coding Style
+
+When generating code, adhere to the style guidelines below unless instructed otherwise.
+
+{style_str}
+"""    
+    
 def make_blocks_interaction_history(
     prog: Program, interaction_history_id: Optional[str], drop_last: int = 0
 ) -> Tuple[str, str]:

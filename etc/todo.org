@@ -1,4 +1,13 @@
 * work-in-progress (WIP, limit 5)
+Add simple check script option that worker runs and passes on to coder on fail
+Ability to add server log or other output logs (this is technically already possible but can we make it more explicit).
+Add interaction folders/groupings.
+Make interaction folders/groupings default to be identical with git branches.
+RAG on past itneractions.
+Add style.md.
+Make context file list sorted.
+Fix newline on some commands.
+Look into locking .ghostcode while interaction is in progress.
 Debug/test raw prompts.
 Test shell command actions.
 Make recovery an action.
@@ -7,6 +16,7 @@ Remove branching code in make_prompt_worker_coder_request after original_action 
 Properly test worker recovery.
 * todo
 ** general
+Make it so that pasted interaction IDs cause a rag lookup.
 make unique_ids into a newtype (e.g. InteractionID)
 Simulate file edits and show diffs
 Figure out a way to run tests/run the program so AI can get feedback and see errors
