@@ -4,7 +4,6 @@ Ability to add server log or other output logs (this is technically already poss
 Add interaction folders/groupings.
 Make interaction folders/groupings default to be identical with git branches.
 RAG on past itneractions.
-Add style.md.
 Make context file list sorted.
 Fix newline on some commands.
 Look into locking .ghostcode while interaction is in progress.
@@ -81,3 +80,4 @@ Create /talk and /interact commands to switch mid session
 make proper multiline mode utility function (discarded - I like the logic in _loop_interact)
 Improve file edit displays
 Implement context altering.
+Add style.md.
