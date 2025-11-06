@@ -1,4 +1,10 @@
-from .types import *
+import os
+_ROOT = os.path.abspath(os.path.dirname(__file__))
+
+def get_ghostcode_data(path):
+    """Returns PATH preceded by the location of the ghostcode data dir, which is part of the python site-package."""
+    return os.path.join(_ROOT, "data", path)
+
 from .main import *
 from .worker import *
 from .utility import *
@@ -9,9 +15,3 @@ from .slash_commands import *
 from .prompts import *
 
 
-_ROOT = os.path.abspath(os.path.dirname(__file__))
-
-
-def get_ghostcode_data(path):
-    """Returns PATH preceded by the location of the ghostcode data dir, which is part of the python site-package."""
-    return os.path.join(_ROOT, "data", path)

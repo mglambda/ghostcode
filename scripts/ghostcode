@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from ghostcode.main import main
+from ghostcode.main import _main
 
 if __name__ == "__main__":
-    main()
+    _main()

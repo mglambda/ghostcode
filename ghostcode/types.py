@@ -12,8 +12,10 @@ import yaml
 import logging
 import ghostbox.definitions
 from ghostbox.definitions import LLMBackend
+import ghostcode
 from ghostcode.ansi_colors import Color256, colored
 from ghostbox import Ghostbox
+from ghostcode.soundmanager import SoundManager
 from ghostcode.utility import (
     language_from_extension,
     timestamp_now_iso8601,
@@ -218,6 +220,16 @@ class UserConfig(BaseModel):
         description="If true, ghostcode will occasionally print out helpful tips and be generally more verbose and nanny-like. Finding this setting and successfully setting it to False is your trial-by-fire to transcend the newbie stage.",
     )
 
+    sound_enabled: bool = Field(
+        default = True,
+        description = "If true, the CLI will play interface sounds, e.g. to signal when a response is ready."
+    )
+
+    sound_volume: float = Field(
+        default = 1.0,
+        description = "Factor to scale the interface sound volume. 1.0 means normal volume, 2.0 means twice as loud, 0.5 is half volume."
+    )
+    
     _GHOSTCODE_CONFIG_FILE: ClassVar[str] = ".ghostcodeconfig"
 
     def save(self, user_config_path: Optional[str] = None) -> None:
@@ -2016,6 +2028,10 @@ class Program:
         default_factory=lambda: shell.VirtualTerminal(),
     )
 
+    sound_manager: SoundManager = field(
+        init = False
+    )
+
     # holds the actions that are processes during single interactions. FIFO style
     action_queue: List[Action] = field(
         default_factory=lambda: [],
@@ -2040,6 +2056,14 @@ class Program:
 
     _DEBUG_DIR: ClassVar[str] = ".ghostcode/debug"
 
+    def __post_init__(self) -> None:
+        sound_dir = ghostcode.get_ghostcode_data("sounds")
+        self.sound_manager = SoundManager(
+            sound_directory=sound_dir,
+            sound_enabled = self.user_config.sound_enabled,
+            volume_multiplier = self.user_config.sound_volume
+        )
+    
     def _get_cli_prompt(self) -> str:
         """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
         # some ghostbox internal magic to get the token count
