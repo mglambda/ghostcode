@@ -164,6 +164,39 @@ class SoundManager:
             return
         self._start_playback_thread(sound_filename)
 
+    def play_loop(self, sound_filename: str, repetition_number: int = -1, pause_between: float = 0.5) -> None:
+        """Plays a sound repeatedly, with an optional pause between repetitions.
+        If repetition_number is -1, the sound will loop indefinitely until stop() is called.
+        """
+        if not self.sound_enabled:
+            logger.debug(f"Sound playback disabled. Skipping play_loop('{sound_filename}').")
+            return
+
+        sound_filepath = self.sounds.get(sound_filename)
+        if sound_filepath is None:
+            logger.warning(f"Sound '{sound_filename}' not found in repository. Cannot start looped playback.")
+            return
+
+        def loop_worker():
+            current_repetition = 0
+            while not self.stop_playback_flag.is_set() and (repetition_number == -1 or current_repetition < repetition_number):
+                self._play_worker(sound_filepath)
+                current_repetition += 1
+                if self.stop_playback_flag.is_set(): # Check again after playing
+                    break
+                if repetition_number == -1 or current_repetition < repetition_number:
+                    # Only pause if more repetitions are expected
+                    self.stop_playback_flag.wait(pause_between)
+            logger.debug(f"Finished looped playback for {sound_filename} after {current_repetition} repetitions.")
+
+        # Clean up dead threads before adding a new one
+        self._active_playback_threads = [t for t in self._active_playback_threads if t.is_alive()]
+
+        thread = Thread(target=loop_worker, daemon=True)
+        self._active_playback_threads.append(thread)
+        thread.start()
+        logger.debug(f"Started looped playback thread for {sound_filename}")
+
     def _sampler_worker(self, playable_sounds: List[str], mean: float, standard_deviation: float, check_interval_seconds: float, threshold: float, overlap: bool) -> None:
         """Worker thread that samples the distribution and triggers sound playback."""
         logger.debug("Sampler thread started.")
@@ -186,7 +219,7 @@ class SoundManager:
         logger.debug("Sampler thread stopped.")
         
     @contextmanager
-    def continuous_playback(self, random_sound_filenames: List[str], mean: float = 0.8, standard_deviation: float = 0.5, check_interval_seconds: float = 0.25, threshold: float = 1.0, overlap: bool = True):
+    def continuous_playback(self, random_sound_filenames: List[str], mean: float = 0.8, standard_deviation: float = 0.5, check_interval_seconds: float = 0.25, threshold: float = 1.0, overlap: bool = True) -> ContextManager[None]:
         """Play random sounds from a given list of sound files in the repository for the duration of the context or until stop() is called.
         The intended use is to e.g. play interface clicks that signify a waiting or loading period, and showing that the program is still working.
         Every check_interval_seconds, a sample is taken from a standard normal distribution with the given mean and standard deviation. If the sample exceed the threshold, a random sound from the list is played.

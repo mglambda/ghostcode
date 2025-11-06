@@ -166,6 +166,7 @@ def run_action_queue(prog: Program) -> None:
                             )
                         case types.ActionResultFailure() as ar_failure:
                             prog.cosmetic_state = types.CosmeticProgramState.PROBLEM
+                            prog.sound_error()
                             logger.info(
                                 f"Failed to execute action {type(ar_failure.original_action)}. Reason: {ar_failure.failure_reason}"
                             )
@@ -478,7 +479,7 @@ def coder_query(
             message=f"{prog.last_print_text} Querying 👻 ",
             postfix_message=f"{prog.last_print_text}",
             print_function=prog.make_tagged_printer("action_queue"),
-        ):
+        ), prog.sound_clicks():
             profile = query_coder_action.llm_response_profile
             if profile.actions and profile.text:
                 # this is the default, offer the coder the full menu of parts to generate

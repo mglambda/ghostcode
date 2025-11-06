@@ -2,6 +2,7 @@
 from typing import *
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
+from contextlib import contextmanager
 from pydantic import BaseModel, Field
 import os
 from uuid import uuid4, UUID
@@ -2181,7 +2182,7 @@ class Program:
         """Interactively acquire user confirmation for a given action.
         When an action needs to be confirmed, there is usually some agent who wants to perform the action (e.g. ghostcoder or ghostworker). The agent's current clearance level is provided for context.
         """
-
+        self.sound_notify()
         self.print(f"{agent_name} wants to perform {action_show_short(action)}.")
         abridge = 80  # type: Optional[int]
         try:
@@ -2325,6 +2326,22 @@ class Program:
         except Exception as e:
             logger.warning(f"Failed to read log file. Reason: {e}")
             return ""
+
+
+    @contextmanager        
+    def sound_clicks(self, mean: float = 0.7) -> ContextManager[None]:
+        """Plays clicking sounds if sound_enabled is true on the sound manager."""
+        clicking_sounds = "clicks1.wav clicks2.wav clicks3.wav clicks_double.wav clicks_triple.wav".split(" ")
+        with self.sound_manager.continuous_playback(
+                clicking_sounds,
+                mean = mean):
+            yield
+
+    def sound_error(self) -> None:
+        self.sound_manager.play("error.wav")
+
+    def sound_notify(self) -> None:
+        self.sound_manager.play("opening1.wav")
 
     def debug_dump(self) -> None:
         """Save some debugging output into .ghostcode/debug/"""
