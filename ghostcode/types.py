@@ -5,6 +5,7 @@ from enum import Enum, StrEnum
 from contextlib import contextmanager
 from pydantic import BaseModel, Field
 import os
+import atexit
 from uuid import uuid4, UUID
 import subprocess
 import traceback
@@ -2064,6 +2065,8 @@ class Program:
             sound_enabled = self.user_config.sound_enabled,
             volume_multiplier = self.user_config.sound_volume
         )
+        # Register shutdown to ensure PyAudio resources are released on program exit
+        atexit.register(self.sound_manager.shutdown)
     
     def _get_cli_prompt(self) -> str:
         """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""

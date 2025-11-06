@@ -11,6 +11,7 @@ import random
 import time
 from contextlib import contextmanager
 import logging
+import atexit
 
 logger = logging.getLogger("ghostcode.soundmanager")
 
@@ -351,7 +352,7 @@ class SoundManager:
             )  # Give sampler thread a bit more time
             if self._sampler_thread.is_alive():
                 logger.warning(
-                    f"Sampler thread '{self._sampler_thread.name}' did not terminate gracefully."
+                    f"Sampler thread \'{self._sampler_thread.name}\' did not terminate gracefully."
                 )
         self._sampler_thread = None
 
@@ -361,9 +362,31 @@ class SoundManager:
                 thread.join(timeout=1.0)  # Give threads a chance to finish
                 if thread.is_alive():
                     logger.warning(
-                        f"Playback thread '{thread.name}' did not terminate gracefully."
+                        f"Playback thread \'{thread.name}\' did not terminate gracefully."
                     )
         self._active_playback_threads.clear()
         self.stop_playback_flag.clear()  # Clear the flag for future use
 
         logger.debug("All playback threads stopped and cleared.")
+
+    def shutdown(self) -> None:
+        """Terminates the PyAudio instance and releases system audio resources.
+        This should be called only once when the application is exiting.
+        It is idempotent and safe to call multiple times.
+        """
+        if not self.sound_enabled:
+            return
+
+        logger.info("Shutting down SoundManager and PyAudio instance.")
+        self.stop()  # Ensure all active playback is stopped first
+
+        if self._pyaudio_instance is not None:
+            try:
+                with ignore_stderr():
+                    self._pyaudio_instance.terminate()
+                self._pyaudio_instance = None
+                logger.info("PyAudio instance terminated successfully.")
+            except Exception as e:
+                logger.error(f"Error terminating PyAudio instance: {e}")
+        else:
+            logger.debug("PyAudio instance already terminated or not initialized.")
