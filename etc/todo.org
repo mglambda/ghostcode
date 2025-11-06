@@ -5,6 +5,8 @@ Add interaction folders/groupings.
 Make interaction folders/groupings default to be identical with git branches.
 RAG on past itneractions.
 Make context file list sorted.
+Fix not being able to remove no longer existing files from context files
+Fix glob patterns when adding/removing context files
 Fix newline on some commands.
 Look into locking .ghostcode while interaction is in progress.
 Debug/test raw prompts.

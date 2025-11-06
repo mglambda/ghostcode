@@ -51,6 +51,10 @@ class SoundManager:
         default=True,
         metadata={"description": "Set to false to disable all sound globally."},
     )
+    frames_per_buffer: int = field(
+        default=1024,
+        metadata={"description": "Number of frames per buffer for PyAudio stream. Larger values can reduce underruns but increase latency."}
+    )
 
     sounds: Dict[str, str] = field(  # Stores filename -> full_filepath
         default_factory=dict,
@@ -81,9 +85,25 @@ class SoundManager:
         metadata={"description": "Dedicated thread for continuous playback sampling."},
     )
 
+    _pyaudio_instance: Optional[pyaudio.PyAudio] = field(
+        default=None,
+        init=False,
+        metadata={"description": "A single, shared PyAudio instance for all playback."},
+    )
+
     def __post_init__(self) -> None:
         self.stop_playback_flag.clear()  # Ensure it's clear initially
         self._load_sounds()
+
+        if self.sound_enabled:
+            try:
+                with ignore_stderr():
+                    self._pyaudio_instance = pyaudio.PyAudio()
+                logger.info("PyAudio instance initialized successfully.")
+            except Exception as e:
+                logger.error(f"Failed to initialize PyAudio: {e}. Disabling sound.")
+                self.sound_enabled = False
+
         logger.info(
             f"SoundManager initialized. Found {len(self.sounds)} sounds in {self.sound_directory}"
         )
@@ -104,41 +124,38 @@ class SoundManager:
 
     def _play_worker(self, sound_filepath: str) -> None:
         """Worker that does the actual playback until stop signal is set or playback finishes."""
-        if not self.sound_enabled:
+        if not self.sound_enabled or self._pyaudio_instance is None:
             return
 
         wf = None
-        p = None
         stream = None
         try:
             wf = wave.open(sound_filepath, "rb")
-            with ignore_stderr():
-                p = pyaudio.PyAudio()
-                stream = p.open(
-                    format=p.get_format_from_width(wf.getsampwidth()),
-                    channels=wf.getnchannels(),
-                    rate=wf.getframerate(),
-                    output=True,
-                )
+            # Use the shared PyAudio instance to open the stream
+            stream = self._pyaudio_instance.open(
+                format=self._pyaudio_instance.get_format_from_width(wf.getsampwidth()),
+                channels=wf.getnchannels(),
+                rate=wf.getframerate(),
+                output=True,
+                frames_per_buffer=self.frames_per_buffer,
+            )
 
-                chunk_size = 1024
-                data = wf.readframes(chunk_size)
+            data = wf.readframes(self.frames_per_buffer)
 
-                # FIXME: Volume adjustment would require numpy to process audio data.
-                # For now, playing at original volume.
-                # if self.volume_multiplier != 1.0:
-                #     import numpy as np
-                #     # Example: Convert to numpy array, adjust, convert back
-                #     dtype = np.int16 # Assuming 16-bit samples
-                #     audio_array = np.frombuffer(data, dtype=dtype)
-                #     audio_array = (audio_array * self.volume_multiplier).astype(dtype)
-                #     data = audio_array.tobytes()
-
+            # FIXME: Volume adjustment would require numpy to process audio data.
+            # For now, playing at original volume.
+            # if self.volume_multiplier != 1.0:
+            #     import numpy as np
+            #     # Example: Convert to numpy array, adjust, convert back
+            #     dtype = np.int16 # Assuming 16-bit samples
+            #     audio_array = np.frombuffer(data, dtype=dtype)
+            #     audio_array = (audio_array * self.volume_multiplier).astype(dtype)
+            #     data = audio_array.tobytes()
+            with ignore_stderr():            
                 while data and not self.stop_playback_flag.is_set():
                     stream.write(data)
-                    data = wf.readframes(chunk_size)
+                    data = wf.readframes(self.frames_per_buffer)
             logger.debug(f"Finished playback for {sound_filepath}")
-
         except FileNotFoundError:
             logger.error(f"Sound file not found: '{sound_filepath}'")
         except wave.Error as e:
@@ -149,8 +166,7 @@ class SoundManager:
             if stream:
                 stream.stop_stream()
                 stream.close()
-            if p:
-                p.terminate()
+            # The shared PyAudio instance is terminated in the stop() method, not here.
             if wf:
                 wf.close()
 
@@ -349,4 +365,5 @@ class SoundManager:
                     )
         self._active_playback_threads.clear()
         self.stop_playback_flag.clear()  # Clear the flag for future use
+
         logger.debug("All playback threads stopped and cleared.")
