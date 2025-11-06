@@ -2329,7 +2329,7 @@ class Program:
 
 
     @contextmanager        
-    def sound_clicks(self, mean: float = 0.7) -> ContextManager[None]:
+    def sound_clicks(self, mean: float = 0.7) -> Generator[None, None, None]:
         """Plays clicking sounds if sound_enabled is true on the sound manager."""
         clicking_sounds = "clicks1.wav clicks2.wav clicks3.wav clicks_double.wav clicks_triple.wav".split(" ")
         with self.sound_manager.continuous_playback(
