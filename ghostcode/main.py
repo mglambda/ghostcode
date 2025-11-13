@@ -10,7 +10,7 @@ from ghostcode.utility import show_model_nt
 from ghostcode.types import Program
 import ghostbox
 import os
-from ghostbox import Ghostbox
+from ghostbox import Ghostbox, ChatMessage
 from ghostbox.definitions import BrokenBackend
 from ghostbox.commands import showTime
 from dataclasses import dataclass, field
@@ -730,15 +730,17 @@ class InteractCommand(BaseModel, CommandInterface):
             ),
         )
 
+    
     def _prefix_preamble_string(self, prompt: str) -> str:
         """
-        Prefixes the user's prompt with the `{{preamble_injection}}` placeholder.
+        Prefixes the user's prompt with the magic `{{preamble_injection}}` placeholder.
         This method *only* adds the placeholder string. The actual content for the
         preamble is dynamically set and updated via `prog.coder_box.set_vars()`
         before each LLM call. This ensures the preamble is always current without
         being hardcoded into the interaction history or prompt template.
         """
-        return "{{preamble_injection}}" + f"# User Prompt\n\n{prompt}"
+        # note the song-and-dance with string concatenation below is so that we can use ghostcode on itself without an unwanted expansion of the preamble magic string
+        return "{{" + "preamble_injection" + "}}" + f"# User Prompt\n\n{prompt}"
     
     def _make_user_prompt(self, prog: Program, prompt: str) -> str:
         """Prepare a user prompt to be sent to the backend.
@@ -765,7 +767,7 @@ class InteractCommand(BaseModel, CommandInterface):
         if self.interaction_history.empty():
             return self._prefix_preamble_string(prompt)
         return prompt    
-
+        
     def _dump_interaction(self, prog: Program) -> None:
         """Dumps interaction history to .ghostcode/current_interaction.txt and .ghostcode/current_interaction.json"""
         if (

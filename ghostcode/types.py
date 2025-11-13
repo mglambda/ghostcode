@@ -89,6 +89,7 @@ DEFAULT_CODER_LLM_CONFIG = {
     "stderr": False,
     "quiet": True,
     "stream": False,
+    "history_retroactive_vars": True,
 }
 
 # Default configuration for the worker LLM (e.g., for generating code snippets, answering questions)
@@ -104,6 +105,7 @@ DEFAULT_WORKER_LLM_CONFIG = {
     "quiet": True,
     "stream": False,
     "chat_ai": "GhostWorker",
+    "history_retroactive_vars": True,
 }
 
 # Default project metadata
