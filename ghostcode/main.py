@@ -437,7 +437,7 @@ class ConfigCommand(BaseModel, CommandInterface):
 class ContextCommand(BaseModel, CommandInterface):
     """Manages files included in the project context."""
 
-    subcommand: Literal["add", "rm", "remove", "ls"]
+    subcommand: Literal["add", "rm", "remove", "ls", "clean"]
     filepaths: List[str] = Field(
         default_factory=list,
         description="File paths to add or remove, can include wildcards.",
@@ -519,6 +519,19 @@ class ContextCommand(BaseModel, CommandInterface):
                 else:
                     result.print("No matching files found in context to remove.")
 
+            project.save_to_root(prog.project_root)
+            result.print("Context files updated and saved.")
+        elif self.subcommand in ["clean"]:
+            result.print("Removing bogus files from context.")
+            cfs = prog.project.context_files.data
+            new_cfs = []
+            for cf in cfs:
+                if not os.path.isfile(cf.filepath):
+                    result.print(f" - Removing {cf.filepath}")
+                    continue
+                else:
+                    new_cfs.append(cf)
+            prog.project.context_files.data = new_cfs
             project.save_to_root(prog.project_root)
             result.print("Context files updated and saved.")
         return result
@@ -1136,7 +1149,12 @@ def _main() -> None:
     context_ls_parser = context_subparsers.add_parser(
         "ls", aliases=["list"], help="List all files in the project context."
     )
-    context_ls_parser.set_defaults(func=lambda args: ContextCommand(subcommand="ls"))
+
+    context_clean_parser = context_subparsers.add_parser(
+        "clean", aliases=[], help="Remove bogus or non-existing files from context."
+    )
+    context_clean_parser.set_defaults(func=lambda args: ContextCommand(subcommand="clean"))
+    context_clean_parser.set_defaults(func=lambda args: ContextCommand(subcommand="clean"))
 
     context_add_parser = context_subparsers.add_parser(
         "add", help="Add file(s) to the project context. Supports wildcards."
