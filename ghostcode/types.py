@@ -3,7 +3,7 @@ from typing import *
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from contextlib import contextmanager
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import os
 import atexit
 from uuid import uuid4, UUID
@@ -386,14 +386,27 @@ class ContextFile(BaseModel):
     """Abstract representation of a filepath along with metadata. Context files are sent to the cloud LLM for prompts."""
 
     filepath: str = Field(
-        description="The filepath to the context file. This is always relative to the directory that the .ghostcode directory is in."
+        description="The filepath to the context file. This is always relative to the directory that the .ghostcode directory is in (the root). This value is is used to show a filepath to both humans and the LLM."
     )
 
+    abs_filepath: Optional[str] = Field(
+        default = None,
+        description = "The asbolute filepath to this file. This is used to actually get the file contents with e.g. show()."
+    )
+    
     rag: bool = Field(
         default=False,
         description="Whether to enable retrieval augmented generation for this file. Enabling RAG means the local LLM will retrieve only parts of the file if it deems it necessary with the given prompt. This is usually done for large text files or documentation, and helps to avoid huge token counts for the cloud LLM.",
     )
 
+    @model_validator(mode='before')
+    @classmethod
+    def setabs_filepath(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if 'abs_filepath' not in values or values['abs_filepath'] is None:
+            if 'filepath' in values:
+                values['abs_filepath'] = os.path.abspath(values['filepath'])
+        return values
+    
 
 class ContextFiles(BaseModel):
     """Encapsulates the files (both code and otherwise) that are tracked by the project. Tracked files are sent to the cloud LLM with the prompt.
@@ -408,13 +421,13 @@ class ContextFiles(BaseModel):
         return "\n".join([cf.filepath for cf in self.data])
 
     @staticmethod
-    def from_plaintext(content: str) -> "ContextFiles":
+    def from_plaintext(content: str, *, root: str) -> "ContextFiles":
         """Deserializes a plaintext string into a ContextFiles object.
         Each line is treated as a filepath."""
         filepaths = [line.strip() for line in content.splitlines() if line.strip()]
         # For now, RAG is always False when loaded from plaintext, as there's no metadata in this format.
         # A future enhancement might involve a separate file for options or a more complex format.
-        context_files = [ContextFile(filepath=fp, rag=False) for fp in filepaths]
+        context_files = [ContextFile(filepath=fp, abs_filepath=os.path.join(root, fp), rag=False) for fp in filepaths]
         return ContextFiles(data=context_files)
 
     def show(self, heading_level: int = 3, **kwargs: Any) -> str:
@@ -1635,7 +1648,8 @@ class Project(BaseModel):
         try:
             with open(context_files_path, "r") as f:
                 content = f.read()
-                context_files = ContextFiles.from_plaintext(content)
+                # context files are always relative to the root
+                context_files = ContextFiles.from_plaintext(content, root=root)
             logger.debug(f"Loaded context files from {context_files_path}")
         except FileNotFoundError:
             logger.warning(

@@ -1149,11 +1149,11 @@ def _main() -> None:
     context_ls_parser = context_subparsers.add_parser(
         "ls", aliases=["list"], help="List all files in the project context."
     )
-
+    context_ls_parser.set_defaults(func=lambda args: ContextCommand(subcommand="ls"))
+    
     context_clean_parser = context_subparsers.add_parser(
         "clean", aliases=[], help="Remove bogus or non-existing files from context."
     )
-    context_clean_parser.set_defaults(func=lambda args: ContextCommand(subcommand="clean"))
     context_clean_parser.set_defaults(func=lambda args: ContextCommand(subcommand="clean"))
 
     context_add_parser = context_subparsers.add_parser(
