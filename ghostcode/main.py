@@ -582,7 +582,7 @@ class DiscoverCommand(BaseModel, CommandInterface):
             logger.error(f"Error: Path '{self.filepath}' is not a directory.")
             sys.exit(1)
 
-        discovered_files: List[types.ContextFile] = []
+        discovered_files: List[str] = []
         
         # Determine effective min_lines and max_lines
         effective_min_lines = self.min_lines
@@ -654,19 +654,19 @@ class DiscoverCommand(BaseModel, CommandInterface):
                     logger.debug(f"Skipping '{relative_filepath}': Matches exclude pattern '{self.exclude_pattern}'.")
                     continue
 
-                discovered_files.append(types.ContextFile(filepath=relative_filepath))
+                discovered_files.append(relative_filepath)
                 result.print(f"Discovered and added '{relative_filepath}' to context.")
 
         # Add all discovered files to the project context
         added_count = 0
-        for cf in discovered_files:
+        for fp in discovered_files:
             # Use add_or_alter to handle existing files gracefully
             # For discover, we don't set RAG by default, but it could be an option later
-            if cf.filepath not in {f.filepath for f in project.context_files.data}:
-                project.context_files.add_or_alter(cf)
+            if not project.context_files.has_filepath(fp):
+                project.context_files.add_or_alter(fp)
                 added_count += 1
             else:
-                result.print(f"'{cf.filepath}' already in context. Skipping.")
+                result.print(f"'{fp}' already in context. Skipping.")
 
         project.save_to_root(prog.project_root)
         result.print(f"Discovery complete. Added {added_count} new files to context.")

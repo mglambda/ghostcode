@@ -348,7 +348,7 @@ def apply_alter_context(
     match alter_context_action.context_alteration:
         case types.ContextAlterationLoadFile() as load_file:
             prog.project.context_files.add_or_alter(
-                types.ContextFile(filepath=load_file.filepath)
+                load_file.filepath
             )
             return types.ActionResultOk(
                 success_message=f"Added {load_file.filepath} to context."

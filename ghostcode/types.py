@@ -482,8 +482,7 @@ class ContextFile(BaseModel):
         description="The filepath to the context file. This is always relative to the directory that the .ghostcode directory is in (the root). This value is is used to show a filepath to both humans and the LLM."
     )
 
-    abs_filepath: Optional[str] = Field(
-        default = None,
+    abs_filepath: str = Field(
         description = "The absolute filepath to this file. This is used to actually get the file contents with e.g. show()."
     )
 
@@ -491,20 +490,9 @@ class ContextFile(BaseModel):
         default_factory = ContextFileConfig,
         description = "Additional information, metadata, options, and kspecial behaviour for this context file."
     )
-    
-    @model_validator(mode='before')
-    @classmethod
-    def setabs_filepath(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        if 'abs_filepath' not in values or values['abs_filepath'] is None:
-            if 'filepath' in values:
-                values['abs_filepath'] = os.path.abspath(values['filepath'])
-        return values
 
     def get_abs_filepath(self) -> str:
         """Get the abs path. Helps narrow the type."""
-        if self.abs_filepath is None:
-            # never happens at runtime
-            return ""
         return self.abs_filepath
     
 class ContextFiles(BaseModel):
@@ -514,12 +502,16 @@ class ContextFiles(BaseModel):
     """
 
     data: List[ContextFile] = Field(default_factory=list)
+    root: str = Field(
+        description = "Filepath to the ghostcode project root."
+    )
     
     def add(self, filepath: str) -> None:
         """Adds a filepath to the context."""
         self.data.append(
             ContextFile(
-                filepath = filepath
+                filepath = filepath,
+                abs_filepath = os.path.join(self.root, filepath)
             )
         )
 
@@ -540,7 +532,7 @@ class ContextFiles(BaseModel):
         Each line is treated as a filepath."""
         filepaths = [line.strip() for line in content.splitlines() if line.strip()]
         context_files = [ContextFile(filepath=fp, abs_filepath=os.path.join(root, fp)) for fp in filepaths]
-        return ContextFiles(data=context_files)
+        return ContextFiles(data=context_files, root = root)
 
     def show(self, heading_level: int = 3, **kwargs: Any) -> str:
         """Renders file contents of the context files to a string, in a format that is suitable for an LLM."""
@@ -576,13 +568,19 @@ class ContextFiles(BaseModel):
             if cf.filepath == filepath:
                 cf.config = config
             
-    def add_or_alter(self, context_file: ContextFile) -> None:
+    def add_or_alter(self, filepath: str, config: Optional[ContextFileConfig] = None) -> None:
         """Add a single filepath to the context during program execution.
         If the filepath already exists in context, it is replaced with the supplied file instead, possibly changing its attributes.
         """
-        logger.debug(f"Trying to add {context_file.filepath} to context.")
+        logger.debug(f"Trying to add {filepath} to context.")
+        context_file = ContextFile(
+            filepath=filepath,
+            abs_filepath=os.path.join(self.root, filepath),
+            config = config if config is not None else ContextFileConfig()
+        )
+        
         for i in range(0, len(self.data)):
-            if self.data[i].filepath == context_file.filepath:
+            if self.data[i].filepath == filepath:
                 logger.info(
                     f"Changing properties for context file {context_file.filepath}"
                 )
@@ -592,6 +590,9 @@ class ContextFiles(BaseModel):
         # we did not find it
         logger.info(f"Adding {context_file.filepath} to context.")
         self.data.append(context_file)
+
+
+                
 
     def remove(self, filepath: str) -> bool:
         """Remove a file from context during program execution.
@@ -1485,7 +1486,7 @@ class Project(BaseModel):
         description="Configuration options sent to ghostbox for the coder LLM. This is a json file stored in .ghostcode/coder_llm_config.json.",
     )
 
-    context_files: ContextFiles = Field(default_factory=ContextFiles)
+    context_files: ContextFiles
 
     directory_file: str = Field(
         default="",
@@ -1711,7 +1712,7 @@ class Project(BaseModel):
 
         worker_llm_config = {}
         coder_llm_config = {}
-        context_files = ContextFiles()
+        context_files = ContextFiles(root=root)
         directory_file_content = ""
         project_metadata = ProjectMetadata(**DEFAULT_PROJECT_METADATA)
         project_config = ProjectConfig()  # Initialize with defaults
@@ -1778,13 +1779,13 @@ class Project(BaseModel):
             logger.warning(
                 f"Context files list not found at {context_files_path}. Using empty list."
             )
-            context_files = ContextFiles(data=[])
+            context_files = ContextFiles(data=[], root=root)
         except Exception as e:
             logger.error(
                 f"An unexpected error occurred loading {context_files_path}: {e}. Using empty list.",
                 exc_info=True,
             )
-            context_files = ContextFiles(data=[])
+            context_files = ContextFiles(data=[], root=root)
 
         try:
             with open(context_files_configs_path, "r") as f:
