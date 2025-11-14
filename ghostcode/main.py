@@ -568,9 +568,10 @@ class ContextCommand(BaseModel, CommandInterface):
             if not project.context_files.data:
                 result.print("Context is already empty. No files to wipe.")
             else:
+                n = len(project.context_files.data)
                 project.context_files.data = []
                 project.save_to_root(prog.project_root)
-                result.print("All files removed from context.")
+                result.print("{n} file(s) removed from context.")
         return result
 
 class DiscoverCommand(BaseModel, CommandInterface):    
