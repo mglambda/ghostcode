@@ -595,11 +595,15 @@ class ContextFiles(BaseModel):
 
     def remove(self, filepath: str) -> bool:
         """Remove a file from context during program execution.
-        Returns true if the file was not found."""
+        Returns true if the file was not found or locked."""
         for i in range(0, len(self.data)):
             if self.data[i].filepath == filepath:
-                logger.debug(f"Removing {filepath} from context.")
-                del self.data[i]
+                if self.data[i].config.locked:
+                    logger.debug(f"Not removing {self.data[i].filepath} from context because it is locked.")
+                    continue
+                else:
+                    logger.debug(f"Removing {filepath} from context.")
+                    del self.data[i]
                 return False
 
         logger.warning(
@@ -1787,7 +1791,7 @@ class Project(BaseModel):
                 config_dict = json.load(f)
 
             for filepath, config in config_dict.items():
-                context_files.set_config(filepath, config)
+                context_files.set_config(filepath, ContextFileConfig(**config))
 
         except FileNotFoundError:
             logger.warning(f"Context file configs file not found at {context_files_configs_path}.")
