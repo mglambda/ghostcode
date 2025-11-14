@@ -484,7 +484,7 @@ class ContextFile(BaseModel):
 
     abs_filepath: Optional[str] = Field(
         default = None,
-        description = "The asbolute filepath to this file. This is used to actually get the file contents with e.g. show()."
+        description = "The absolute filepath to this file. This is used to actually get the file contents with e.g. show()."
     )
 
     config: ContextFileConfig = Field(
@@ -547,7 +547,7 @@ class ContextFiles(BaseModel):
         w = ""
         for context_file in self.data:
             try:
-                with open(context_file.filepath, "r") as f:
+                with open(context_file.abs_filepath, "r") as f:
                     contents = f.read()
             except Exception as e:
                 logger.error(
