@@ -495,8 +495,10 @@ def coder_query(
                 response = types.CoderResponse(contents=[text_response])
         logger.timing(f"ghostcoder performance statistics:\n{showTime(prog.coder_box._plumbing, [])}")  # type: ignore
     except Exception as e:
+        # when this happens it's usually a backend error e.g. 'too many erquests'
+        error_msg = prog.coder_box.get_last_error()
         prog.print(  # this bypasses hidden and that's ok
-            f"Problems encountered during 👻 request. Reason: {e}\nRetry the request or consult the logs for more information."
+            f"Problems encountered during 👻 request. Reason: {error_msg}\nRetry the request, do /traceback, or consult the logs for more information."
         )
         logger.exception(
             f"error on ghostbox.new. See the full traceback:\n{traceback.format_exc()}"
@@ -506,7 +508,7 @@ def coder_query(
         )
         return types.ActionResultFailure(
             original_action=query_coder_action,
-            failure_reason=f"Querying the ghostcoder backend failed. Reason: {e}.",
+            failure_reason=f"Querying the ghostcoder backend failed. Exception: `{e}` Backend message: `{error_msg}`.",
         )
 
     # append to history if any ID is given
