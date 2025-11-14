@@ -538,6 +538,8 @@ class ContextFiles(BaseModel):
         """Renders file contents of the context files to a string, in a format that is suitable for an LLM."""
         w = ""
         for context_file in self.data:
+            if context_file.config.ignore:
+                continue
             try:
                 with open(context_file.abs_filepath, "r") as f:
                     contents = f.read()
@@ -561,7 +563,7 @@ class ContextFiles(BaseModel):
 
     def show_cli(self, **kwargs: Any) -> str:
         """Shows the list of filepaths in a short, command line interface friendly manner."""
-        return "(" + " ".join([item.filepath for item in self.data]) + ")"
+        return "(" + " ".join([item.filepath for item in self.data if not item.config.ignore]) + ")"
 
     def set_config(self, filepath: str, config: ContextFileConfig) -> None:
         for cf in self.data:
