@@ -5,7 +5,7 @@ from ghostcode import types, worker
 from ghostcode import slash_commands
 from ghostcode.progress_printer import ProgressPrinter
 from ghostcode import prompts
-from ghostcode.utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP
+from ghostcode.utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP, language_from_extension
 # don't want the types. prefix for these
 from ghostcode.types import Program
 import ghostbox
@@ -26,6 +26,7 @@ import yaml
 import appdirs
 from ghostbox.definitions import LLMBackend  # Added for API key checks
 from queue import Queue, Empty
+import re # Added for DiscoverCommand regex filtering
 
 # logger will be configured after argument parsing
 logger: logging.Logger  # Declare logger globally, will be assigned later
@@ -582,9 +583,108 @@ class DiscoverCommand(BaseModel, CommandInterface):
     possible_languages: ClassVar[List[str]] = list(EXTENSION_TO_LANGUAGE_MAP.values())
 
     def run(self, prog: Program) -> CommandOutput:
-        # fill this in
-        pass
-    
+        result = CommandOutput()
+        if not prog.project_root or not prog.project:
+            logger.error("Not a ghostcode project. Run 'ghostcode init' first.")
+            sys.exit(1)
+
+        project = prog.project
+        target_abs_path = os.path.abspath(self.filepath)
+
+        if not os.path.isdir(target_abs_path):
+            logger.error(f"Error: Path '{self.filepath}' is not a directory.")
+            sys.exit(1)
+
+        discovered_files: List[types.ContextFile] = []
+        
+        # Determine effective min_lines and max_lines
+        effective_min_lines = self.min_lines
+        effective_max_lines = self.max_lines
+        if self.size_heuristic == "small":
+            effective_min_lines = 0
+            effective_max_lines = 1000
+        elif self.size_heuristic == "medium":
+            effective_min_lines = 300
+            effective_max_lines = 3000
+        elif self.size_heuristic == "large":
+            effective_min_lines = 3000
+            effective_max_lines = None # No upper limit for large
+
+        # Compile exclude pattern if provided
+        exclude_regex = None
+        if self.exclude_pattern:
+            try:
+                exclude_regex = re.compile(self.exclude_pattern)
+            except re.error as e:
+                logger.error(f"Invalid regex for --exclude-pattern: {e}")
+                sys.exit(1)
+
+        # Prepare language filters
+        enabled_languages_set = set(self.languages_enabled)
+        disabled_languages_set = set(self.languages_disabled)
+        
+        # If --all is provided, enable all possible languages first
+        if self.all:
+            enabled_languages_set.update(self.possible_languages)
+
+        # Remove explicitly disabled languages
+        enabled_languages_set = enabled_languages_set - disabled_languages_set
+
+        for root, _, files in os.walk(target_abs_path):
+            for filename in files:
+                abs_filepath = os.path.join(root, filename)
+                relative_filepath = os.path.relpath(abs_filepath, start=prog.project_root)
+
+                # Skip hidden files/directories (e.g., .git, .ghostcode, files starting with .)
+                if any(part.startswith('.') for part in relative_filepath.split(os.sep)):
+                    logger.debug(f"Skipping hidden file: {relative_filepath}")
+                    continue
+                
+                # 1. Apply language filter
+                file_language = language_from_extension(abs_filepath)
+                if file_language not in enabled_languages_set:
+                    logger.debug(f"Skipping '{relative_filepath}': Language '{file_language}' not enabled.")
+                    continue
+
+                # 2. Apply line count filter
+                try:
+                    with open(abs_filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = f.readlines()
+                        line_count = len(lines)
+                except Exception as e:
+                    logger.warning(f"Could not read file '{relative_filepath}' for line count: {e}. Skipping.")
+                    continue
+
+                if effective_min_lines is not None and line_count < effective_min_lines:
+                    logger.debug(f"Skipping '{relative_filepath}': {line_count} lines, less than min_lines ({effective_min_lines}).")
+                    continue
+                if effective_max_lines is not None and line_count > effective_max_lines:
+                    logger.debug(f"Skipping '{relative_filepath}': {line_count} lines, more than max_lines ({effective_max_lines}).")
+                    continue
+
+                # 3. Apply exclude pattern filter
+                if exclude_regex and exclude_regex.search(filename):
+                    logger.debug(f"Skipping '{relative_filepath}': Matches exclude pattern '{self.exclude_pattern}'.")
+                    continue
+
+                discovered_files.append(types.ContextFile(filepath=relative_filepath))
+                result.print(f"Discovered and added '{relative_filepath}' to context.")
+
+        # Add all discovered files to the project context
+        added_count = 0
+        for cf in discovered_files:
+            # Use add_or_alter to handle existing files gracefully
+            # For discover, we don't set RAG by default, but it could be an option later
+            if cf.filepath not in {f.filepath for f in project.context_files.data}:
+                project.context_files.add_or_alter(cf)
+                added_count += 1
+            else:
+                result.print(f"'{cf.filepath}' already in context. Skipping.")
+
+        project.save_to_root(prog.project_root)
+        result.print(f"Discovery complete. Added {added_count} new files to context.")
+        return result
+
 class LogCommand(BaseModel, CommandInterface):
     """Manages and displays interaction history."""
 
@@ -1251,7 +1351,55 @@ def _main() -> None:
         func=lambda args: ContextCommand(subcommand="rm", filepaths=args.filepaths)
     )
 
-    # Interact command (placeholder)
+
+    # Discover command
+    discover_parser = subparsers.add_parser(
+        "discover",
+        help="Intelligently discovers files associated with the project and adds them to the context.",
+    )
+    discover_parser.add_argument(
+        "filepath",
+        help="The filepath that points to a directory in which files to add to the context will be recursively discovered.",
+    )
+
+    # Dynamically add language flags
+    for lang in sorted(DiscoverCommand.possible_languages):
+        discover_parser.add_argument(
+            f"--{lang}",
+            action="append_const", # Use append_const to collect multiple languages
+            const=lang,
+            dest="languages_enabled", # All --lang flags append to this list
+            help=f"Include files primarily written in {lang.capitalize()}.",
+        )
+        discover_parser.add_argument(
+            f"--no-{lang}",
+            action="append_const",
+            const=lang,
+            dest="languages_disabled", # All --no-lang flags append to this list
+            help=f"Exclude files primarily written in {lang.capitalize()}.",
+        )
+
+    discover_parser.add_argument(
+        "--exclude-pattern",
+        type=str,
+        default="",
+        help="A regex that can be provided. File names that match against it are excluded from the context. The exclude pattern is applied at the very end of the discovery process.",
+    )
+
+    discover_parser.set_defaults(
+        func=lambda args: DiscoverCommand(
+            filepath=args.filepath,
+            languages_enabled=args.languages_enabled if args.languages_enabled else [],
+            languages_disabled=args.languages_disabled if args.languages_disabled else [],
+            min_lines=args.min_lines,
+            max_lines=args.max_lines,
+            size_heuristic=args.size_heuristic,
+            exclude_pattern=args.exclude_pattern,
+            all=args.all,
+        )
+    )
+    
+    # Interact command
     interact_parser = subparsers.add_parser(
         "interact", help="Launches an interactive session with the Coder LLM."
     )
@@ -1321,7 +1469,7 @@ def _main() -> None:
     talk_parser.set_defaults(
         func=lambda args: _create_interact_command(args, actions=False)
     )
-
+    
     # Log command
     log_parser = subparsers.add_parser("log", help="Display past interaction history.")
     log_parser.add_argument(
@@ -1333,8 +1481,7 @@ def _main() -> None:
         func=lambda args: LogCommand(interaction_identifier=args.interaction)
     )
 
-    args = parser.parse_args()
-
+    args = parser.parse_args()    
     # --- Determine project_root early for logging configuration ---
 
     current_project_root: Optional[str] = None
