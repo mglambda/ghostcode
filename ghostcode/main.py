@@ -438,7 +438,7 @@ class ConfigCommand(BaseModel, CommandInterface):
 class ContextCommand(BaseModel, CommandInterface):
     """Manages files included in the project context."""
 
-    subcommand: Literal["add", "rm", "remove", "ls", "clean", "lock", "unlock"]
+    subcommand: Literal["add", "rm", "remove", "ls", "clean", "lock", "unlock", "wipe"]
     filepaths: List[str] = Field(
         default_factory=list,
         description="File paths to add or remove, can include wildcards.",
@@ -564,6 +564,13 @@ class ContextCommand(BaseModel, CommandInterface):
                 result.print("Context file lock statuses updated and saved.")
             else:
                 result.print("No context files modified.")
+        elif self.subcommand == "wipe":
+            if not project.context_files.data:
+                result.print("Context is already empty. No files to wipe.")
+            else:
+                project.context_files.data = []
+                project.save_to_root(prog.project_root)
+                result.print("All files removed from context.")
         return result
 
 class DiscoverCommand(BaseModel, CommandInterface):    
@@ -1348,6 +1355,11 @@ def _main() -> None:
         "clean", aliases=[], help="Remove bogus or non-existing files from context."
     )
     context_clean_parser.set_defaults(func=lambda args: ContextCommand(subcommand="clean"))
+
+    context_wipe_parser = context_subparsers.add_parser(
+        "wipe", help="Remove all files from the project context."
+    )
+    context_wipe_parser.set_defaults(func=lambda args: ContextCommand(subcommand="wipe"))
 
     context_lock_parser = context_subparsers.add_parser(
         "lock", help="Lock file(s) in the project context, preventing their removal."
