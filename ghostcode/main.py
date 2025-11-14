@@ -1386,6 +1386,48 @@ def _main() -> None:
         help="A regex that can be provided. File names that match against it are excluded from the context. The exclude pattern is applied at the very end of the discovery process.",
     )
 
+    discover_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="If provided, will add all (non-hidden) files to the context that are found in subdirectories of the given path. Providing --all is like providing all of the language parameters.",
+    )
+
+    discover_parser.add_argument(
+        "--min-lines",
+        type=int,
+        default=None,
+        help="Minimum amount of lines that a file must have in order to be added to the context.",
+    )
+    discover_parser.add_argument(
+        "--max-lines",
+        type=int,
+        default=None,
+        help="Maximum number of lines a file can have in order to be added to the context.",
+    )
+
+    size_heuristic_group = discover_parser.add_mutually_exclusive_group()
+    size_heuristic_group.add_argument(
+        "--small",
+        action="store_const",
+        const="small",
+        dest="size_heuristic",
+        help="If provided, sets min_lines=0 and max_lines=1000. Mutually exclusive with --medium and --large.",
+    )
+    size_heuristic_group.add_argument(
+        "--medium",
+        action="store_const",
+        const="medium",
+        dest="size_heuristic",
+        help="If provided, sets min_lines=300 and max_lines=3000. Mutually exclusive with --small and --large.",
+    )
+    size_heuristic_group.add_argument(
+        "--large",
+        action="store_const",
+        const="large",
+        dest="size_heuristic",
+        help="If provided, sets min_lines=3000 and no max_lines. Mutually exclusive with --small and --medium.",
+    )
+
     discover_parser.set_defaults(
         func=lambda args: DiscoverCommand(
             filepath=args.filepath,
