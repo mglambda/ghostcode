@@ -565,6 +565,35 @@ class ContextFiles(BaseModel):
         """Shows the list of filepaths in a short, command line interface friendly manner."""
         return "(" + " ".join([item.filepath for item in self.data if not item.config.ignore]) + ")"
 
+    def show_overview(self) -> str:
+        """Returns a tab separated display of context files with their configuration options."""
+        if not self.data:
+            return "No context files tracked."
+
+        # Calculate maximum filepath length for padding
+        max_filepath_len = 0
+        for cf in self.data:
+            max_filepath_len = max(max_filepath_len, len(cf.filepath))
+
+        # Build the header
+        header = f"{'Filepath'.ljust(max_filepath_len)}	{'RAG'}	{'Locked'}	{'Ignored'}	{'Summary'}"
+        separator = f"{'-' * max_filepath_len}	{'-'*3}	{'-'*6}	{'-'*7}	{'-'*7}"
+        
+        lines = [header, separator]
+
+        # Build data rows
+        for cf in self.data:
+            filepath_padded = cf.filepath.ljust(max_filepath_len)
+            rag_str = "Yes" if cf.config.rag else "No"
+            locked_str = "Yes" if cf.config.locked else "No"
+            ignore_str = "Yes" if cf.config.ignore else "No"
+            summary_str = "Yes" if cf.config.summary else "No"
+
+            lines.append(f"{filepath_padded}	{rag_str}	{locked_str}	{ignore_str}	{summary_str}")
+
+        return "\n".join(lines)
+
+        
     def set_config(self, filepath: str, config: ContextFileConfig) -> None:
         for cf in self.data:
             if cf.filepath == filepath:

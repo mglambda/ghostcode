@@ -462,8 +462,7 @@ class ContextCommand(BaseModel, CommandInterface):
                 result.print("No context files tracked.")
             else:
                 result.print("Tracked Context Files (relative to project root):")
-                for cf in project.context_files.data:
-                    result.print(f"{cf.filepath}")
+                result.print(project.context_files.show_overview())
         elif self.subcommand in ["add", "rm", "remove"]:
             if not self.filepaths:
                 logger.error(f"File paths required for 'context {self.subcommand}'.")
