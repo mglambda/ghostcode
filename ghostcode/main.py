@@ -580,7 +580,7 @@ class DiscoverCommand(BaseModel, CommandInterface):
     )
 
     # this containts e.g. "python", "javascript, "cpp". It should be used to create argparse parameters, like --python, --javascript, --cpp and so on 
-    possible_languages: ClassVar[List[str]] = list(EXTENSION_TO_LANGUAGE_MAP.values())
+    possible_languages: ClassVar[List[str]] = list(set(list(EXTENSION_TO_LANGUAGE_MAP.values())))
 
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
