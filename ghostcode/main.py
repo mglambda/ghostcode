@@ -5,7 +5,7 @@ from ghostcode import types, worker
 from ghostcode import slash_commands
 from ghostcode.progress_printer import ProgressPrinter
 from ghostcode import prompts
-from ghostcode.utility import show_model_nt
+from ghostcode.utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP
 # don't want the types. prefix for these
 from ghostcode.types import Program
 import ghostbox
@@ -536,7 +536,55 @@ class ContextCommand(BaseModel, CommandInterface):
             result.print("Context files updated and saved.")
         return result
 
+class DiscoverCommand(BaseModel, CommandInterface):    
+    """Intelligently discovers files associated with the project and adds them to the context."""
 
+    filepath: str = Field(
+        description = "The filepath that points to a directory in which files to add to the context will be recursively discovered."
+    )
+    
+    languages_enabled: List[str] = Field(
+        default_factory = list,
+        description = "Programming languages (e.g. 'python', 'javascript') for which files in the respective language will be added to the context."
+    )
+
+
+    languages_disabled: List[str] = Field(
+        default_factory = list,
+        description = "Providing e.g. --no-python --no-javascript will exclude languages from the discovery."
+    )
+    min_lines: Optional[int] = Field(
+        default = None,
+        description = "Minimum amount of lines that a file must have in order to be added to the context."
+    )
+
+    max_lines: Optional[int] = Field(
+        default = None,
+        description = "Maximum number of lines a file can have in order to be added to the context."
+    )
+
+    size_heuristic: Optional[Literal["small", "medium", "large"]] = Field(
+        default = None,
+        description = "If provided with --small, --medium, or --large, will automatically set the min_lines and max_lines parameters. Small means 0 - 1000 lines. Medium is 300 - 3000 lines. Large is 3000+. The small, medium, and large parameters are mutually exclusive."
+    )
+
+    exclude_pattern: str = Field(
+        default = "",
+        description = "A regex that can be provided. File names that match against it are excluded from the context. The exclude pattern is applied at the very end of the discovery process."
+    )
+    
+    all: bool = Field(
+        default = False,
+        description = "If provided, will add all (non-hidden) files to the context that are found in subdirectories of the given path. Providing --all is like providing all of the language parameters."
+    )
+
+    # this containts e.g. "python", "javascript, "cpp". It should be used to create argparse parameters, like --python, --javascript, --cpp and so on 
+    possible_languages: ClassVar[List[str]] = list(EXTENSION_TO_LANGUAGE_MAP.values())
+
+    def run(self, prog: Program) -> CommandOutput:
+        # fill this in
+        pass
+    
 class LogCommand(BaseModel, CommandInterface):
     """Manages and displays interaction history."""
 
