@@ -463,8 +463,7 @@ class ContextCommand(BaseModel, CommandInterface):
             else:
                 result.print("Tracked Context Files (relative to project root):")
                 for cf in project.context_files.data:
-                    rag_status = "(RAG enabled)" if cf.rag else ""
-                    result.print(f"  - {cf.filepath} {rag_status}")
+                    result.print(f"{cf.filepath}")
         elif self.subcommand in ["add", "rm", "remove"]:
             if not self.filepaths:
                 logger.error(f"File paths required for 'context {self.subcommand}'.")
@@ -491,22 +490,10 @@ class ContextCommand(BaseModel, CommandInterface):
             if self.subcommand == "add":
                 for fp in resolved_paths:
                     if fp not in current_context_files:
-                        project.context_files.data.append(
-                            types.ContextFile(filepath=fp, rag=self.rag)
+                        project.context_files.add(
+                            fp
                         )
                         result.print(f"Added '{fp}' to context (RAG={self.rag}).")
-                    else:
-                        # If already exists, update RAG status if different
-                        existing_cf = current_context_files[fp]
-                        if existing_cf.rag != self.rag:
-                            existing_cf.rag = self.rag
-                            result.print(
-                                f"Updated RAG status for '{fp}' to {self.rag}."
-                            )
-                        else:
-                            result.print(
-                                f"'{fp}' is already in context with RAG={self.rag}."
-                            )
             elif self.subcommand in ["rm", "remove"]:
                 initial_count = len(project.context_files.data)
                 project.context_files.data = [

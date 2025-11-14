@@ -452,6 +452,29 @@ class ProjectConfig(BaseModel):
 
 
 # --- Type Definitions ---
+class ContextFileConfig(BaseModel):
+    """Specify options, metadata, and special behaviours for certain files in the context."""
+
+    rag: bool = Field(
+        default=False,
+        description="Whether to enable retrieval augmented generation for this file. Enabling RAG means the local LLM will retrieve only parts of the file if it deems it necessary with the given prompt. This is usually done for large text files or documentation, and helps to avoid huge token counts for the cloud LLM.",
+    )
+
+    locked: bool = Field(
+        default = False,
+        description = "If true, the file cannot be removed from the context before it is unlocked."
+    )
+
+    ignore: bool = Field(
+        default = False,
+        description = "Ignored context files will not have their contents be shown in any query."
+    )
+
+    summary: str = Field(
+        default = "",
+        description = "A summary of the file. Summaries are intended to be generated in the background while the user is idle in an interact session. This has not been implemented yet."
+    )
+    
 class ContextFile(BaseModel):
     """Abstract representation of a filepath along with metadata. Context files are sent to the cloud LLM for prompts."""
 
@@ -463,12 +486,12 @@ class ContextFile(BaseModel):
         default = None,
         description = "The asbolute filepath to this file. This is used to actually get the file contents with e.g. show()."
     )
-    
-    rag: bool = Field(
-        default=False,
-        description="Whether to enable retrieval augmented generation for this file. Enabling RAG means the local LLM will retrieve only parts of the file if it deems it necessary with the given prompt. This is usually done for large text files or documentation, and helps to avoid huge token counts for the cloud LLM.",
-    )
 
+    config: ContextFileConfig = Field(
+        default_factory = ContextFileConfig,
+        description = "Additional information, metadata, options, and kspecial behaviour for this context file."
+    )
+    
     @model_validator(mode='before')
     @classmethod
     def setabs_filepath(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -491,7 +514,22 @@ class ContextFiles(BaseModel):
     """
 
     data: List[ContextFile] = Field(default_factory=list)
+    
+    def add(self, filepath: str) -> None:
+        """Adds a filepath to the context."""
+        self.data.append(
+            ContextFile(
+                filepath = filepath
+            )
+        )
 
+    def has_filepath(self, filepath: str) -> bool:
+        """Returns true if a given relative filepath is in the context."""
+        for cf in self.data:
+            if cf.filepath == filepath:
+                return True
+        return False
+            
     def to_plaintext(self) -> str:
         """Serializes the list of context file paths to a plaintext string, one path per line."""
         return "\n".join([cf.filepath for cf in self.data])
@@ -501,9 +539,7 @@ class ContextFiles(BaseModel):
         """Deserializes a plaintext string into a ContextFiles object.
         Each line is treated as a filepath."""
         filepaths = [line.strip() for line in content.splitlines() if line.strip()]
-        # For now, RAG is always False when loaded from plaintext, as there's no metadata in this format.
-        # A future enhancement might involve a separate file for options or a more complex format.
-        context_files = [ContextFile(filepath=fp, abs_filepath=os.path.join(root, fp), rag=False) for fp in filepaths]
+        context_files = [ContextFile(filepath=fp, abs_filepath=os.path.join(root, fp)) for fp in filepaths]
         return ContextFiles(data=context_files)
 
     def show(self, heading_level: int = 3, **kwargs: Any) -> str:
@@ -535,6 +571,11 @@ class ContextFiles(BaseModel):
         """Shows the list of filepaths in a short, command line interface friendly manner."""
         return "(" + " ".join([item.filepath for item in self.data]) + ")"
 
+    def set_config(self, filepath: str, config: ContextFileConfig) -> None:
+        for cf in self.data:
+            if cf.filepath == filepath:
+                cf.config = config
+            
     def add_or_alter(self, context_file: ContextFile) -> None:
         """Add a single filepath to the context during program execution.
         If the filepath already exists in context, it is replaced with the supplied file instead, possibly changing its attributes.
@@ -1462,6 +1503,7 @@ class Project(BaseModel):
     _CODER_CHARACTER_FOLDER: ClassVar[str] = "coder"
     _CODER_CONFIG_FILE: ClassVar[str] = "coder/config.json"
     _CONTEXT_FILES_FILE: ClassVar[str] = "context_files"  # Plaintext list of filepaths
+    _CONTEXT_FILES_CONFIGS_FILE: ClassVar[str] = "context_files_config.json"  # json dict of associated configs
     _DIRECTORY_FILE: ClassVar[str] = "directory_file.md"  # Plaintext markdown
     _PROJECT_METADATA_FILE: ClassVar[str] = "project_metadata.yaml"  # YAML format
     _PROJECT_CONFIG_FILE: ClassVar[str] = "config.yaml"  # YAML format
@@ -1721,6 +1763,7 @@ class Project(BaseModel):
 
         # 3. Load context_files
         context_files_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_FILE)
+        context_files_configs_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_CONFIGS_FILE)        
         try:
             with open(context_files_path, "r") as f:
                 content = f.read()
@@ -1739,6 +1782,19 @@ class Project(BaseModel):
             )
             context_files = ContextFiles(data=[])
 
+        try:
+            with open(context_files_configs_path, "r") as f:
+                config_dict = json.load(f)
+
+            for filepath, config in config_dict.items():
+                context_files.set_config(filepath, config)
+
+        except FileNotFoundError:
+            logger.warning(f"Context file configs file not found at {context_files_configs_path}.")
+        except Exception as e:
+            logger.exception(f"Unknown exception while loading configs for context files from {context_files_configs_path}. Reason: {e}")
+
+                
         # 4. Load directory_file.md
         directory_file_path = os.path.join(ghostcode_dir, Project._DIRECTORY_FILE)
         try:
@@ -1899,7 +1955,28 @@ class Project(BaseModel):
                 raise
         else:
             logger.warning(f"No project metadata to save for {root}.")
+
+    def save_context_files(self, root: str) -> None:
+        ghostcode_dir = Project._get_ghostcode_path(root)
         
+        context_files_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_FILE)
+        context_files_configs_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_CONFIGS_FILE)                
+        try:
+            # Sort context files alphabetically by filepath before saving
+            self.context_files.data.sort(key=lambda cf: cf.filepath)
+            with open(context_files_path, "w") as f:
+                f.write(self.context_files.to_plaintext())
+            logger.debug(f"Saved context files to {context_files_path}")
+            config_dict = { cf.filepath: cf.config.model_dump() for cf in self.context_files.data}
+            with open(context_files_configs_path, "w") as f:
+                json.dump(config_dict, f)
+            logger.info(f"Saved context file configs to {context_files_configs_path}.")
+        except Exception as e:
+            logger.error(
+                f"Failed to save context files to {context_files_path}: {e}",
+                exc_info=True,
+            )
+            raise
     
     def save_to_root(self, root: str) -> None:
         """
@@ -1957,18 +2034,8 @@ class Project(BaseModel):
             raise
 
         # 3. Save context_files
-        context_files_path = os.path.join(ghostcode_dir, Project._CONTEXT_FILES_FILE)
-        try:
-            with open(context_files_path, "w") as f:
-                f.write(self.context_files.to_plaintext())
-            logger.debug(f"Saved context files to {context_files_path}")
-        except Exception as e:
-            logger.error(
-                f"Failed to save context files to {context_files_path}: {e}",
-                exc_info=True,
-            )
-            raise
-
+        self.save_context_files(root)
+        
         # 4. Save directory_file.md
         directory_file_path = os.path.join(ghostcode_dir, Project._DIRECTORY_FILE)
         try:
