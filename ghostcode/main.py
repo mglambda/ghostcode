@@ -438,7 +438,7 @@ class ConfigCommand(BaseModel, CommandInterface):
 class ContextCommand(BaseModel, CommandInterface):
     """Manages files included in the project context."""
 
-    subcommand: Literal["add", "rm", "remove", "ls", "clean"]
+    subcommand: Literal["add", "rm", "remove", "ls", "clean", "lock", "unlock"]
     filepaths: List[str] = Field(
         default_factory=list,
         description="File paths to add or remove, can include wildcards.",
@@ -522,6 +522,49 @@ class ContextCommand(BaseModel, CommandInterface):
             prog.project.context_files.data = new_cfs
             project.save_to_root(prog.project_root)
             result.print("Context files updated and saved.")
+        elif self.subcommand in ["lock", "unlock"]:
+            if not self.filepaths:
+                logger.error(f"File paths required for 'context {self.subcommand}'.")
+                sys.exit(1)
+
+            resolved_paths = set()
+            for pattern in self.filepaths:
+                abs_pattern = os.path.abspath(pattern)
+                for matched_path in glob.glob(abs_pattern, recursive=True):
+                    if os.path.isfile(matched_path):
+                        relative_to_project_root = os.path.relpath(
+                            matched_path, start=prog.project_root
+                        )
+                        resolved_paths.add(relative_to_project_root)
+                    else:
+                        logger.warning(
+                            f"Skipping '{matched_path}': Not a file or does not exist."
+                        )
+
+            action_word = "locked" if self.subcommand == "lock" else "unlocked"
+            target_lock_status = True if self.subcommand == "lock" else False
+            modified_count = 0
+
+            for fp in resolved_paths:
+                found = False
+                for cf in project.context_files.data:
+                    if cf.filepath == fp:
+                        if cf.config.locked != target_lock_status:
+                            cf.config.locked = target_lock_status
+                            result.print(f"File '{fp}' {action_word}.")
+                            modified_count += 1
+                        else:
+                            result.print(f"File '{fp}' is already {action_word}. Skipping.")
+                        found = True
+                        break
+                if not found:
+                    result.print(f"File '{fp}' not found in context. Skipping.")
+            
+            if modified_count > 0:
+                project.save_to_root(prog.project_root)
+                result.print("Context file lock statuses updated and saved.")
+            else:
+                result.print("No context files modified.")
         return result
 
 class DiscoverCommand(BaseModel, CommandInterface):    
@@ -1306,6 +1349,30 @@ def _main() -> None:
         "clean", aliases=[], help="Remove bogus or non-existing files from context."
     )
     context_clean_parser.set_defaults(func=lambda args: ContextCommand(subcommand="clean"))
+
+    context_lock_parser = context_subparsers.add_parser(
+        "lock", help="Lock file(s) in the project context, preventing their removal."
+    )
+    context_lock_parser.add_argument(
+        "filepaths",
+        nargs="+",
+        help="One or more file paths (can include wildcards like '*.py', 'src/**.js').",
+    )
+    context_lock_parser.set_defaults(
+        func=lambda args: ContextCommand(subcommand="lock", filepaths=args.filepaths)
+    )
+
+    context_unlock_parser = context_subparsers.add_parser(
+        "unlock", help="Unlock file(s) in the project context, allowing their removal."
+    )
+    context_unlock_parser.add_argument(
+        "filepaths",
+        nargs="+",
+        help="One or more file paths (can include wildcards like '*.py', 'src/**.js').",
+    )
+    context_unlock_parser.set_defaults(
+        func=lambda args: ContextCommand(subcommand="unlock", filepaths=args.filepaths)
+    )
 
     context_add_parser = context_subparsers.add_parser(
         "add", help="Add file(s) to the project context. Supports wildcards."
