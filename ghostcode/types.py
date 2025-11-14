@@ -78,7 +78,6 @@ class CanBeChatMessage(Protocol):
 ### --- Default Configurations ---
 # Default configuration for the coder LLM (e.g., for planning, complex reasoning)
 DEFAULT_CODER_LLM_CONFIG = {
-    "model": "models/gemini-2.5-flash",
     "temperature": 0.2,
     "max_length": -1,
     "top_p": 0.9,
@@ -94,7 +93,6 @@ DEFAULT_CODER_LLM_CONFIG = {
 
 # Default configuration for the worker LLM (e.g., for generating code snippets, answering questions)
 DEFAULT_WORKER_LLM_CONFIG = {
-    "model": "llama3",  # Placeholder, user should configure their local model
     "temperature": 0.7,
     "max_length": -1,
     "top_p": 0.95,
@@ -209,16 +207,61 @@ class UserConfig(BaseModel):
         description="The most general API key. This is used for a LLM backend service that requires an API key if none of the specific API keys are set.",
     )
 
+    generic_model_coder: str = Field(
+        default = "",
+        description = "The model t ouse when using the 'generic' backend with the coder LLM. The generic backend targets an OpenAI compatible API and is used e.g. with local LLMs, where model selection is usually not available, so in many cases this parameter is unused."
+    )
+
+    generic_model_worker: str = Field(
+        default = "",
+        description = "The model t ouse when using the 'generic' backend with the worker LLM. The generic backend targets an OpenAI compatible API and is used e.g. with local LLMs, where model selection is usually not available, so in many cases this parameter is unused."
+    )
+    
     openai_api_key: str = Field(
         default="",
         description="Used with Chat-GPT and the OpenAI LLM backend. Get your API key at https://openai.com\nIf this key is set and you use openai as your backend, it will have precedence over the generic api_key.",
     )
+    
+    openai_model_coder: str = Field(
+        default = "Chat-GPT-5.1",
+        description = "Which model to use when querying the OpenAI backend with the coder LLM."
+    )
 
+    openai_model_worker: str = Field(
+        default = "Chat-GPT-5.1",
+        description = "Which model to use when querying the OpenAI backend with the worker LLM."
+    )    
+    
     google_api_key: str = Field(
         default="",
         description="Use with Gemini and the Google AI Studio API. Get your API key at https://aistudio.google.com\nIf this key is set and you use google as your backend, it will have precedence over the generic api_key.",
     )
 
+    google_model_coder: str = Field(
+        default = "models/gemini-2.5-flash",
+        description = "Model to use when querying the google AI Studio backend with the coder LLM."
+    )
+
+    google_model_worker: str = Field(
+        default = "models/gemini-2.0-flash",
+        description = "Model to use when querying the google AI Studio backend with the worker LLM."
+    )
+    
+    deepseek_api_key: str = Field(
+        default = "",
+        description = "API for deepseek https://deepseek.com"
+    )
+
+    deepseek_model_coder: str = Field(
+        default = "deepseek-reasoner",
+        description = "The deepseek model to user for the coder backend."
+    )
+
+    deepseek_model_worker: str = Field(
+        default = "deepseek-reasoner",
+        description = "The deepseek model to user for the worker backend."
+    )
+    
     newbie: bool = Field(
         default=True,
         description="If true, ghostcode will occasionally print out helpful tips and be generally more verbose and nanny-like. Finding this setting and successfully setting it to False is your trial-by-fire to transcend the newbie stage.",
@@ -333,7 +376,35 @@ class UserConfig(BaseModel):
             )
             raise
 
+    def get_model(self, agent: AIAgent, backend: str | LLMBackend) -> str:
+        """Returns the model configured for the given backend."""
+        print(f"debug: {backend}")
+        if isinstance(backend, str):
+            final_backend: LLMBackend = LLMBackend[backend]
+        else:
+            final_backend = backend
 
+        match final_backend:
+            case LLMBackend.generic:
+                if agent == AIAgent.CODER:
+                    return self.generic_model_coder
+                else:
+                    return self.generic_model_worker
+            case LLMBackend.google:
+                if agent == AIAgent.CODER:
+                    return self.google_model_coder
+                else:
+                    return self.google_model_worker
+            case LLMBackend.deepseek:
+                if agent == AIAgent.CODER:
+                    return self.deepseek_model_coder
+                else:
+                    return self.deepseek_model_worker
+            case _:
+                logger.warning(f"Unsuported backend {final_backend} for model selection.")
+                return ""
+            
+                    
 class ProjectConfig(BaseModel):
     """Contains project wide configuration obptions.
     This is stored in project_root/config.yaml"""
@@ -2397,3 +2468,24 @@ class Program:
 
         save_box_history("coder_box", self.coder_box)
         save_box_history("worker_box", self.worker_box)
+
+    def get_current_backend_coder(self) -> LLMBackend:
+        """Returns the current LLM backend for the coder.
+        The current backend is determined in the order of options in: command line > user config > project config > defaults"""
+        return self.coder_box.get("backend")
+    
+    def get_current_backend_worker(self) -> LLMBackend:
+        """Returns the current LLM backend for the worker.
+        The current backend is determined in the order of options in: command line > user config > project config > defaults"""
+        return self.worker_box.get("backend")
+
+    def get_current_model_coder(self) -> str:
+        """Returns the currently used LLM model for the coder (if any is set). This is not the same as the backend.
+        The model is determined in the order of: command line > user config > project config > default"""
+        return self.coder_box.get("model")
+
+    def get_current_model_worker(self) -> str:
+        """Returns the currently used LLM model used by the worker (if any is set). This is not the same as the backend.
+        The model is determined in the order of: command line > user config > project config > default"""
+        return self.worker_box.get("model")    
+    

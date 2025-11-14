@@ -519,8 +519,8 @@ def coder_query(
                     unique_id=query_coder_action.interaction_history_id,
                     item=types.CoderInteractionHistoryItem(
                         context=prog.project.context_files,
-                        backend=prog.project.config.coder_backend,
-                        model=prog.project.coder_llm_config.get("model", "N/A"),
+                        backend=prog.get_current_backend_coder(),
+                        model=prog.get_current_model_coder(),
                         response=response,
                     ),
                 )

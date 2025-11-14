@@ -695,7 +695,6 @@ class InteractCommand(BaseModel, CommandInterface):
         )
         result.print("Starting interactive session with 👻." + actions_str)
         prog.print("API keys checked. All good.")
-
         # Load existing interaction history if an identifier is provided
         if self.interaction_identifier:
             if prog.project is None:
@@ -746,7 +745,7 @@ class InteractCommand(BaseModel, CommandInterface):
     
     def _prefix_preamble_string(self, prompt: str) -> str:
         """
-        Prefixes the user's prompt with the magic `{{preamble_injection}}` placeholder.
+        Prefixes the user's prompt with the magic `{_{_preamble_injection_}_}` placeholder (without the outer underscores).
         This method *only* adds the placeholder string. The actual content for the
         preamble is dynamically set and updated via `prog.coder_box.set_vars()`
         before each LLM call. This ensures the preamble is always current without
@@ -759,7 +758,7 @@ class InteractCommand(BaseModel, CommandInterface):
         """Prepare a user prompt to be sent to the backend.
 
         This method intelligently constructs the prompt to be sent to the LLM backend.
-        For the *first* message in a new interaction, it includes the `{{preamble_injection}}`
+        For the *first* message in a new interaction, it includes the `{_{_preamble_injection_}_}` (without the outer underscores)
         placeholder by calling `_prefix_preamble_string`. For subsequent messages in an
         ongoing interaction, it sends only the raw user `prompt`.
 
@@ -1059,6 +1058,23 @@ def _main() -> None:
         f"Defaults to {os.path.join(appdirs.user_config_dir('ghostcode'), types.UserConfig._GHOSTCODE_CONFIG_FILE)}.",
     )
 
+    # -- coder-backend argument
+    parser.add_argument(
+        "-C", "--coder-backend",
+        type=str,
+        choices=[backend.name for _, backend in enumerate(ghostbox.LLMBackend)],
+        default="",
+        help="Set the choice of backend for the coder LLM. This will override both project and user configuration options for the coder backend.",
+    )    
+
+    parser.add_argument(
+        "-W", "--worker-backend",
+        type=str,
+        choices=[backend.name for _, backend in enumerate(ghostbox.LLMBackend)],
+        default="",
+        help="Set the choice of backend for the worker LLM. This will override both project and user configuration options for the coder backend.",
+    )    
+    
     # Add --logging argument
     parser.add_argument(
         "--logging",
@@ -1358,15 +1374,18 @@ def _main() -> None:
     # Pass API keys from user_config to Ghostbox instances
     # we catch missing API key and other backend initialization errors here, and inform the user later in commands that actually require backends
     try:
+        worker_backend = project.config.worker_backend if args.worker_backend == "" else args.worker_backend
         worker_box = Ghostbox(
             endpoint=project.config.worker_endpoint,
-            backend=project.config.worker_backend,  # Use string directly
+            backend= worker_backend,
             character_folder=os.path.join(
                 current_project_root, ".ghostcode", project._WORKER_CHARACTER_FOLDER
             ),
             api_key=user_config.api_key,  # General API key
             google_api_key=user_config.google_api_key,
             openai_api_key=user_config.openai_api_key,
+            deepseek_api_key=user_config.deepseek_api_key,
+            model = user_config.get_model(types.AIAgent.CODER, worker_backend),            
             **quiet_options,
         )
     except Exception as e:
@@ -1374,15 +1393,18 @@ def _main() -> None:
         worker_box = ghostbox.from_dummy(**quiet_options)
 
     try:
+        coder_backend = project.config.coder_backend if args.coder_backend == "" else args.coder_backend
         coder_box = Ghostbox(
             endpoint=project.config.coder_endpoint,
-            backend=project.config.coder_backend,  # Use string directly
+            backend=coder_backend,
             character_folder=os.path.join(
                 current_project_root, ".ghostcode", project._CODER_CHARACTER_FOLDER
             ),
             api_key=user_config.api_key,  # General API key
             google_api_key=user_config.google_api_key,
             openai_api_key=user_config.openai_api_key,
+            deepseek_api_key=user_config.deepseek_api_key,
+            model = user_config.get_model(types.AIAgent.CODER, coder_backend),
             **quiet_options,
         )
     except Exception as e:
@@ -1431,3 +1453,4 @@ def _create_interact_command(
 
 if __name__ == "__main__":
     _main()
+
