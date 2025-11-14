@@ -28,7 +28,7 @@ def _run_git_command(
     capture_output: bool = True,
     text: bool = True,
     input: Optional[str] = None,
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
     """
     Internal helper to run a git command and capture its output.
     Does not raise exceptions, but returns subprocess.CompletedProcess which can be checked for errors.
@@ -80,7 +80,7 @@ def is_git_repo(path: str) -> GitResult[bool]:
         # or other errors.
         return GitResult(value=False, error=process.stderr.strip(), original_command=full_command_str)
 
-def get_current_branch(path: str) -> GitResult[Optional[str]]:
+def get_current_branch(path: str) -> GitResult[str]:
     command_args = ["rev-parse", "--abbrev-ref", "HEAD"]
     full_command_str = shlex.join(["git"] + command_args)
     process = _run_git_command(path, command_args)
@@ -213,3 +213,15 @@ def log(path: str, branch: Optional[str] = None, limit: int = 10) -> GitResult[L
         return GitResult(value=commits, original_command=full_command_str)
     else:
         return GitResult(value=[], error=process.stderr.strip(), original_command=full_command_str)
+
+def get_repo_name(path: str) -> GitResult[Optional[str]]:
+    """
+    Returns the name of the Git repository, which is typically the name of its root directory.
+    """
+    is_repo_result = is_git_repo(path)
+    if is_repo_result.is_err() or not is_repo_result.value:
+        return GitResult(value=None, error=is_repo_result.error or "Not a Git repository.", original_command=is_repo_result.original_command)
+    
+    # The repository name is the basename of the project root directory
+    repo_name = os.path.basename(path)
+    return GitResult(value=repo_name, original_command=f"os.path.basename({path})")

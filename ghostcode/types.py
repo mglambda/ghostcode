@@ -30,6 +30,7 @@ from ghostcode.utility import (
 )
 from ghostcode import shell
 import appdirs  # Added for platform-specific config directory
+from . import git
 
 # --- Logging Setup ---
 # Configure a basic logger for the ghostcode project
@@ -450,6 +451,10 @@ class ProjectConfig(BaseModel):
         description="How many lines from the tail of the logs to show to an LLM backend when prompting.",
     )
 
+    git_integration: bool = Field(
+        default = True,
+        description = "When False, ghostcode will ignore any git repositories that are coexisting with it. You will lose branch and commit information on interactions, and many other features."
+    )
 
 # --- Type Definitions ---
 class ContextFileConfig(BaseModel):
@@ -2262,13 +2267,28 @@ class Program:
         )
         # Register shutdown to ensure PyAudio resources are released on program exit
         atexit.register(self.sound_manager.shutdown)
-    
+    def has_git_integration(self) -> bool:
+        """Returns true if git integration is enabled for the current project.
+            You still have to check for availability yourself, this just allows the project to disable it."""
+        if self.project is None:
+            return False
+
+        return self.project.config.git_integration
+            
     def _get_cli_prompt(self) -> str:
         """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
+        git_str = ""
+        if self.has_git_integration():
+            root = self.project_root if self.project_root else ""
+            repo_gr = git.get_repo_name(root)
+            branch_gr = git.get_current_branch(root)
+            if repo_gr.value or branch_gr.value:
+                git_str = f"[{repo_gr.value}:{branch_gr.value}] "
+        
         # some ghostbox internal magic to get the token count
         coder_tokens = self.coder_box._plumbing._get_last_result_tokens()
         worker_tokens = self.worker_box._plumbing._get_last_result_tokens()
-        return f" 👻{coder_tokens} 🔧{worker_tokens} >"
+        return f" 👻{coder_tokens} 🔧{worker_tokens} {git_str}>"
 
     def _has_api_keys(self) -> Dict[LLMBackend, bool]:
         """
