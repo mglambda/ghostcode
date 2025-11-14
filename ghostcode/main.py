@@ -667,7 +667,10 @@ class DiscoverCommand(BaseModel, CommandInterface):
         # Remove explicitly disabled languages
         enabled_languages_set = enabled_languages_set - disabled_languages_set
 
-        for root, _, files in os.walk(target_abs_path):
+        for root, dirs, files in os.walk(target_abs_path):
+            # Filter out directories starting with '_' to prevent recursion into them
+            dirs[:] = [d for d in dirs if not d.startswith('_')]
+
             for filename in files:
                 abs_filepath = os.path.join(root, filename)
                 relative_filepath = os.path.relpath(abs_filepath, start=prog.project_root)
