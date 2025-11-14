@@ -406,8 +406,14 @@ class ContextFile(BaseModel):
             if 'filepath' in values:
                 values['abs_filepath'] = os.path.abspath(values['filepath'])
         return values
-    
 
+    def get_abs_filepath(self) -> str:
+        """Get the abs path. Helps narrow the type."""
+        if self.abs_filepath is None:
+            # never happens at runtime
+            return ""
+        return self.abs_filepath
+    
 class ContextFiles(BaseModel):
     """Encapsulates the files (both code and otherwise) that are tracked by the project. Tracked files are sent to the cloud LLM with the prompt.
     To keep it simple and human-readable, filepaths are stored in .ghostcode/context_files, one per line, all relative to the directory that the .ghostcode directory is in. This file may change frequently.

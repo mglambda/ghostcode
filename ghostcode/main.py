@@ -526,7 +526,7 @@ class ContextCommand(BaseModel, CommandInterface):
             cfs = prog.project.context_files.data
             new_cfs = []
             for cf in cfs:
-                if not os.path.isfile(cf.filepath):
+                if not os.path.isfile(cf.get_abs_filepath()):
                     result.print(f" - Removing {cf.filepath}")
                     continue
                 else:
