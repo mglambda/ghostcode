@@ -378,7 +378,6 @@ class UserConfig(BaseModel):
 
     def get_model(self, agent: AIAgent, backend: str | LLMBackend) -> str:
         """Returns the model configured for the given backend."""
-        print(f"debug: {backend}")
         if isinstance(backend, str):
             final_backend: LLMBackend = LLMBackend[backend]
         else:
