@@ -22,7 +22,8 @@ from .utility import (
     show_model_nt,
     timestamp_now_iso8601
 )
-from .idle_worker import IdleWorker, IdleTask
+if TYPE_CHECKING:
+    from .idle_worker import IdleWorker, IdleTask
 
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
@@ -46,7 +47,7 @@ class Program:
     )
 
     # executes background tasks during interactions
-    idle_worker: IdleWorker = field(
+    idle_worker: 'IdleWorker' = field(
         init = False
     )
     # holds the actions that are processes during single interactions. FIFO style
@@ -75,6 +76,7 @@ class Program:
     _LOCKFILE: ClassVar[str] = "interaction.lock"
 
     def __post_init__(self) -> None:
+        from .idle_worker import IdleWorker, IdleTask        
         sound_dir = ghostcode.get_ghostcode_data("sounds")
         self.sound_manager = SoundManager(
             sound_directory=sound_dir,
@@ -84,7 +86,7 @@ class Program:
         # set up idle worker but don't start it yet
         # by default, it does all the tasks in the priority defined in IdleTask
         # FIXME: use user config options for duration etc.
-        self.dile_worker = IdleWorker(
+        self.idle_worker = IdleWorker(
             prog_bp = self,
             idle_timeout = 30.0
         )

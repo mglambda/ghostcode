@@ -44,6 +44,7 @@ class IdleWorker:
     
     def __post_init__(self) -> None:
         # make sure this is false
+        self._stop_flag = Event()
         self._stop_flag.clear()
         # and we explicitly do not start the idle worker atuomatically. user has to call start()
         logger.info(f"Idle worker initialized with a timeout duration of {self.idle_timeout:2f} seconds. Waiting for stat() call.")
