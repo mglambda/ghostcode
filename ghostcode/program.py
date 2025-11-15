@@ -16,7 +16,7 @@ import ghostcode
 from .types import *
 from . import git
 from . import shell
-from .sound_manager import SoundManager
+from .soundmanager import SoundManager
 from .ansi_colors import Color256, colored
 from .utility import (
     show_model_nt,
