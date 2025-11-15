@@ -1,11 +1,12 @@
 # slash_commands.py
 from typing import *
 import shlex
-from ghostcode import types
 from dataclasses import dataclass, field
 import json
 import logging
 from enum import Enum
+from . import types
+from .program import Program
 
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.slash_commands")
@@ -38,17 +39,17 @@ class SlashCommand:
 
     # the function that will be invoked in the program and interaction context. args will be the string the user put behind the slash command, parsed by shlex.tokenize
     function: Callable[
-        [types.Program, types.InteractionHistory, Sequence[str]], SlashCommandResult
+        [Program, types.InteractionHistory, Sequence[str]], SlashCommandResult
     ]
 
     ### implementations ###
 
 
 def slash_traceback(
-    prog: types.Program, interaction: types.InteractionHistory, args: Sequence[str]
+    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
 ) -> SlashCommandResult:
     # this is a bit icky but ok
-    from ghostcode.main import EXCEPTION_HANDLER
+    from .logconfig import EXCEPTION_HANDLER
 
     if (tr_str := EXCEPTION_HANDLER.try_get_last_traceback()) is not None:
         print(
@@ -60,7 +61,7 @@ def slash_traceback(
 
 
 def slash_save(
-    prog: types.Program, interaction: types.InteractionHistory, args: Sequence[str]
+    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
 ) -> SlashCommandResult:
     # FIXME: handle args for optional filepath
     filepath = "out.txt"
@@ -123,7 +124,7 @@ slash_command_list = [
 
 
 def try_command(
-    prog: types.Program, interaction: types.InteractionHistory, input_line: str
+    prog: Program, interaction: types.InteractionHistory, input_line: str
 ) -> SlashCommandResult:
     """Given a program and interaction context, tries to find a command and arguments in input_line and run it.
     If the given input line does not appear to be a command, the return value is NOT_A_COMMAND.

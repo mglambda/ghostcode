@@ -1,8 +1,8 @@
 from typing import *
 from pydantic import BaseModel, Field
-from ghostcode import types
-from ghostcode.types import Program
-from ghostcode.utility import quoted_if_nonempty, show_model, timestamp_now_iso8601
+from . import types
+from .utility import quoted_if_nonempty, show_model, timestamp_now_iso8601
+from .program import Program
 import logging
 
 # --- Logging Setup ---

@@ -6,13 +6,13 @@ import os
 import shutil
 import json
 import logging
-from ghostcode import types
-from ghostcode.progress_printer import ProgressPrinter
-from ghostcode.ansi_colors import Color256
-from ghostcode.types import Program
-from ghostcode import prompts
+from . import types
+from .progress_printer import ProgressPrinter
+from .ansi_colors import Color256
+from .program import Program
+from  . import prompts
 import time
-from ghostcode.utility import (
+from .utility import (
     levenshtein,
     time_function_with_logging,
     show_model,
