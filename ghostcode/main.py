@@ -1146,72 +1146,71 @@ class InteractCommand(BaseModel, CommandInterface):
             "Multiline mode enabled. Type your prompt over multiple lines.\nType a single '\\' and hit enter to submit.\nType /quit or CTRL+D to quit."
         )
 
-        while True:
-            try:
-                if current_user_input == "":
-                    # don't print this if user is building multi-line input
-                    prog.print(prog._get_cli_prompt(), end="")
-                line = input()
-            except EOFError:
-                break  # User pressed CTRL+D, exit interaction
+        try:
+            with prog.interaction_lock(
+                    interaction_history_id=self.interaction_history.unique_id
+            ):                    
+                while True:
+                    try:
+                        if current_user_input == "":
+                            # don't print this if user is building multi-line input
+                            prog.print(prog._get_cli_prompt(), end="")
+                        line = input()
+                    except EOFError:
+                        break  # User pressed CTRL+D, exit interaction
 
-            # Handle slash commands
-            match slash_commands.try_command(prog, self.interaction_history, line):
-                case slash_commands.SlashCommandResult.OK:
-                    continue  # Command handled, go to next loop iteration (ask for input)
-                case slash_commands.SlashCommandResult.HALT:
-                    break  # Command halted, exit interaction
-                case slash_commands.SlashCommandResult.COMMAND_NOT_FOUND:
-                    prog.print(f"Unrecognized command: {line}")
-                    continue
-                case slash_commands.SlashCommandResult.BAD_ARGUMENTS:
-                    prog.print(
-                        f"Invalid arguments. Try /help COMMAND for more information."
-                    )
-                    continue
-                case slash_commands.SlashCommandResult.ACTIONS_OFF:
-                    if self.actions:
-                        self.actions = False
-                        prog.print("Enabled talk mode. Coder backend will generate text only, no file edits.")
-                    else:
-                        prog.print("Talk mode already enabled, use /interact to switch to interactive mode.")
-                case slash_commands.SlashCommandResult.ACTIONS_ON:
-                    if not(self.actions):
-                        self.actions = True
-                        prog.print("Interact mode enabled. Coder backend will generate code and produce file edits.")
-                    else:
-                        prog.print("Interact mode already enabled. Use /talk to disable code generation and file edits.")
-                case _:
-                    pass  # Not a slash command, accumulate input
+                    # Handle slash commands
+                    match slash_commands.try_command(prog, self.interaction_history, line):
+                        case slash_commands.SlashCommandResult.OK:
+                            continue  # Command handled, go to next loop iteration (ask for input)
+                        case slash_commands.SlashCommandResult.HALT:
+                            break  # Command halted, exit interaction
+                        case slash_commands.SlashCommandResult.COMMAND_NOT_FOUND:
+                            prog.print(f"Unrecognized command: {line}")
+                            continue
+                        case slash_commands.SlashCommandResult.BAD_ARGUMENTS:
+                            prog.print(
+                                f"Invalid arguments. Try /help COMMAND for more information."
+                            )
+                            continue
+                        case slash_commands.SlashCommandResult.ACTIONS_OFF:
+                            if self.actions:
+                                self.actions = False
+                                prog.print("Enabled talk mode. Coder backend will generate text only, no file edits.")
+                            else:
+                                prog.print("Talk mode already enabled, use /interact to switch to interactive mode.")
+                        case slash_commands.SlashCommandResult.ACTIONS_ON:
+                            if not(self.actions):
+                                self.actions = True
+                                prog.print("Interact mode enabled. Coder backend will generate code and produce file edits.")
+                            else:
+                                prog.print("Interact mode already enabled. Use /talk to disable code generation and file edits.")
+                        case _:
+                            pass  # Not a slash command, accumulate input
 
-            # Accumulate user input
-            if line != "\\":
-                current_user_input += "\n" + line
+                    # Accumulate user input
+                    if line != "\\":
+                        current_user_input += "\n" + line
 
-                if prog.user_config.newbie and current_user_input.endswith("\n\n"):
-                    # user may be frantically trying to submit
-                    prog.print("(Hint: Enter a single backslash (\\) and hit enter to submit your prompt. Disable this message with `ghostcode config set newbie False`)")
+                        if prog.user_config.newbie and current_user_input.endswith("\n\n"):
+                            # user may be frantically trying to submit
+                            prog.print("(Hint: Enter a single backslash (\\) and hit enter to submit your prompt. Disable this message with `ghostcode config set newbie False`)")
 
-                continue  # Keep accumulating
+                        continue  # Keep accumulating
 
-            # If we reach here, it means user typed '\\' to submit
-            if not current_user_input.strip():
-                prog.print(
-                    "Empty prompt. Please provide some input or a slash command."
-                )
-                continue  # Ask for input again
+                    # If we reach here, it means user typed '\\' to submit
+                    if not current_user_input.strip():
+                        prog.print(
+                            "Empty prompt. Please provide some input or a slash command."
+                        )
+                        continue  # Ask for input again
 
-            try:
-                with prog.interaction_lock(
-                        interaction_history_id=self.interaction_history.unique_id,
-                        should_lock=self.actions # Only lock if actions are enabled
-                ):            
                     self._process_user_input(prog, current_user_input)
                     current_user_input = ""  # Clear buffer for next turn
                     self._dump_interaction(prog)  # Save state after each turn
-            except types.InteractionLockError as e:
-                logger.error(f"Failed to acquire lock: {e}")                
-                prog.print(f"Cannot proceed because another ghostcode session is in progress (interaction {prog.lock_read()}).\nPlease finish the ongoing interaction, or force it to close by running ghostcode \nwith `ghostcode interaction --force` or doing /force right here in the terminal. Data may be lost. You have been warned.")
+        except types.InteractionLockError as e:
+            logger.error(f"Failed to acquire lock: {e}")                
+            prog.print(f"Cannot proceed because another ghostcode session is in progress (interaction {prog.lock_read()}).\nPlease finish the ongoing interaction, or force it to close by running ghostcode \nwith `ghostcode interaction --force`. Data may be lost. You have been warned.")
 
         # End of interaction
         prog.debug_dump()                

@@ -2472,7 +2472,7 @@ class Program:
 
 
     @contextmanager
-    def interaction_lock(self, interaction_history_id: str, should_lock: bool) -> Generator[None, None, None]:
+    def interaction_lock(self, interaction_history_id: str, should_lock: bool = True) -> Generator[None, None, None]:
         """
         Context manager for managing interaction locks.
         Acquires a lock if `should_lock` is True and no other lock is held.
