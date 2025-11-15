@@ -1,22 +1,17 @@
 * work-in-progress (WIP, limit 5)
-Add simple check script option that worker runs and passes on to coder on fail
-Ability to add server log or other output logs (this is technically already possible but can we make it more explicit).
 Add interaction folders/groupings.
 Make interaction folders/groupings default to be identical with git branches.
 RAG on past itneractions.
-Make context file list sorted.
-Fix not being able to remove no longer existing files from context files
-Fix glob patterns when adding/removing context files
-Fix newline on some commands.
 Look into locking .ghostcode while interaction is in progress.
-Debug/test raw prompts.
-Test shell command actions.
-Make recovery an action.
-Narrow the type of Action in actions_from_response_part (since it's a response it must be a query action)
-Remove branching code in make_prompt_worker_coder_request after original_action type has been narrowed
-Properly test worker recovery.
 * todo
 ** general
+Narrow the type of Action in actions_from_response_part (since it's a response it must be a query action)
+Remove branching code in make_prompt_worker_coder_request after original_action type has been narrowed
+Make recovery an action.
+Fix newline on some commands.
+Fix glob patterns when adding/removing context files
+Add simple check script option that worker runs and passes on to coder on fail
+Ability to add server log or other output logs (this is technically already possible but can we make it more explicit).
 Make it so that pasted interaction IDs cause a rag lookup.
 make unique_ids into a newtype (e.g. InteractionID)
 Simulate file edits and show diffs
@@ -42,6 +37,10 @@ investigate other uses
 ** CLI
 Redo the entire action_queue printing stuff properly
 Add /help command.
+** testing
+Properly test worker recovery.
+Test shell command actions.
+Debug/test raw prompts.
 ** coder
 Investigate wether structured output degrades performance.
 ** worker
@@ -83,3 +82,5 @@ make proper multiline mode utility function (discarded - I like the logic in _lo
 Improve file edit displays
 Implement context altering.
 Add style.md.
+Make context file list sorted.
+Fix not being able to remove no longer existing files from context files

@@ -1147,7 +1147,9 @@ class InteractionHistory(BaseModel):
         default = None,
         description = "The name of the git branch, if any, that was checked out at the time this interaction was created."
     )
-        
+
+    timestamp: str = Field(default_factory=timestamp_now_iso8601)
+
     def empty(self) -> bool:
         """Returns true if the history is empty."""
         return self.contents == []
@@ -2289,6 +2291,48 @@ class Project(BaseModel):
             logger.warning(f"CouldN't open style.md file. Reason: {e}")
         return ""
 
+    def get_branch_interactions(self, target_branch: Optional[str] = None, exclude_interaction_ids: Sequence[str] = ()) -> List["InteractionHistory"]:
+        """
+        Retrieves interaction histories filtered by branch name, excluding specified interaction IDs.
+
+        Args:
+            target_branch (Optional[str]): The branch name to filter by. If None, the current Git branch
+                                          (if git_integration is enabled) will be used.
+            exclude_interaction_ids (Sequence[str]): A sequence of unique_ids of interactions to exclude
+                                                     from the results.
+
+        Returns:
+            List[InteractionHistory]: A list of matching interaction histories, sorted chronologically.
+        """
+        def exclude_interactions(interactions: List[InteractionHistory], exclude_interaction_ids: Sequence[str], effective_target_branch: Optional[str] = None) -> List[InteractionHistory]:
+            excluded_ids_set = set(exclude_interaction_ids)
+            return sorted(
+                [interaction for interaction in interactions
+                 if interaction.branch_name == effective_target_branch and interaction.unique_id not in excluded_ids_set],
+                # FIXME: we are sorting by date when interaction was started, but it might be more interesting to sort by date of last update. this is a design decision, not sure need to test it out
+                key=lambda i: i.timestamp
+            )
+
+        if not self.config.git_integration:
+            logger.warning("Git integration is disabled. Cannot filter interactions by branch.")
+            return exclude_interactions(self.interactions, exclude_interaction_ids)
+
+
+        if target_branch is None:
+            root = self.find_project_root()
+            if root:
+                branch_gr = git.get_current_branch(root)
+                if branch_gr.is_ok() and branch_gr.value:
+                    return exclude_interactions(self.interactions, exclude_interaction_ids, branch_gr.value)
+                else:
+                    logger.debug(f"Could not determine current branch: {branch_gr.error}. Returning all interactions.")
+                    return exclude_interactions(self.interactions, exclude_interaction_ids)
+            else:
+                logger.debug("Project root not found. Cannot determine current branch. Returning empty list for branch interactions.")
+                return exclude_interactions(self.interactions, exclude_interaction_ids)
+        return exclude_interactions(self.interactions, exclude_interaction_ids, target_branch)
+    
+    
 class CosmeticProgramState(Enum):
     """A vague indicator of program state. This is used to e.g. color certain outputs in the interface. Do not use this to query program state programmatically."""
 
