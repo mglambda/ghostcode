@@ -1177,14 +1177,53 @@ class InteractionHistory(BaseModel):
             )
         )
 
-    def show(self, include_code: bool = True, drop_last: int = 0) -> str:
-        """Returns a human readable text representation of the history."""
-        return "\n".join(
+    def _get_common_prefix(self, heading_level: int) -> str:
+        """Helper to generate the common header for LLM-focused displays."""
+        git_str = ""
+        # Only include git info if there's at least one content item and a git_commit_hash
+        if self.contents and self.contents[0].git_commit_hash is not None:
+            git_str = f"@[commit {self.contents[0].git_commit_hash}]"
+
+        # Use the interaction's own timestamp for 'Started'
+        started_str = f"Started: {self.timestamp}\n"
+
+        # Build the main header line
+        header_line = f"{('#' * heading_level)} Interaction {self.unique_id} (Tag: {self.tag if self.tag else 'N/A'}){git_str}\n"
+
+        # Add title and started info
+        title_line = f"Title: {self.title}\n" if self.title else ""
+
+        return f"{header_line}{title_line}{started_str}"
+
+    def show(self, include_code: bool = True, drop_last: int = 0, heading_level: int = 3) -> str:
+        """Returns a human-readable text representation of the history, suitable for LLMs.
+        Includes full conversational turns. Can optionally exclude code and drop last N items.
+        """
+        prefix = self._get_common_prefix(heading_level)
+
+        content_str = "\n".join(
             [
                 item.show(include_code=include_code)
                 for item in self.contents[: len(self.contents) - drop_last]
             ]
         )
+        return f"{prefix}\n{content_str}"
+
+    def show_summary(self, heading_level: int = 3) -> str:
+        """Returns a concise summary of the interaction, suitable for LLMs, without code.
+        Prioritizes the 'summary' field, falls back to 'title'.
+        """
+        prefix = self._get_common_prefix(heading_level)
+        summary_content = self.summary if self.summary else self.title
+        if summary_content:
+            return f"{prefix}Summary: {summary_content}\n"
+        return prefix # Return just the prefix if no summary or title
+
+    def show_title_only(self, heading_level: int = 3) -> str:
+        """Returns only the title and basic identifiers of the interaction, suitable for LLMs.
+        """
+        # The _get_common_prefix already includes the title if available
+        return self._get_common_prefix(heading_level)
 
     def to_chat_messages(self) -> List[ghostbox.ChatMessage]:
         """Turn an InteractionHistory into a ghostbox chat message history compatible with ghostbox.set_history."""

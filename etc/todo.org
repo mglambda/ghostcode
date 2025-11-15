@@ -1,4 +1,5 @@
 * work-in-progress (WIP, limit 5)
+find out why sometimes titles aren't being assigned
 Add interaction folders/groupings.
 Make interaction folders/groupings default to be identical with git branches.
 RAG on past itneractions.

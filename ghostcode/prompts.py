@@ -402,6 +402,51 @@ def make_blocks_context_files_short(prog: Program) -> str:
 
     return prog.project.context_files.to_plaintext()
 
+def make_blocks_recent_interaction_summaries(
+    prog: Program,
+    *,
+    mode: Literal["full", "titles_only", "none"],
+    max_full_chars: int = 1500, # Max characters for a 'full' interaction summary
+    num_full_display: int = 3,   # How many most recent interactions to show 'full'
+    num_summary_display: int = 10, # Up to this many (after full) to show as summary/title
+    heading: str = "Recent Interaction Histories (current branch)",
+    heading_level: int = 2 # Overall heading level for the block
+) -> str:
+    if mode == "none":
+        return ""
+
+    recent_histories = prog.get_branch_interactions()
+    if not recent_histories:
+        return ""
+
+    output_blocks = []
+    output_blocks.append(f"{('#' * heading_level)} {heading}\n")
+
+    # Iterate from most recent to oldest
+    for i, history in enumerate(reversed(recent_histories)):
+        # Determine the heading level for individual interaction blocks
+        interaction_heading_level = heading_level + 1
+
+        if mode == "full" and i < num_full_display:
+            # Get full text (excluding code) from the history object itself
+            full_text = history.show(include_code=False, heading_level=interaction_heading_level)
+            if len(full_text) > max_full_chars:
+                # Truncate the full block if it's too long
+                half_chars = max_full_chars // 2
+                truncated_text = full_text[:half_chars] + "\n... (truncated) ...\n" + full_text[-half_chars:]
+                output_blocks.append(truncated_text)
+            else:
+                output_blocks.append(full_text)
+        elif i < num_summary_display:
+            # Get summary from the history object
+            output_blocks.append(history.show_summary(heading_level=interaction_heading_level))
+        else:
+            # Get title only from the history object
+            output_blocks.append(history.show_title_only(heading_level=interaction_heading_level))
+
+        output_blocks.append("---\n") # Separator for readability
+
+    return "\n".join(output_blocks)
 
 def make_prompt_worker_query(
     prog: Program, interaction_history_id: Optional[str] = None
