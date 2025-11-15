@@ -1603,6 +1603,7 @@ class Project(BaseModel):
         default="",
         description="A directory file is an automatically generated markdown file intended to keep LLMs from introducing changes that break the project. It usually contains a project overview and important information about the project, such as module dependencies, architectural limitations, technology choices, and much more. Stored in .ghostcode/directory_file.md.",
     )
+    
     project_metadata: Optional[ProjectMetadata] = Field(
         default_factory=lambda: ProjectMetadata(**DEFAULT_PROJECT_METADATA)
     )
@@ -2209,7 +2210,10 @@ class Project(BaseModel):
 
     def new_interaction_history(self) -> InteractionHistory:
         """Create a new InteractionHistory and return a reference to it."""
-        self.interactions.append(interaction_history := InteractionHistory())
+        root = self.find_project_root()
+        branch_name_gr = git.get_current_branch(root if root is not None else "")
+        interaction_history = InteractionHistory(branch_name = branch_name_gr.value) 
+        self.interactions.append(interaction_history)
         return interaction_history
 
     def get_interaction_history(
