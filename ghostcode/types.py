@@ -1696,8 +1696,8 @@ class Project(BaseModel):
 
     context_files: ContextFiles
     nag_sources: List[NagSourceBase] = Field(
-        default_factory = [],
-        discriminator = "type",
+        default_factory = list,
+        discriminator = "type",        
         description = "Nag sources to be monitored for the nag command."
     )
     
