@@ -307,6 +307,7 @@ class Program:
     def queue_action(self, action: Action) -> None:
         """Queues an action at the end of the action queue."""
         logger.info(f"Queueing action {type(action)}.")
+        self.idle_worker.update()
         self.action_queue.append(action)
 
     def push_front_action(self, action: Action) -> None:
@@ -314,6 +315,7 @@ class Program:
         logger.info(
             f"Pushing action {action_show_short(action)} to the front of the action queue."
         )
+        self.idle_worker.update()
         self.action_queue = [action] + self.action_queue
 
     def confirm_action(
@@ -330,6 +332,7 @@ class Program:
         abridge = 80  # type: Optional[int]
         try:
             while True:
+                self.idle_worker.update()                
                 choice = input(
                     "Permit? yes (y), no (n), yes to all (a), cancel all (q), or show more info (?, default):"
                 )

@@ -1018,13 +1018,17 @@ class InteractCommand(BaseModel, CommandInterface):
         try:
             with prog.interaction_lock(
                     interaction_history_id=self.interaction_history.unique_id
-            ):                    
+            ):
+
                 while True:
                     try:
                         if current_user_input == "":
                             # don't print this if user is building multi-line input
                             prog.print(prog._get_cli_prompt(), end="")
-                        line = input()
+                        with prog.idle_work():
+                            # we only idle on the cli prompt, everything else is guaranteed to have the worker be shut off
+                            line = input()
+
                     except EOFError:
                         break  # User pressed CTRL+D, exit interaction
 

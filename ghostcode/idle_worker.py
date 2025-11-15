@@ -74,6 +74,18 @@ class IdleWorker:
     def update(self) -> None:
         """Called to signify that user activity is happening. This method will reset the internal idle timeout."""
         self._last_update_t = time()
+        self._stop_flag.set()
+
+    def wait(self) -> None:
+        """Updates and blocks until the current task (if any) is done."""
+        self.update()
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=5) # Wait for the thread to finish gracefully
+            if self._worker_thread.is_alive():
+                logger.warning("IdleWorker thread did not terminate gracefully.")
+
+        # time may have passed so why not
+        self.update()
 
     def check_idle_timeout(self) -> bool:
         """Checks to see if enough time has passed without calls to update() and the idle worker should begin to work on tasks."""
