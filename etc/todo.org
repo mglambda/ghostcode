@@ -2,7 +2,7 @@
 Add interaction folders/groupings.
 Make interaction folders/groupings default to be identical with git branches.
 RAG on past itneractions.
-Look into locking .ghostcode while interaction is in progress.
+
 * todo
 ** general
 Narrow the type of Action in actions_from_response_part (since it's a response it must be a query action)
@@ -84,3 +84,5 @@ Implement context altering.
 Add style.md.
 Make context file list sorted.
 Fix not being able to remove no longer existing files from context files
+Look into locking .ghostcode while interaction is in progress.
+Add interaction locking.

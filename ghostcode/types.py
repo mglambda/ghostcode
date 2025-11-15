@@ -2850,4 +2850,20 @@ class Program:
         """Returns the currently used LLM model used by the worker (if any is set). This is not the same as the backend.
         The model is determined in the order of: command line > user config > project config > default"""
         return self.worker_box.get("model")    
-    
+
+    def get_branch_interactions(self, target_branch: Optional[str] = None) -> List[InteractionHistory]:
+        """Returns interactions for a given branch, excluding the current interaction by default if on is ongoing.
+        If no branch name is provided, returns interactions for the current git branch by default.
+        If git is disabled or branch name cannot be determined, all interactions are returned."""
+        # sanity
+        if self.project is None:
+            logger.error(f"Null project during interaction retrieval.")
+            return []
+
+        current_interaction_id = self.lock_read()
+        exclude_ids = [current_interaction_id] if current_interaction_id is not None else []
+        if exclude_ids == []:
+            logger.debug(f"Unable to determine current interaction ID while retrieving branch interactions.")
+
+        # git stuff is handled by the project method
+        return self.project.get_branch_interactions(exclude_interaction_ids = exclude_ids)    

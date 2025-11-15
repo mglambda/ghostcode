@@ -1817,4 +1817,3 @@ def _create_interact_command(
 
 if __name__ == "__main__":
     _main()
-
