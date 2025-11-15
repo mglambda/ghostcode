@@ -596,3 +596,23 @@ Below follows additional context which may be relevant to the request. Please tr
 
 
     
+
+def make_prompt_interaction_summary(interaction: types.InteractionHistory) -> str:
+    """Returns a prompt that should generate a summary for a given interaction history.
+    This is intended for the IdleWorker to fill in missing summaries.
+    """
+    # We provide the full interaction (without code) to give the LLM enough context.
+    # The LLM is instructed to be concise.
+    return f"""## Context
+
+Below is an interaction between a User and a coding assistant LLM.
+
+```txt
+{interaction.show(include_code=False)}
+```    
+
+## User Prompt
+
+Please generate a concise, one-paragraph summary for the above interaction. It should capture the main goal, problem, or topic discussed. Focus on the outcome or the core task.
+Generate only the summary. Do not generate additional output except for the summary that has been requested.
+"""

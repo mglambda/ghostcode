@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from threading import Thread, Event
 from . import types
 from .program import Program
+from . import worker
+from . import prompts
 from time import time, sleep
 import logging
 from enum import StrEnum
@@ -114,7 +116,59 @@ class IdleWorker:
         logger.debug(f"Idle worker thread stopped.")
 
     def _summarize_interactions(self) -> Literal["done", "not_done"]:
-        # fill this in
+        if self.prog_bp.project is None:
+            logger.error(f"Null project in idle worker summary task.")
+            self.stop()
+            return "done"
+        
+        # Retrieve the ID of the currently active interaction, if any, to skip it.
+        current_interaction_id = self.prog_bp.lock_read()
+        
+        # Iterate through interactions to find those needing a title or summary.
+        # We iterate in reverse to prioritize more recent interactions, which are often more relevant.
+        for interaction in reversed(self.prog_bp.project.interactions):
+            # Skip the currently active interaction to prevent conflicts.
+            if current_interaction_id and interaction.unique_id == current_interaction_id:
+                logger.debug(f"Skipping current interaction {interaction.unique_id} for summarization.")
+                continue
+
+            made_changes = False
+
+            # 1. Generate title if missing
+            if not interaction.title.strip():
+                logger.debug(f"Generating title for interaction {interaction.unique_id} (Tag: {interaction.tag}).")
+                new_title = worker.worker_generate_title(self.prog_bp, interaction)
+                if new_title:
+                    interaction.title = new_title
+                    made_changes = True
+                    logger.debug(f"Generated title for {interaction.unique_id}: '{new_title}'.")
+                else:
+                    logger.debug(f"Failed to generate title for interaction {interaction.unique_id}.")
+
+            # 2. Generate summary if missing
+            if not interaction.summary.strip():
+                logger.debug(f"Generating summary for interaction {interaction.unique_id} (Tag: {interaction.tag}).")
+                try:
+                    self.prog_bp.worker_box.clear_history()
+                    summary_prompt = prompts.make_prompt_interaction_summary(interaction)
+                    new_summary = self.prog_bp.worker_box.text(summary_prompt)
+                    if new_summary:
+                        interaction.summary = new_summary
+                        made_changes = True
+                        logger.debug(f"Generated summary for {interaction.unique_id}: '{new_summary[:100]}...'.")
+                    else:
+                        logger.debug(f"Worker returned empty summary for interaction {interaction.unique_id}.")
+                except Exception as e:
+                    logger.debug(f"Error generating summary for interaction {interaction.unique_id}: {e}")
+
+            # If any changes were made, save the project and return 'not_done' to allow other tasks a turn.
+            if made_changes:
+                logger.debug(f"Saving project after updating interaction {interaction.unique_id}.")
+                # FIXME: make this a proper Program.save_interaction_history call
+                self.prog_bp.project.save_to_root(self.prog_bp.project_root) # type: ignore
+                return "not_done"
+
+        logger.debug("No more interactions found needing titles or summaries.")
         return "done"
 
     def _update_directory_file(self) -> Literal["done", "not_done"]:
