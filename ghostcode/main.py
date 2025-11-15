@@ -28,6 +28,7 @@ from . import prompts
 from .utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP, language_from_extension
 from .logconfig import ExceptionListHandler, _configure_logging
 from .program import Program
+from .nag_sources import *
 
 # logger will be configured after argument parsing
 logger: logging.Logger  # Declare logger globally, will be assigned later
