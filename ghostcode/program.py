@@ -486,6 +486,17 @@ class Program:
     def sound_notify(self) -> None:
         self.sound_manager.play("opening1.wav")
 
+    @contextmanager
+    def idle_work(self) -> Generator[None, None, None]:
+        """Context manager that starts the idle worker on entry and stops it on exit."""
+        logger.debug("Entering idle_work context. Starting idle worker.")
+        self.idle_worker.start()
+        try:
+            yield
+        finally:
+            logger.debug("Exiting idle_work context. Stopping idle worker.")
+            self.idle_worker.stop()
+
     def debug_dump(self) -> None:
         """Save some debugging output into .ghostcode/debug/"""
         # FIXME: make this conditional on self.debug which should be set with --debug
