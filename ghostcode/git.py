@@ -214,6 +214,20 @@ def log(path: str, branch: Optional[str] = None, limit: int = 10) -> GitResult[L
     else:
         return GitResult(value=[], error=process.stderr.strip(), original_command=full_command_str)
 
+def _branch_exists(path: str, branch_name: str) -> GitResult[bool]:
+    """
+    Checks if a Git branch exists.
+    """
+    command_args = ["show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"]
+    full_command_str = shlex.join(["git"] + command_args)
+    process = _run_git_command(path, command_args)
+    if process.returncode == 0:
+        return GitResult(value=True, original_command=full_command_str)
+    elif process.returncode == 1: # Not found
+        return GitResult(value=False, original_command=full_command_str)
+    else:
+        return GitResult(value=False, error=process.stderr.strip(), original_command=full_command_str)
+
 def get_repo_name(path: str) -> GitResult[Optional[str]]:
     """
     Returns the name of the Git repository, which is typically the name of its root directory.
@@ -228,11 +242,22 @@ def get_repo_name(path: str) -> GitResult[Optional[str]]:
 
 def checkout_branch(path: str, branch_name: str) -> GitResult[None]:
     """
-    Checks out a specified Git branch.
+    Checks out a specified Git branch, creating it if it doesn't exist.
     """
-    command_args = ["checkout", branch_name]
+    branch_exists_result = _branch_exists(path, branch_name)
+    if branch_exists_result.is_err():
+        return GitResult(value=None, error=branch_exists_result.error, original_command=branch_exists_result.original_command)
+
+    if branch_exists_result.value:
+        # Branch exists, just checkout
+        command_args = ["checkout", branch_name]
+    else:
+        # Branch does not exist, create and checkout
+        command_args = ["checkout", "-b", branch_name]
+
     full_command_str = shlex.join(["git"] + command_args)
     process = _run_git_command(path, command_args)
+
     if process.returncode == 0:
         return GitResult(value=None, original_command=full_command_str)
     else:
