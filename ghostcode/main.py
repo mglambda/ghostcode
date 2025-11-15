@@ -1091,7 +1091,14 @@ class InteractCommand(BaseModel, CommandInterface):
 
         return CommandOutput(text="Finished interaction.")
 
+class NagCommand(BaseModel):
+    """Used to start a read-only voice chat session that monitors certain outputs (tests, type-checkers, log files) and notifies the user about problems (that's the nagging part)."""
 
+    
+    def run(self, prog: Program) -> CommandOutput:
+        result = CommandOutput()
+        return result
+    
 class VerifyCommand(BaseModel):
     """Command to verify program integrity and configuration.
     This is currently only used internally to check for API keys."""

@@ -1,6 +1,5 @@
 * work-in-progress (WIP, limit 5)
-create async worker process
-Add summarization to idle worker tasks.
+Add take_a_break IdleTask to idle worker.
 Think about implementing a lock around dumping history.
 Yeah, refactor history saving (_dump_interaction_history)
 find out why sometimes titles aren't being assigned
@@ -92,3 +91,5 @@ Add interaction locking.
 Add interaction folders/groupings.
 Make interaction folders/groupings default to be identical with git branches.
 Add -b,--branch parameter to interaction commands to automatically checkout a git branch
+create async worker process
+Add summarization to idle worker tasks.
