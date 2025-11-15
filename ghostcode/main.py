@@ -744,7 +744,7 @@ class LogCommand(BaseModel, CommandInterface):
     ) -> str:
         turns_str = f"turns: {num_turns}\n"
         tag_str = f"tag: {interaction.tag}\n" if interaction.tag else ""
-        branch_str = f"branch: {interaction.branch_name}" if interaction.branch_name is not None else ""
+        branch_str = f"branch: {interaction.branch_name}\n" if interaction.branch_name is not None else ""
         git_str = (
             f"commits affected: {", ".join(commits)}\n"
             if (commits := interaction.get_affected_git_commits()) != []
@@ -1609,8 +1609,13 @@ def _main() -> None:
         type=str,
         help="Display a specific interaction in detail by its unique ID or tag.",
     )
+    log_parser.add_argument(
+        "--all-branches",
+        action="store_true",
+        help="Do not filter any interactions based on branches."
+    )
     log_parser.set_defaults(
-        func=lambda args: LogCommand(interaction_identifier=args.interaction)
+        func=lambda args: LogCommand(interaction_identifier=args.interaction, all_branches=args.all_branches)
     )
 
     args = parser.parse_args()    
