@@ -22,6 +22,10 @@ from .utility import (
     show_model_nt,
     timestamp_now_iso8601
 )
+from .idle_worker import IdleWorker, IdleTask
+
+# --- Logging Setup ---
+logger = logging.getLogger("ghostcode.program")
 
 @dataclass
 class Program:
@@ -41,6 +45,10 @@ class Program:
         init = False
     )
 
+    # executes background tasks during interactions
+    idle_worker: IdleWorker = field(
+        init = False
+    )
     # holds the actions that are processes during single interactions. FIFO style
     action_queue: List[Action] = field(
         default_factory=lambda: [],
@@ -73,6 +81,15 @@ class Program:
             sound_enabled = self.user_config.sound_enabled,
             volume_multiplier = self.user_config.sound_volume
         )
+        # set up idle worker but don't start it yet
+        # by default, it does all the tasks in the priority defined in IdleTask
+        # FIXME: use user config options for duration etc.
+        self.dile_worker = IdleWorker(
+            prog_bp = self,
+            idle_timeout = 30.0
+        )
+
+        
         # Register shutdown to ensure PyAudio resources are released on program exit
         atexit.register(self.sound_manager.shutdown)
 
