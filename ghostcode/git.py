@@ -225,3 +225,15 @@ def get_repo_name(path: str) -> GitResult[Optional[str]]:
     # The repository name is the basename of the project root directory
     repo_name = os.path.basename(path)
     return GitResult(value=repo_name, original_command=f"os.path.basename({path})")
+
+def checkout_branch(path: str, branch_name: str) -> GitResult[None]:
+    """
+    Checks out a specified Git branch.
+    """
+    command_args = ["checkout", branch_name]
+    full_command_str = shlex.join(["git"] + command_args)
+    process = _run_git_command(path, command_args)
+    if process.returncode == 0:
+        return GitResult(value=None, original_command=full_command_str)
+    else:
+        return GitResult(value=None, error=process.stderr.strip(), original_command=full_command_str)

@@ -886,6 +886,11 @@ class InteractCommand(BaseModel, CommandInterface):
 
     # whether to force releasing of interaction lock
     force_lock: bool = False
+
+    branch: Optional[str] = Field(
+        default=None,
+        description="Optional Git branch to checkout before starting the interaction."
+    )
     
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
@@ -907,6 +912,24 @@ class InteractCommand(BaseModel, CommandInterface):
         )
         result.print("Starting interactive session with 👻." + actions_str)
         prog.print("API keys checked. All good.")
+
+        # Handle branch checkout if specified
+        if self.branch:
+            if not prog.has_git_integration():
+                error_msg = "Git integration is disabled in project configuration. Cannot checkout branch." 
+                prog.print(f"Error: {error_msg}")
+                logger.error(error_msg)
+                sys.exit(1)
+
+            prog.print(f"Attempting to checkout branch '{self.branch}'...")
+            checkout_result = git.checkout_branch(prog.project_root, self.branch)
+            if checkout_result.is_err():
+                error_msg = f"Failed to checkout branch '{self.branch}': {checkout_result.error}"
+                prog.print(f"Error: {error_msg}")
+                logger.error(error_msg)
+                sys.exit(1)
+            prog.print(f"Successfully checked out branch '{self.branch}'.")
+
         # Load existing interaction history if an identifier is provided
         if self.interaction_identifier:
             if prog.project is None:
@@ -1592,8 +1615,15 @@ def _main() -> None:
         action="store_true",
         help="Force release of interaction lock if one exists.",
     )
+    interact_parser.add_argument(
+        "-b",
+        "--branch",
+        type=str,
+        default=None,
+        help="Specify a Git branch to checkout before starting the interaction.",
+    )
     interact_parser.set_defaults(
-        func=lambda args: _create_interact_command(args, actions=args.actions, force_lock=args.force)
+        func=lambda args: _create_interact_command(args, actions=args.actions, force_lock=args.force, branch=args.branch)
     )
 
     # Talk command
@@ -1630,8 +1660,15 @@ def _main() -> None:
         action="store_true",
         help="Force release of interaction lock if one exists.",
     )
+    talk_parser.add_argument(
+        "-b",
+        "--branch",
+        type=str,
+        default=None,
+        help="Specify a Git branch to checkout before starting the interaction.",
+    )
     talk_parser.set_defaults(
-        func=lambda args: _create_interact_command(args, actions=False, force_lock=args.force)
+        func=lambda args: _create_interact_command(args, actions=False, force_lock=args.force, branch=args.branch)
     )
     
     # Log command
@@ -1792,7 +1829,7 @@ def _main() -> None:
 
 
 def _create_interact_command(
-    args: argparse.Namespace, actions: bool, force_lock: bool = False
+    args: argparse.Namespace, actions: bool, force_lock: bool = False, branch: Optional[str] = None
 ) -> InteractCommand:
     """Helper function to create InteractCommand, handling skip_to logic and mutual exclusivity."""
     skip_to_agent: Optional[types.AIAgent] = None
@@ -1813,6 +1850,7 @@ def _create_interact_command(
         skip_to=skip_to_agent,
         interaction_identifier=args.interaction,
         force_lock=force_lock,
+        branch=branch,
     )
 
 

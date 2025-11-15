@@ -1,7 +1,7 @@
 * work-in-progress (WIP, limit 5)
+Add -b,--branch parameter to interaction commands to automatically checkout a git branch
+create async worker process
 find out why sometimes titles aren't being assigned
-Add interaction folders/groupings.
-Make interaction folders/groupings default to be identical with git branches.
 RAG on past itneractions.
 
 * todo
@@ -87,3 +87,5 @@ Make context file list sorted.
 Fix not being able to remove no longer existing files from context files
 Look into locking .ghostcode while interaction is in progress.
 Add interaction locking.
+Add interaction folders/groupings.
+Make interaction folders/groupings default to be identical with git branches.
