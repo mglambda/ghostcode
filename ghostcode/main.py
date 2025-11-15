@@ -883,6 +883,9 @@ class InteractCommand(BaseModel, CommandInterface):
         default = 0,
         description = "Number of messages in initial interaction. For new interactions this is always zero. It may be nonzero if an existing interaction is loaded. Used primarily to check wether there was any real change at all and if the current interaction needs to be saved."
     )
+
+    # whether to force releasing of interaction lock
+    force_lock: bool = False
     
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
@@ -1115,6 +1118,16 @@ class InteractCommand(BaseModel, CommandInterface):
         if self.interaction_history is None:
             self.interaction_history = prog.project.new_interaction_history()
 
+        # lock guard
+        if (lock_id := prog.lock_read()) is not None:
+            if self.force_lock:
+                logger.warning(f"Failed to acquire lock because of interaction {lock_id}, but lock will be forced.")
+                prog.lock_release()
+            else:
+                logger.error(f"Failed to acquire interaction lock due to ongoing interaction {lock_id} .")
+                intermediate_result.print(f"Failed to acquire lock. Aborting.\nAnother ghostcode session (interaction {lock_id}) is currently in progress. Please finish that interaction, or\nrestart ghostcode with `ghostcode interaction --force` to force it closed. This may lead to data loss. You have been warned.")
+                return intermediate_result
+            
         # Initial prompt handling
         if self.initial_prompt is not None:
             current_user_input = self.initial_prompt
@@ -1188,9 +1201,18 @@ class InteractCommand(BaseModel, CommandInterface):
                 )
                 continue  # Ask for input again
 
-            self._process_user_input(prog, current_user_input)
-            current_user_input = ""  # Clear buffer for next turn
-            self._dump_interaction(prog)  # Save state after each turn
+            try:
+                with prog.interaction_lock(
+                        interaction_history_id=self.interaction_history.unique_id,
+                        should_lock=self.actions # Only lock if actions are enabled
+                ):            
+                    self._process_user_input(prog, current_user_input)
+                    current_user_input = ""  # Clear buffer for next turn
+                    self._dump_interaction(prog)  # Save state after each turn
+            except types.InteractionLockError as e:
+                logger.error(f"Failed to acquire lock: {e}")                
+                prog.print(f"Cannot proceed because another ghostcode session is in progress (interaction {prog.lock_read()}).\nPlease finish the ongoing interaction, or force it to close by running ghostcode \nwith `ghostcode interaction --force` or doing /force right here in the terminal. Data may be lost. You have been warned.")
+
         # End of interaction
         prog.debug_dump()                
         self._save_interaction(prog)
@@ -1565,8 +1587,13 @@ def _main() -> None:
         default=None,
         help="Optional unique ID or tag of a past interaction to continue.",
     )
+    interact_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force release of interaction lock if one exists.",
+    )
     interact_parser.set_defaults(
-        func=lambda args: _create_interact_command(args, actions=args.actions)
+        func=lambda args: _create_interact_command(args, actions=args.actions, force_lock=args.force)
     )
 
     # Talk command
@@ -1598,8 +1625,13 @@ def _main() -> None:
         default=None,
         help="Optional unique ID or tag of a past interaction to continue.",
     )
+    talk_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force release of interaction lock if one exists.",
+    )
     talk_parser.set_defaults(
-        func=lambda args: _create_interact_command(args, actions=False)
+        func=lambda args: _create_interact_command(args, actions=False, force_lock=args.force)
     )
     
     # Log command
@@ -1760,7 +1792,7 @@ def _main() -> None:
 
 
 def _create_interact_command(
-    args: argparse.Namespace, actions: bool
+    args: argparse.Namespace, actions: bool, force_lock: bool = False
 ) -> InteractCommand:
     """Helper function to create InteractCommand, handling skip_to logic and mutual exclusivity."""
     skip_to_agent: Optional[types.AIAgent] = None
@@ -1780,6 +1812,7 @@ def _create_interact_command(
         initial_prompt=args.prompt,
         skip_to=skip_to_agent,
         interaction_identifier=args.interaction,
+        force_lock=force_lock,
     )
 
 
