@@ -2,6 +2,7 @@ from typing import *
 import json
 import traceback
 from ghostcode import types, worker
+from . import git
 from ghostcode import slash_commands
 from ghostcode.progress_printer import ProgressPrinter
 from ghostcode import prompts
@@ -733,13 +734,19 @@ class LogCommand(BaseModel, CommandInterface):
         description="Optional unique ID or tag of a specific interaction to display in detail.",
     )
 
+    all_branches: bool = Field(
+        default = False,
+        description = "Do not filter any interactions based on branches."
+    )
+    
     def _overview_show_interaction(
         self, interaction: types.InteractionHistory, num_turns: int
     ) -> str:
         turns_str = f"turns: {num_turns}\n"
         tag_str = f"tag: {interaction.tag}\n" if interaction.tag else ""
+        branch_str = f"branch: {interaction.branch_name}" if interaction.branch_name is not None else ""
         git_str = (
-            f"git history: {", ".join(commits)}\n"
+            f"commits affected: {", ".join(commits)}\n"
             if (commits := interaction.get_affected_git_commits()) != []
             else ""
         )
@@ -766,7 +773,7 @@ class LogCommand(BaseModel, CommandInterface):
                     first_msg = first_msg[:limit].strip() + "..."
 
         return f"""interaction {interaction.unique_id}
-        {tag_str}{git_str}{turns_str}{time_str}{title_str}
+        {tag_str}{branch_str}{git_str}{turns_str}{time_str}{title_str}
 {first_msg}
 """
 
@@ -826,11 +833,25 @@ class LogCommand(BaseModel, CommandInterface):
             else:
                 # FIXME: actually sort by date
                 # note: sorting by date is slightly more complicated, e.g.: what date? date started or date last interacted? for now this will do
+                branch_gr = git.get_current_branch(prog.project_root)
+                current_branch = branch_gr.value if branch_gr is not None else ""
+                num_filtered = 0
                 for interaction in reversed(project.interactions):
+                    # check branches, unless all is requested
+                    if not self.all_branches:
+                        if interaction.branch_name != current_branch:
+                            num_filtered += 1
+                            continue
+                        
                     num_turns = len(interaction.contents)
                     result.print(
                         self._overview_show_interaction(interaction, num_turns)
                     )
+
+            if num_filtered > 0:
+                result.print(f"{num_filtered} interaction histories have been filtered.")
+                if prog.user_config.newbie:
+                    result.print(f"Hint: By default, only interactions that were started on your current git branch are shown. Use --all-branches to disable this behaviour, or checkout a different branch.")
         return result
 
 

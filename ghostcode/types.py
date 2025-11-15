@@ -62,7 +62,8 @@ class HasUniqueID(Protocol):
 
 
 class HasGitCommitHash(Protocol):
-    git_commit_hash: str
+    git_commit_hash: Optional[str]
+    applied_commit_hash: Optional[str]
 
 
 class HasClearance(Protocol):
@@ -964,6 +965,12 @@ class CoderInteractionHistoryItem(BaseModel):
         description="The commit that was checked out at the time this interaction took place.",
     )
 
+    applied_commit_hash: Optional[str] = Field(
+        default = None,
+        description = "Commit hash if this interaction actually altered git repo state with a commit. This is very different from git_commit_hash, which is always set in a repo under normal circumstances. This only applised if the interaction item lead to code that was commited."
+    )    
+
+    
     @model_validator(mode='before')
     @classmethod
     def set_git_commit_hash(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -999,7 +1006,9 @@ class CoderInteractionHistoryItem(BaseModel):
 
     def show(self, **kwargs: Any) -> str:
         """Returns a human readable string representation of the item."""
-        return f"""[{self.timestamp}] {self.context.show_cli()}
+        git_str = f"@[commit {self.git_commit_hash}]" if self.git_commit_hash is not None else ""
+        applied_str = f"\n  !! This message created commit {self.applied_commit_hash} !!\n" if self.applied_commit_hash is not None else ""
+        return f"""[{self.timestamp}]{git_str} {self.context.show_cli()}{applied_str}
   {self.model}@{self.backend} >
 {        self.response.show(**kwargs)}
 """
@@ -1036,6 +1045,11 @@ class UserInteractionHistoryItem(BaseModel):
         description="The commit that was at the head position at the time this interaction item was produced. None if no git repository is present or the hash could otherwise not be determined.",
     )
 
+    applied_commit_hash: Optional[str] = Field(
+        default = None,
+        description = "Commit hash if this interaction actually altered git repo state with a commit. This is very different from git_commit_hash, which is always set in a repo under normal circumstances. This only applised if the interaction item lead to code that was commited."
+    )    
+    
     context: ContextFiles = Field(
         description="The context that was current at the time the interaction was made."
     )
@@ -1083,7 +1097,9 @@ class UserInteractionHistoryItem(BaseModel):
         return values
     
     def show(self, **kwargs: Any) -> str:
-        return f"""[{self.timestamp}] {self.context.show_cli()}
+        git_str = f"@[commit {self.git_commit_hash}]" if self.git_commit_hash is not None else ""
+        applied_str = f"\n  !! This message created commit {self.applied_commit_hash} !!\n" if self.applied_commit_hash is not None else ""        
+        return f"""[{self.timestamp}]{git_str} {self.context.show_cli()}{applied_str}
   user >
         {self.prompt}
 """
@@ -1146,13 +1162,13 @@ class InteractionHistory(BaseModel):
         return (timestamps[0], timestamps[-1])
 
     def get_affected_git_commits(self) -> List[str]:
-        """Returns a (non-duplicate containing) list of git commits that served as basis for the interaction turns."""
+        """Returns a (non-duplicate containing) list of git commits that altered repo state and were part of this interaction."""
         return list(
             set(
                 [
                     hash
                     for item in self.contents
-                    if (hash := item.git_commit_hash) is not None
+                    if (hash := item.applied_commit_hash) is not None
                 ]
             )
         )
