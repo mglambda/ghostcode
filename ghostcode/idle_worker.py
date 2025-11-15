@@ -55,7 +55,8 @@ class IdleWorker:
         self._stop_flag.clear()
         self._running = True
         logger.info(f"Starting idle worker with an idle timeout of {self.idle_timeout:2f}s and task priorities: {self.task_priorities}.") 
-        # fill this in
+        self._worker_thread = Thread(target=self._run, daemon=True)
+        self._worker_thread.start()
 
     def stop(self) -> None:
         """Stop the idle worker.
@@ -63,6 +64,10 @@ class IdleWorker:
         After calling stop, you must explicitly call start() to enable the countdown and subsequent task working again."""
         self._stop_flag.set()
         self._running = False
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=5) # Wait for the thread to finish gracefully
+            if self._worker_thread.is_alive():
+                logger.warning("IdleWorker thread did not terminate gracefully.")
         
     def update(self) -> None:
         """Called to signify that user activity is happening. This method will reset the internal idle timeout."""
@@ -72,7 +77,7 @@ class IdleWorker:
         """Checks to see if enough time has passed without calls to update() and the idle worker should begin to work on tasks."""
         return (time() - self._last_update_t) > self.idle_timeout
 
-    def _dispatch(self, idle_task: IdleTask) -> None:
+    def _dispatch(self) -> None:
         """Main entry point for the thread worker. Goes through the list of priorities and dispatches a function depending on what task is next in line."""
         # if you like python indentation nesting, you will **love** this!
         # don't loop over nothing
@@ -99,9 +104,16 @@ class IdleWorker:
                     case _ as unreachable:
                         assert_never(unreachable)
 
+    def _run(self) -> None:
+        logger.debug(f"Idle worker thread started. Checking for idle timeout every 1 second.")
+        while self._running and not self._stop_flag.is_set():
+            sleep(1) # Check every second
+            if self.check_idle_timeout():
+                logger.debug(f"Idle timeout reached ({self.idle_timeout:.2f}s). Dispatching idle tasks.")
+                self._dispatch()
+        logger.debug(f"Idle worker thread stopped.")
+
     def _summarize_interactions(self) -> Literal["done", "not_done"]:
-        """Goes through the past interactions and tries to use the worker LLM to fill the 'summarize' and 'title' attribute if they are none.
-        This is done one interaction history at a time. If there appear to be no more unsummarized or untitled interaction histories, the function returns "done", and "not_done" otherwise."""
         # fill this in
         return "done"
 
