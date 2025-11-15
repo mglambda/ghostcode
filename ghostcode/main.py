@@ -950,6 +950,7 @@ class InteractCommand(BaseModel, CommandInterface):
                 project_metadata=True,
                 style_file = True,
                 context_files="full",
+                recent_interaction_summaries = "full",
                 # could add shell here?
             ),
         )

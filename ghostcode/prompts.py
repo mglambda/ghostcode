@@ -37,6 +37,10 @@ class PromptConfig(BaseModel):
         description="How to display files that are in the ghostcode context. Full means full contents of the files are displayed. filenames means only a list of filenames is shown. none omits context files entirely.",
     )
 
+    recent_interaction_summaries: Literal["full", "titles_only", "none"] = Field(
+        default = "none",
+        description = "Include summaries of the most recent interactions. The summarization gets more aggressive for older interactions. Defaults to only showing branch-local interactions."
+    )
     # ghostcode program context
     interaction_history_id: str = Field(
         default="",
@@ -149,6 +153,11 @@ def make_prompt(
         case _ as unreachable2:
             assert_never(unreachable2)
 
+    recent_interaction_summaries_str = make_blocks_recent_interaction_summaries(
+        prog,
+        mode = prompt_config.recent_interaction_summaries
+    )
+
     if prompt_config.logs:
         log_excerpt_str = quoted_if_nonempty(
             text=prog.show_log(tail=config.prompt_log_lines),
@@ -167,7 +176,7 @@ def make_prompt(
     return f"""{system_str}
     # Project Context
 
-{project_metadata_str}{style_file_str}{context_files_str}    
+{project_metadata_str}{style_file_str}{context_files_str}{recent_interaction_summaries_str}    
 # Ghostcode Context
 
 {history_str}    {shell_str}{log_excerpt_str}
@@ -406,7 +415,7 @@ def make_blocks_recent_interaction_summaries(
     prog: Program,
     *,
     mode: Literal["full", "titles_only", "none"],
-    max_full_chars: int = 1500, # Max characters for a 'full' interaction summary
+    max_full_chars: int = 15000, # Max characters for a 'full' interaction summary
     num_full_display: int = 3,   # How many most recent interactions to show 'full'
     num_summary_display: int = 10, # Up to this many (after full) to show as summary/title
     heading: str = "Recent Interaction Histories (current branch)",
@@ -431,10 +440,13 @@ def make_blocks_recent_interaction_summaries(
             # Get full text (excluding code) from the history object itself
             full_text = history.show(include_code=False, heading_level=interaction_heading_level)
             if len(full_text) > max_full_chars:
-                # Truncate the full block if it's too long
-                half_chars = max_full_chars // 2
-                truncated_text = full_text[:half_chars] + "\n... (truncated) ...\n" + full_text[-half_chars:]
-                output_blocks.append(truncated_text)
+                # fall back to summary, otherwise Truncate the full block if it's too long
+                if history.summary is not None:
+                    output_blocks.append(history.show_summary(heading_level=interaction_heading_level))
+                else:
+                    half_chars = max_full_chars // 2
+                    truncated_text = full_text[:half_chars] + "\n... (truncated) ...\n" + full_text[-half_chars:]
+                    output_blocks.append(truncated_text)
             else:
                 output_blocks.append(full_text)
         elif i < num_summary_display:
