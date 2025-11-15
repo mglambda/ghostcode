@@ -964,6 +964,39 @@ class CoderInteractionHistoryItem(BaseModel):
         description="The commit that was checked out at the time this interaction took place.",
     )
 
+    @model_validator(mode='before')
+    @classmethod
+    def set_git_commit_hash(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Populates the git_commit_hash if it's not already set and a project root
+        is available from the context. This validator attempts to retrieve the
+        current Git commit hash.
+        """
+        # FIXME: does not respect project.config.git_integration. Maybe add that to the context?
+        # If git_commit_hash is already provided, or if context is missing, skip
+        if values.get('git_commit_hash') is not None:
+            return values
+        
+        # Ensure 'context' is present and has a 'root' attribute (which it should if it's a ContextFiles instance)
+        if 'context' not in values or not isinstance(values['context'], ContextFiles):
+            logger.debug("Skipping git_commit_hash validation: 'context' not a ContextFiles instance or missing.")
+            return values
+
+        project_root = values['context'].root
+        
+        # Attempt to get the current commit hash
+        # git.get_current_commit_hash handles non-git repos gracefully by returning an error
+        commit_hash_result = git.get_current_commit_hash(project_root)
+        
+        if commit_hash_result.is_ok() and commit_hash_result.value is not None:
+            values['git_commit_hash'] = commit_hash_result.value
+            logger.debug(f"UserInteractionHistoryItem validator set git_commit_hash to {commit_hash_result.value}.")
+        elif commit_hash_result.is_err():
+            logger.debug(f"UserInteractionHistoryItem validator could not get git commit hash for project root {project_root}: {commit_hash_result.error}")
+        
+        return values
+    
+
     def show(self, **kwargs: Any) -> str:
         """Returns a human readable string representation of the item."""
         return f"""[{self.timestamp}] {self.context.show_cli()}
@@ -1017,6 +1050,38 @@ class UserInteractionHistoryItem(BaseModel):
         description="The actual user prompt. This includes only the plain text created directly by the user at the time of the interaction."
     )
 
+    @model_validator(mode='before')
+    @classmethod
+    def set_git_commit_hash(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Populates the git_commit_hash if it's not already set and a project root
+        is available from the context. This validator attempts to retrieve the
+        current Git commit hash.
+        """
+        # FIXME: does not respect project.config.git_integration. Maybe add that to the context?
+        # If git_commit_hash is already provided, or if context is missing, skip
+        if values.get('git_commit_hash') is not None:
+            return values
+        
+        # Ensure 'context' is present and has a 'root' attribute (which it should if it's a ContextFiles instance)
+        if 'context' not in values or not isinstance(values['context'], ContextFiles):
+            logger.debug("Skipping git_commit_hash validation: 'context' not a ContextFiles instance or missing.")
+            return values
+
+        project_root = values['context'].root
+        
+        # Attempt to get the current commit hash
+        # git.get_current_commit_hash handles non-git repos gracefully by returning an error
+        commit_hash_result = git.get_current_commit_hash(project_root)
+        
+        if commit_hash_result.is_ok() and commit_hash_result.value is not None:
+            values['git_commit_hash'] = commit_hash_result.value
+            logger.debug(f"UserInteractionHistoryItem validator set git_commit_hash to {commit_hash_result.value}.")
+        elif commit_hash_result.is_err():
+            logger.debug(f"UserInteractionHistoryItem validator could not get git commit hash for project root {project_root}: {commit_hash_result.error}")
+        
+        return values
+    
     def show(self, **kwargs: Any) -> str:
         return f"""[{self.timestamp}] {self.context.show_cli()}
   user >
@@ -1057,6 +1122,16 @@ class InteractionHistory(BaseModel):
         description="List of past interactions in this ghostcode project.",
     )
 
+    summary: str = Field(
+        default = "",
+        description = "A brief summary of the entire interaction history. This may or may not be set and is often generated during idle time in the background."
+    )
+
+    branch_name: Optional[str] = Field(
+        default = None,
+        description = "The name of the git branch, if any, that was checked out at the time this interaction was created."
+    )
+        
     def empty(self) -> bool:
         """Returns true if the history is empty."""
         return self.contents == []
