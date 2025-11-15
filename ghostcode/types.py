@@ -32,6 +32,8 @@ from ghostcode import shell
 import appdirs  # Added for platform-specific config directory
 from . import git
 
+class InteractionLockError(Exception): pass
+
 # --- Logging Setup ---
 # Configure a basic logger for the ghostcode project
 logger = logging.getLogger("ghostcode.types")
@@ -2396,6 +2398,7 @@ class Program:
     )
 
     _DEBUG_DIR: ClassVar[str] = ".ghostcode/debug"
+    _LOCKFILE: ClassVar[str] = "interaction.lock"
 
     def __post_init__(self) -> None:
         sound_dir = ghostcode.get_ghostcode_data("sounds")
@@ -2406,6 +2409,104 @@ class Program:
         )
         # Register shutdown to ensure PyAudio resources are released on program exit
         atexit.register(self.sound_manager.shutdown)
+
+    def lock_acquire(self, interaction_history_id: str) -> bool:
+        """Acquires a lock on the .ghostcode directory for the current interaction.
+        Returns True if the lock could not be acquired (e.g., already locked), False otherwise.
+        """
+        if self.project_root is None:
+            logger.error("Cannot acquire lock: Project root is not set.")
+            return True
+
+        lock_filepath = os.path.join(self.get_data(""), self._LOCKFILE)
+
+        if os.path.exists(lock_filepath):
+            logger.warning(f"Lock file already exists at {lock_filepath}. Interaction already in progress?")
+            return True # Lock already held
+
+        try:
+            with open(lock_filepath, "w") as f:
+                f.write(interaction_history_id)
+            logger.info(f"Lock acquired for interaction {interaction_history_id} at {lock_filepath}.")
+            return False # Lock acquired successfully
+        except IOError as e:
+            logger.error(f"Failed to create lock file {lock_filepath}: {e}")
+            return True # Failed to acquire lock
+
+    def lock_release(self) -> None:
+        """Releases the lock on the .ghostcode directory.
+        """
+        if self.project_root is None:
+            logger.warning("Cannot release lock: Project root is not set.")
+            return
+
+        lock_filepath = os.path.join(self.get_data(""), self._LOCKFILE)
+
+        if os.path.exists(lock_filepath):
+            try:
+                os.remove(lock_filepath)
+                logger.info(f"Lock file {lock_filepath} released.")
+            except IOError as e:
+                logger.error(f"Failed to delete lock file {lock_filepath}: {e}")
+        else:
+            logger.debug(f"No lock file found at {lock_filepath} to release.")
+
+    def lock_read(self) -> Optional[str]:
+        """Reads the interaction ID from the lock file.
+        Returns the interaction ID if the lock file exists, None otherwise or on error.
+        """
+        if self.project_root is None:
+            logger.debug("Cannot read lock: Project root is not set.")
+            return None
+
+        lock_filepath = os.path.join(self.get_data(""), self._LOCKFILE)
+
+        if os.path.exists(lock_filepath):
+            try:
+                with open(lock_filepath, "r") as f:
+                    return f.read().strip()
+            except IOError as e:
+                logger.error(f"Failed to read lock file {lock_filepath}: {e}")
+                return None
+        return None
+
+
+    @contextmanager
+    def interaction_lock(self, interaction_history_id: str, should_lock: bool) -> Generator[None, None, None]:
+        """
+        Context manager for managing interaction locks.
+        Acquires a lock if `should_lock` is True and no other lock is held.
+        Releases the lock upon exiting the context.
+
+        Args:
+            interaction_history_id (str): The ID of the interaction attempting to acquire the lock.
+            should_lock (bool): If True, attempts to acquire a lock. If False, the context manager
+                                proceeds without acquiring a lock.
+
+        Yields:
+            None
+
+        Raises:
+            InteractionLockError: If a lock is required but cannot be acquired (e.g., another interaction is locked).
+        """
+        if not should_lock:
+            logger.debug("Interaction lock skipped as 'should_lock' is False.")
+            yield
+            return
+
+        # Attempt to acquire the lock
+        if self.lock_acquire(interaction_history_id):
+            # Lock could not be acquired (another lock exists)
+            current_lock_id = self.lock_read()
+            error_msg = f"Another interaction (ID: {current_lock_id}) is already active. Please finish or quit it before starting a new interactive session."
+            logger.error(error_msg)
+            raise InteractionLockError(error_msg)
+
+        try:
+            yield
+        finally:
+            self.lock_release()
+    
     def has_git_integration(self) -> bool:
         """Returns true if git integration is enabled for the current project.
             You still have to check for availability yourself, this just allows the project to disable it."""
