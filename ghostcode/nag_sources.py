@@ -6,19 +6,23 @@ import os
 from enum import StrEnum
 import json
 from pydantic import BaseModel, Field, TypeAdapter
-from .program import Program
+if TYPE_CHECKING:
+    from .program import Program
 
 class NagCheckResult(BaseModel):
     """Returned by a NagSource check method to both retrieve the source content and an indicator whether it is generally ok or not.""" 
     source_content: str = Field(
         description = "A string representing the original source content that may be ok or not. This can be e.g. a file, a log excerpt, output of a shell command, or an HTTP query."
     )
-
     
     has_problem: bool = Field(
         description = "If true, the user should probably be nagged about the result."
     )
 
+    error_while_checking: str = Field(
+        default = "",
+        description = "A string describing an error that occured during the checking process itself. This is distinguished from actual errors or problems with the source, which should not be described here. This string may contain e.g. File not found for a file source, or network connection error for an HTTP source."
+    )    
 def ok(source_content: Optional[str] = None) -> NagCheckResult:
     """Return a default NagCheckResult that signals everything is ok."""
     return NagCheckResult(source_content = source_content if source_content is not None else "", has_problem = False)
@@ -53,7 +57,7 @@ class NagSourceBase(BaseModel):
         pass
     
     @abstractmethod
-    def check(self, prog: Program) -> NagCheckResult:
+    def check(self, prog: 'Program') -> NagCheckResult:
         """Returns the source content and whether the source is generally ok or not, potentially using a provided LLM request client.
         This does not deliver an accurate report, it merely classifies the source as being ok or not, allowing for further processing."""
         pass
@@ -68,28 +72,50 @@ class NagSourceFile(NagSourceBase):
         default = 3,
         description = "Number of seconds between file reads. 1 minute is the default because we don't expect files to change super frequently."
     )
+    _last_modified_timestamp: float = Field(
+        default = 0.0,
+        description = "Internal timestamp of the last time the file was modified, used to avoid re-reading unchanged files."
+    )
 
     def identity(self) -> str:
         return self.filepath
 
-    def check(self, prog: Program) -> NagCheckResult:
+    def check(self, prog: 'Program') -> NagCheckResult:
         """Reads the file content if it has been updated since the last time it was checked, and returns an LLMs classification."""
-        # get the contents if the file has been updated
+        # the filepaths we use here are different from context files and are **not** relative to the root
+        abs_filepath = self.filepath
 
-        # FILL THIS IN
-        content = ""
+        if not os.path.exists(abs_filepath):
+            return problem(source_content=f"File '{self.filepath}' not found.")
+        
+        try:
+            current_mtime = os.path.getmtime(abs_filepath)
+        except OSError as e:
+            return problem(source_content=f"Could not get modification time for '{self.filepath}': {e}")
+
+        if self._last_modified_timestamp != 0.0 and current_mtime == self._last_modified_timestamp:
+            # File hasn't changed since last check, no need to re-read or re-classify
+            return ok(source_content=f"File '{self.filepath}' unchanged.")
+
+        # File has changed or it's the first check, proceed to read and classify
+        self._last_modified_timestamp = current_mtime
+        
+        try:
+            with open(abs_filepath, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except IOError as e:
+            return problem(source_content=f"Could not read file '{self.filepath}': {e}")
         
         class FileProblemClassification(BaseModel):
             has_problem: bool
 
-
         try:
             result = prog.worker_box.new(
                 FileProblemClassification,
-                f"These are the contents of file `{self.filepath}.\nPlease inspect the file contents and identify if there is a potential problem or not.\n\n```{content}```"
+                f"These are the contents of file `{self.filepath}.\nPlease inspect the file contents and identify if there is a potential problem or not.\n\n```\n{content}\n```"
             )
         except Exception as e:
-            return problem(source_content=content + "\n\n---\nAdditionally, an exception was encountered while trying to classify the file: {e}.")
+            return problem(source_content=content + f"\n\n---\nAdditionally, an exception was encountered while trying to classify the file: {e}.")
         return NagCheckResult(has_problem=result.has_problem, source_content=content)
     
 class NagSourceHTTPRequest(NagSourceBase):
@@ -103,7 +129,7 @@ class NagSourceHTTPRequest(NagSourceBase):
     def identity(self) -> str:
         return self.url
 
-    def check(self, prog: Program) -> NagCheckResult:
+    def check(self, prog: 'Program') -> NagCheckResult:
         # stub
         return ok()
 
@@ -115,7 +141,7 @@ class NagSourceSubprocess(NagSourceBase):
     def identity(self) -> str:
         return self.command
 
-    def check(self, prog: Program) -> NagCheckResult:
+    def check(self, prog: 'Program') -> NagCheckResult:
         # stub
         return ok()
 
