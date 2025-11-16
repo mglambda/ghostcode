@@ -3,7 +3,6 @@ from typing import *
 from enum import Enum, StrEnum
 from contextlib import contextmanager
 from pydantic import BaseModel, Field, model_validator
-from abc import ABC, abstractmethod, abstractproperty
 import os
 from uuid import uuid4, UUID
 import subprocess
@@ -28,6 +27,7 @@ from .utility import (
     quoted_if_nonempty,
 )
 from . import git
+from .nag_sources import NagSource
 
 class InteractionLockError(Exception): pass
 
@@ -1634,47 +1634,6 @@ class ActionResultMoreActions(BaseModel):
 type ActionResult = ActionResultOk | ActionResultFailure | ActionResultMoreActions
 
 
-class NagCheckResult(BaseModel):
-    """Returned by a NagSource check method to both retrieve the source content and an indicator whether it is generally ok or not.""" 
-    source_content: str = Field(
-        description = "A string representing the original source content that may be ok or not. This can be e.g. a file, a log excerpt, output of a shell command, or an HTTP query."
-    )
-    
-    has_problems: bool = Field(
-        description = "If true, the user should probably be nagged about the result."
-    )
-        
-class NagSourceBase(BaseModel):
-    """A data source for the nag command.
-    A source is something that can be monitored, allowing the LLM to potentially nag about something that's wrong."""
-
-    type: str = Field(
-        description = "Discriminator for union type."
-    )
-    
-    display_name: str = Field(
-        description = "Name of the source. This is what will be displayed to the user in the clie when refering to the source."
-    )
-    
-    nag_interval_seconds: int = Field(
-        description = "The interval between checks of the source."
-    )
-
-
-    @abstractmethod
-    def identity(self) -> str:
-        """Returns some kind of identifier, the nature of which depends on the particular source.
-        This is so we can compare sources. For instance, this method may reutrn a filename for a file, or a URL for a webpage, or a PID for a unix shell process etc."""
-        pass
-    
-    @abstractmethod
-    def check(self, box: Ghostbox) -> NagCheckResult:
-        """Returns the source content and whether the source is generally ok or not, potentially using a provided LLM request client.
-        This does not deliver an accurate report, it merely classifies the source as being ok or not, allowing for further processing."""
-        pass
-
-
-
 class Project(BaseModel):
     """Basic context for a ghostcode project.
     By convention, all Fields of this type are found in the .ghostcode directory at the project root, with their Field names also being the filename.
@@ -1695,9 +1654,8 @@ class Project(BaseModel):
     )
 
     context_files: ContextFiles
-    nag_sources: List[NagSourceBase] = Field(
+    nag_sources: List[NagSource] = Field(
         default_factory = list,
-        discriminator = "type",        
         description = "Nag sources to be monitored for the nag command."
     )
     
