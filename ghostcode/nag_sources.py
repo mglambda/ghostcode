@@ -3,6 +3,7 @@ from typing import *
 
 from abc import ABC, abstractmethod, abstractproperty
 import os
+import subprocess
 from enum import StrEnum
 import json
 from pydantic import BaseModel, Field, TypeAdapter
@@ -134,21 +135,70 @@ class NagSourceHTTPRequest(NagSourceBase):
         return ok()
 
 class NagSourceSubprocess(NagSourceBase):
-    """Represents an executable process that is invoked and nagged about if there are problems."""
-    type: Literal["NagSourceExecutable"] = "NagSourceExecutable"
+    type: Literal["NagSourceSubprocess"] = "NagSourceSubprocess"
     command: str
     nag_interval_seconds: int = 30
     def identity(self) -> str:
         return self.command
 
     def check(self, prog: 'Program') -> NagCheckResult:
-        # stub
-        return ok()
+        try:
+            # Execute the command
+            process = subprocess.run(
+                self.command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=False, # We handle non-zero exit codes ourselves
+                cwd=prog.project_root if prog.project_root else None # Run in project root
+            )
+
+            combined_output = process.stdout + process.stderr
+            
+            if process.returncode != 0:
+                # Command failed (non-zero exit code)
+                return problem(
+                    source_content=combined_output,
+                    error_while_checking=f"Command exited with non-zero status {process.returncode}."
+                )
+            else:
+                # Command succeeded (zero exit code), but check its output for problems
+                class CommandOutputClassification(BaseModel):
+                    has_problem: bool = Field(description="True if the command output indicates a problem (e.g., warnings, errors, unexpected behavior), False otherwise.")
+                    reason: str = Field(description="A brief reason for the classification.")
+
+                try:
+                    classification_result = prog.worker_box.new(
+                        CommandOutputClassification,
+                        f"The following command executed successfully (exit code 0):\n`{self.command}`\n\nIts output is:\n```\n{combined_output}\n```\nPlease inspect the output and determine if it indicates any problems (e.g., warnings, errors, unexpected behavior). Respond with `has_problem: true` if there's an issue, `false` otherwise, and a brief `reason`."
+                    )
+                    return NagCheckResult(
+                        source_content=combined_output,
+                        has_problem=classification_result.has_problem,
+                        error_while_checking="" # No error during checking, LLM classified output
+                    )
+                except Exception as e:
+                    # Error during LLM classification
+                    return problem(
+                        source_content=combined_output,
+                        error_while_checking=f"Command succeeded, but LLM classification failed: {e}"
+                    )
+
+        except FileNotFoundError:
+            return problem(
+                source_content="",
+                error_while_checking=f"Command '{self.command.split()[0]}' not found. Is it in PATH?"
+            )
+        except Exception as e:
+            return problem(
+                source_content="",
+                error_while_checking=f"An unexpected error occurred while running command '{self.command}': {e}"
+            )
 
 
 NagSource = Annotated[
     NagSourceFile | NagSourceHTTPRequest | NagSourceSubprocess,
     Field(discriminator="type")
 ]
-
+        
 NagSourceAdapter: TypeAdapter[NagSource] = TypeAdapter(NagSource)
