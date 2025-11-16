@@ -28,7 +28,7 @@ from . import prompts
 from .utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP, language_from_extension
 from .logconfig import ExceptionListHandler, _configure_logging
 from .program import Program
-from .nag_sources import NagSourceFile
+from .nag_sources import NagSource
 
 # logger will be configured after argument parsing
 logger: logging.Logger  # Declare logger globally, will be assigned later
@@ -1165,8 +1165,20 @@ class NagCommand(BaseModel):
         description="Provided with -c or --command to the nag subcommand. List of shell commands that will be run with a subprocess to be potentially nagged about. These will be turned into NagSourceSubprocess.",
     )
 
+    def _prepare_sources(self) -> Tuple[str, List[NagSource]]:
+        """Assembles the various command line parameters into sources, returning a (potential) error report and the list of constructed nag sources."""
+        error_str = ""
+        nag_sources: List[NagSource] = []
+
+        # ...
+        return error_str, nag_sources
+    
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
+        # construct sources
+        error_str, nag_sources = self._prepare_sources()
+        result.print(error_str)
+        
         # The actual logic for the nag command will be implemented here later.
         # For now, it just returns an empty output.
         result.print("Nag command executed. Monitoring not yet implemented.")
