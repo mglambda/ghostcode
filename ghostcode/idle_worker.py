@@ -38,6 +38,11 @@ class IdleWorker:
         default_factory = time
     )
 
+    # problematic interactions are added in here so the worker doesn't loop forever on them but skips 
+    _skip_interaction_ids: Set[str] = field(
+        default_factory = set
+    )
+    
     _running: bool = False
     _worker_thread: Optional[Thread] = None
     _stop_flag: Event = field(
@@ -144,6 +149,10 @@ class IdleWorker:
                 logger.debug(f"Skipping current interaction {interaction.unique_id} for summarization.")
                 continue
 
+            # skip problematic interactions
+            if current_interaction_id in self._skip_interaction_ids:
+                continue
+            
             made_changes = False
 
             # 1. Generate title if missing
@@ -155,7 +164,8 @@ class IdleWorker:
                     made_changes = True
                     logger.debug(f"Generated title for {interaction.unique_id}: '{new_title}'.")
                 else:
-                    logger.debug(f"Failed to generate title for interaction {interaction.unique_id}.")
+                    logger.warning(f"Failed to generate title for interaction {interaction.unique_id}. Skipping next time (maybe try setting worker to a more powerful LLM).")
+                    self._skip_interaction_ids.add(interaction.unique_id)
 
             # 2. Generate summary if missing
             if not interaction.summary.strip():
@@ -169,9 +179,11 @@ class IdleWorker:
                         made_changes = True
                         logger.debug(f"Generated summary for {interaction.unique_id}: '{new_summary[:100]}...'.")
                     else:
-                        logger.debug(f"Worker returned empty summary for interaction {interaction.unique_id}.")
+                        logger.warning(f"Worker returned empty summary for interaction {interaction.unique_id}. Skipping next time (maybe try with a more powerful LLM for the worker).")
+                        self._skip_interaction_ids.add(interaction.unique_id)
                 except Exception as e:
-                    logger.debug(f"Error generating summary for interaction {interaction.unique_id}: {e}")
+                    logger.debug(f"Error generating summary for interaction {interaction.unique_id} (skipping next time): {e}")
+                    self._skip_interaction_ids.add(interaction.unique_id)                    
 
             # If any changes were made, save the project and return 'not_done' to allow other tasks a turn.
             if made_changes:
