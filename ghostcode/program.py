@@ -585,6 +585,13 @@ class Program:
             user_options["tts"] = False
             user_options["quiet"] = True
         
-        options = self.worker_box.get_options() | user_options
-        logger.debug(f"Initializing speaker_box with the following options:\n{json.dumps(options, indent=4)}")
-        return Ghostbox(**options)
+        worker_options = self.worker_box.get_options()
+        # FIXME: bug inghostbox where it must be initialized with tts = True
+        # FIXME: we should probably, wether ghostbox fixes the bug or not, initialize speaker from a dedicated speaker character folder
+        speaker_box = Ghostbox(**(worker_options | {"tts":True}))
+        # we do it this way because part of the worker options is 'character_folder' which will override options in the kwargs
+        # this we we know 100% that the tts user options are in
+        for k, v in user_options.items():
+            speaker_box.set(k, v)
+        logger.debug(f"Initializing speaker_box with the following options:\n{json.dumps(speaker_box.get_options(), indent=4)}")
+        return speaker_box

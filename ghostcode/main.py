@@ -1,6 +1,7 @@
 from typing import *
 import json
 import traceback
+import threading
 import ghostbox
 import time
 import os
@@ -1176,18 +1177,22 @@ class NagCommand(BaseModel):
         error_str = ""
         nag_sources: List[NagSource] = []
 
+        logger.debug(f"NagCommand: Preparing sources from files: {self.files}")
         for f in self.files:
             nag_sources.append(NagSourceFile(display_name=os.path.basename(f), filepath=f))
             logger.info(f"Monitoring file: {f}")
             
+        logger.debug(f"NagCommand: Preparing sources from URLs: {self.urls}")
         for u in self.urls:
             nag_sources.append(NagSourceHTTPRequest(display_name=u, url=u))
             logger.info(f"Monitoring URL: {u}")
 
+        logger.debug(f"NagCommand: Preparing sources from shell commands: {self.shell_commands}")
         for c in self.shell_commands:
             nag_sources.append(NagSourceSubprocess(display_name=c, command=c))
             logger.info(f"Monitoring command: {c}")
 
+        logger.debug(f"NagCommand: Prepared {len(nag_sources)} nag sources.")
         return error_str, nag_sources
     def _process_source(self, prog: Program, nag_source: NagSource, speaker_box: Ghostbox) -> str:
         """Process a single source by checking if it's ok or not, and producing text and speech output if it is not.
@@ -1204,20 +1209,30 @@ class NagCommand(BaseModel):
 
         # now we get to nag :D
         output_text = ""
+        done = threading.Event()
+        done.clear()
+        
         def capture_generation(w: str) -> None:
             nonlocal output_text
+            nonlocal done
             output_text = w
+            done.set()
             
         # speaker_box is guaranteed to be configure in a way where it automatically speaks what it generates
         # this is also why we can't do strctured output here at all
         # FIXME: clear history or not?
+        #logger.debug(f"debug2: \n{json.dumps(speaker_box.get_options(), indent=4)}")
         speaker_box.text_stream(
             f"Please create a short notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational, while getting the essential points across. Highlight potential problems and issues, and give a summary if there are no obvious problems.\n\n```\n{nag_result.source_content}\n```",
-            chunk_callback=lambda chunk: None,
-            generation_callback=capture_generation
+            chunk_callback=lambda chunk: chunk,
+            generation_callback=capture_generation,
         )
-        # block until speaking is done
-        speaker_box.tts_wait()
+
+        # block until generation is done (we might be running with sound_enabled = False)
+        done.wait()
+        # block until speaking is done - speaking is usually slower than generation so the order matters here.
+        speaker_box.tts_wait()        
+        logger.debug(f"output_text: {output_text}")
         return output_text
         
     def run(self, prog: Program) -> CommandOutput:
@@ -1232,14 +1247,18 @@ class NagCommand(BaseModel):
         if nag_sources == [] and prog.user_config.newbie:
             prog.print(f"No sources to nag about. Specify sources with --file, --url or --command.")
 
+        logger.debug(f"NagCommand: Initializing speaker box.")
         # we use this to vocalize and transcribe
         # usually, it is a variant of the worker_box
         speaker_box = prog.get_speaker_box()
+        print(f"debug: {speaker_box._plumbing.tts}")
         speaker_box.tts_say(f"Initialized and ready to nag you about {len(nag_sources)} sources." + "" if len(nag_sources) != 0 else "Wait, zero? Oh, looks like I won't get to nag very much.") 
-            
+        speaker_box.tts_wait()
         # nag loop
+        logger.debug(f"NagCommand: Entering main nag loop with interval {self.interval}s.")
         while True:
             for nag_source in nag_sources:
+                logger.debug(f"NagCommand: Processing nag source: {nag_source.display_name}")
                 time.sleep(self.interval)
                 # process source does TTS output asynchronously
                 # but we print textual data (which may diverge from TTS) here
@@ -1248,6 +1267,7 @@ class NagCommand(BaseModel):
 
                 
         # end of nag loop
+        logger.debug(f"NagCommand: Exiting run method.")
         return result
 
 
