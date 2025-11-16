@@ -1,31 +1,34 @@
 # ghostcode.nag_sources
 from typing import *
+
 from abc import ABC, abstractmethod, abstractproperty
 import os
+from enum import StrEnum
 import json
 from pydantic import BaseModel, Field, TypeAdapter
-from ghostbox import Ghostbox
+from .program import Program
 
 class NagCheckResult(BaseModel):
     """Returned by a NagSource check method to both retrieve the source content and an indicator whether it is generally ok or not.""" 
     source_content: str = Field(
         description = "A string representing the original source content that may be ok or not. This can be e.g. a file, a log excerpt, output of a shell command, or an HTTP query."
     )
+
     
-    has_problems: bool = Field(
+    has_problem: bool = Field(
         description = "If true, the user should probably be nagged about the result."
     )
 
-
-    
 def ok(source_content: Optional[str] = None) -> NagCheckResult:
     """Return a default NagCheckResult that signals everything is ok."""
-    return NagCheckResult(source_content = source_content if source_content is not None else "", has_problems = False)
+    return NagCheckResult(source_content = source_content if source_content is not None else "", has_problem = False)
 
 def problem(source_content: Optional[str] = None) -> NagCheckResult:
     """Returns a NagCheckResult that has a problem and may need to be nagged about."""
-    return NagCheckResult(source_content=source_content if source_content is not None else "", has_problems=True)
-    
+    return NagCheckResult(source_content=source_content if source_content is not None else "", has_problem=True)
+
+
+
 class NagSourceBase(BaseModel):
     """A data source for the nag command.
     A source is something that can be monitored, allowing the LLM to potentially nag about something that's wrong."""
@@ -50,7 +53,7 @@ class NagSourceBase(BaseModel):
         pass
     
     @abstractmethod
-    def check(self, box: Ghostbox) -> NagCheckResult:
+    def check(self, prog: Program) -> NagCheckResult:
         """Returns the source content and whether the source is generally ok or not, potentially using a provided LLM request client.
         This does not deliver an accurate report, it merely classifies the source as being ok or not, allowing for further processing."""
         pass
@@ -66,15 +69,29 @@ class NagSourceFile(NagSourceBase):
         description = "Number of seconds between file reads. 1 minute is the default because we don't expect files to change super frequently."
     )
 
-
     def identity(self) -> str:
         return self.filepath
 
-    def check(self, box: Ghostbox) -> NagCheckResult:
-        # stub
-        return ok()
+    def check(self, prog: Program) -> NagCheckResult:
+        """Reads the file content if it has been updated since the last time it was checked, and returns an LLMs classification."""
+        # get the contents if the file has been updated
+
+        # FILL THIS IN
+        content = ""
+        
+        class FileProblemClassification(BaseModel):
+            has_problem: bool
 
 
+        try:
+            result = prog.worker_box.new(
+                FileProblemClassification,
+                f"These are the contents of file `{self.filepath}.\nPlease inspect the file contents and identify if there is a potential problem or not.\n\n```{content}```"
+            )
+        except Exception as e:
+            return problem(source_content=content + "\n\n---\nAdditionally, an exception was encountered while trying to classify the file: {e}.")
+        return NagCheckResult(has_problem=result.has_problem, source_content=content)
+    
 class NagSourceHTTPRequest(NagSourceBase):
     type: Literal["NagSourceHTTPRequest"] = "NagSourceHTTPRequest"
     url: str = Field(
@@ -86,7 +103,7 @@ class NagSourceHTTPRequest(NagSourceBase):
     def identity(self) -> str:
         return self.url
 
-    def check(self, box: Ghostbox) -> NagCheckResult:
+    def check(self, prog: Program) -> NagCheckResult:
         # stub
         return ok()
 
@@ -98,7 +115,7 @@ class NagSourceSubprocess(NagSourceBase):
     def identity(self) -> str:
         return self.command
 
-    def check(self, box: Ghostbox) -> NagCheckResult:
+    def check(self, prog: Program) -> NagCheckResult:
         # stub
         return ok()
 
