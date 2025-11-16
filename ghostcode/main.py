@@ -336,9 +336,7 @@ class ContextCommand(BaseModel, CommandInterface):
             if self.subcommand == "add":
                 for fp in resolved_paths:
                     if fp not in current_context_files:
-                        project.context_files.add(
-                            fp
-                        )
+                        project.context_files.add(fp)
                         result.print(f"Added '{fp}' to context (RAG={self.rag}).")
             elif self.subcommand in ["rm", "remove"]:
                 initial_count = len(project.context_files.data)
@@ -400,12 +398,14 @@ class ContextCommand(BaseModel, CommandInterface):
                             result.print(f"File '{fp}' {action_word}.")
                             modified_count += 1
                         else:
-                            result.print(f"File '{fp}' is already {action_word}. Skipping.")
+                            result.print(
+                                f"File '{fp}' is already {action_word}. Skipping."
+                            )
                         found = True
                         break
                 if not found:
                     result.print(f"File '{fp}' not found in context. Skipping.")
-            
+
             if modified_count > 0:
                 project.save_to_root(prog.project_root)
                 result.print("Context file lock statuses updated and saved.")
@@ -421,50 +421,52 @@ class ContextCommand(BaseModel, CommandInterface):
                 result.print("{n} file(s) removed from context.")
         return result
 
-class DiscoverCommand(BaseModel, CommandInterface):    
+
+class DiscoverCommand(BaseModel, CommandInterface):
     """Intelligently discovers files associated with the project and adds them to the context."""
 
     filepath: str = Field(
-        description = "The filepath that points to a directory in which files to add to the context will be recursively discovered."
-    )
-    
-    languages_enabled: List[str] = Field(
-        default_factory = list,
-        description = "Programming languages (e.g. 'python', 'javascript') for which files in the respective language will be added to the context."
+        description="The filepath that points to a directory in which files to add to the context will be recursively discovered."
     )
 
+    languages_enabled: List[str] = Field(
+        default_factory=list,
+        description="Programming languages (e.g. 'python', 'javascript') for which files in the respective language will be added to the context.",
+    )
 
     languages_disabled: List[str] = Field(
-        default_factory = list,
-        description = "Providing e.g. --no-python --no-javascript will exclude languages from the discovery."
+        default_factory=list,
+        description="Providing e.g. --no-python --no-javascript will exclude languages from the discovery.",
     )
     min_lines: Optional[int] = Field(
-        default = None,
-        description = "Minimum amount of lines that a file must have in order to be added to the context."
+        default=None,
+        description="Minimum amount of lines that a file must have in order to be added to the context.",
     )
 
     max_lines: Optional[int] = Field(
-        default = None,
-        description = "Maximum number of lines a file can have in order to be added to the context."
+        default=None,
+        description="Maximum number of lines a file can have in order to be added to the context.",
     )
 
     size_heuristic: Optional[Literal["small", "medium", "large"]] = Field(
-        default = None,
-        description = "If provided with --small, --medium, or --large, will automatically set the min_lines and max_lines parameters. Small means 0 - 1000 lines. Medium is 300 - 3000 lines. Large is 3000+. The small, medium, and large parameters are mutually exclusive."
+        default=None,
+        description="If provided with --small, --medium, or --large, will automatically set the min_lines and max_lines parameters. Small means 0 - 1000 lines. Medium is 300 - 3000 lines. Large is 3000+. The small, medium, and large parameters are mutually exclusive.",
     )
 
     exclude_pattern: str = Field(
-        default = "",
-        description = "A regex that can be provided. File names that match against it are excluded from the context. The exclude pattern is applied at the very end of the discovery process."
-    )
-    
-    all: bool = Field(
-        default = False,
-        description = "If provided, will add all (non-hidden) files to the context that are found in subdirectories of the given path. Providing --all is like providing all of the language parameters."
+        default="",
+        description="A regex that can be provided. File names that match against it are excluded from the context. The exclude pattern is applied at the very end of the discovery process.",
     )
 
-    # this containts e.g. "python", "javascript, "cpp". It should be used to create argparse parameters, like --python, --javascript, --cpp and so on 
-    possible_languages: ClassVar[List[str]] = list(set(list(EXTENSION_TO_LANGUAGE_MAP.values())))
+    all: bool = Field(
+        default=False,
+        description="If provided, will add all (non-hidden) files to the context that are found in subdirectories of the given path. Providing --all is like providing all of the language parameters.",
+    )
+
+    # this containts e.g. "python", "javascript, "cpp". It should be used to create argparse parameters, like --python, --javascript, --cpp and so on
+    possible_languages: ClassVar[List[str]] = list(
+        set(list(EXTENSION_TO_LANGUAGE_MAP.values()))
+    )
 
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
@@ -480,7 +482,7 @@ class DiscoverCommand(BaseModel, CommandInterface):
             sys.exit(1)
 
         discovered_files: List[str] = []
-        
+
         # Determine effective min_lines and max_lines
         effective_min_lines = self.min_lines
         effective_max_lines = self.max_lines
@@ -492,7 +494,7 @@ class DiscoverCommand(BaseModel, CommandInterface):
             effective_max_lines = 3000
         elif self.size_heuristic == "large":
             effective_min_lines = 3000
-            effective_max_lines = None # No upper limit for large
+            effective_max_lines = None  # No upper limit for large
 
         # Compile exclude pattern if provided
         exclude_regex = None
@@ -506,7 +508,7 @@ class DiscoverCommand(BaseModel, CommandInterface):
         # Prepare language filters
         enabled_languages_set = set(self.languages_enabled)
         disabled_languages_set = set(self.languages_disabled)
-        
+
         # If --all is provided, enable all possible languages first
         if self.all:
             enabled_languages_set.update(self.possible_languages)
@@ -516,42 +518,58 @@ class DiscoverCommand(BaseModel, CommandInterface):
 
         for root, dirs, files in os.walk(target_abs_path):
             # Filter out directories starting with '_' to prevent recursion into them
-            dirs[:] = [d for d in dirs if not d.startswith('_')]
+            dirs[:] = [d for d in dirs if not d.startswith("_")]
 
             for filename in files:
                 abs_filepath = os.path.join(root, filename)
-                relative_filepath = os.path.relpath(abs_filepath, start=prog.project_root)
+                relative_filepath = os.path.relpath(
+                    abs_filepath, start=prog.project_root
+                )
 
                 # Skip hidden files/directories (e.g., .git, .ghostcode, files starting with .)
-                if any(part.startswith('.') for part in relative_filepath.split(os.sep)):
+                if any(
+                    part.startswith(".") for part in relative_filepath.split(os.sep)
+                ):
                     logger.debug(f"Skipping hidden file: {relative_filepath}")
                     continue
-                
+
                 # 1. Apply language filter
                 file_language = language_from_extension(abs_filepath)
                 if file_language not in enabled_languages_set:
-                    logger.debug(f"Skipping '{relative_filepath}': Language '{file_language}' not enabled.")
+                    logger.debug(
+                        f"Skipping '{relative_filepath}': Language '{file_language}' not enabled."
+                    )
                     continue
 
                 # 2. Apply line count filter
                 try:
-                    with open(abs_filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open(
+                        abs_filepath, "r", encoding="utf-8", errors="ignore"
+                    ) as f:
                         lines = f.readlines()
                         line_count = len(lines)
                 except Exception as e:
-                    logger.warning(f"Could not read file '{relative_filepath}' for line count: {e}. Skipping.")
+                    logger.warning(
+                        f"Could not read file '{relative_filepath}' for line count: {e}. Skipping."
+                    )
                     continue
 
                 if effective_min_lines is not None and line_count < effective_min_lines:
-                    logger.debug(f"Skipping '{relative_filepath}': {line_count} lines, less than min_lines ({effective_min_lines}).")
+                    logger.debug(
+                        f"Skipping '{relative_filepath}': {line_count} lines, less than min_lines ({effective_min_lines})."
+                    )
                     continue
                 if effective_max_lines is not None and line_count > effective_max_lines:
-                    logger.debug(f"Skipping '{relative_filepath}': {line_count} lines, more than max_lines ({effective_max_lines}).")
+                    logger.debug(
+                        f"Skipping '{relative_filepath}': {line_count} lines, more than max_lines ({effective_max_lines})."
+                    )
                     continue
 
                 # 3. Apply exclude pattern filter
                 if exclude_regex and exclude_regex.search(filename):
-                    logger.debug(f"Skipping '{relative_filepath}': Matches exclude pattern '{self.exclude_pattern}'.")
+                    logger.debug(
+                        f"Skipping '{relative_filepath}': Matches exclude pattern '{self.exclude_pattern}'."
+                    )
                     continue
 
                 discovered_files.append(relative_filepath)
@@ -572,6 +590,7 @@ class DiscoverCommand(BaseModel, CommandInterface):
         result.print(f"Discovery complete. Added {added_count} new files to context.")
         return result
 
+
 class LogCommand(BaseModel, CommandInterface):
     """Manages and displays interaction history."""
 
@@ -581,16 +600,19 @@ class LogCommand(BaseModel, CommandInterface):
     )
 
     all_branches: bool = Field(
-        default = False,
-        description = "Do not filter any interactions based on branches."
+        default=False, description="Do not filter any interactions based on branches."
     )
-    
+
     def _overview_show_interaction(
         self, interaction: types.InteractionHistory, num_turns: int
     ) -> str:
         turns_str = f"turns: {num_turns}\n"
         tag_str = f"tag: {interaction.tag}\n" if interaction.tag else ""
-        branch_str = f"branch: {interaction.branch_name}\n" if interaction.branch_name is not None else ""
+        branch_str = (
+            f"branch: {interaction.branch_name}\n"
+            if interaction.branch_name is not None
+            else ""
+        )
         git_str = (
             f"commits affected: {", ".join(commits)}\n"
             if (commits := interaction.get_affected_git_commits()) != []
@@ -688,16 +710,20 @@ class LogCommand(BaseModel, CommandInterface):
                         if interaction.branch_name != current_branch:
                             num_filtered += 1
                             continue
-                        
+
                     num_turns = len(interaction.contents)
                     result.print(
                         self._overview_show_interaction(interaction, num_turns)
                     )
 
             if num_filtered > 0:
-                result.print(f"{num_filtered} interaction histories have been filtered.")
+                result.print(
+                    f"{num_filtered} interaction histories have been filtered."
+                )
                 if prog.user_config.newbie:
-                    result.print(f"Hint: By default, only interactions that were started on your current git branch are shown. Use --all-branches to disable this behaviour, or checkout a different branch.")
+                    result.print(
+                        f"Hint: By default, only interactions that were started on your current git branch are shown. Use --all-branches to disable this behaviour, or checkout a different branch."
+                    )
         return result
 
 
@@ -726,8 +752,8 @@ class InteractCommand(BaseModel, CommandInterface):
     )
 
     initial_interaction_history_length: int = Field(
-        default = 0,
-        description = "Number of messages in initial interaction. For new interactions this is always zero. It may be nonzero if an existing interaction is loaded. Used primarily to check wether there was any real change at all and if the current interaction needs to be saved."
+        default=0,
+        description="Number of messages in initial interaction. For new interactions this is always zero. It may be nonzero if an existing interaction is loaded. Used primarily to check wether there was any real change at all and if the current interaction needs to be saved.",
     )
 
     # whether to force releasing of interaction lock
@@ -735,9 +761,9 @@ class InteractCommand(BaseModel, CommandInterface):
 
     branch: Optional[str] = Field(
         default=None,
-        description="Optional Git branch to checkout before starting the interaction."
+        description="Optional Git branch to checkout before starting the interaction.",
     )
-    
+
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         if not prog.project_root or not prog.project:
@@ -762,7 +788,7 @@ class InteractCommand(BaseModel, CommandInterface):
         # Handle branch checkout if specified
         if self.branch:
             if not prog.has_git_integration():
-                error_msg = "Git integration is disabled in project configuration. Cannot checkout branch." 
+                error_msg = "Git integration is disabled in project configuration. Cannot checkout branch."
                 prog.print(f"Error: {error_msg}")
                 logger.error(error_msg)
                 sys.exit(1)
@@ -783,48 +809,56 @@ class InteractCommand(BaseModel, CommandInterface):
                 sys.exit(1)
 
             loaded_history = prog.project.get_interaction_history(
-                unique_id=self.interaction_identifier,
-                tag=self.interaction_identifier
+                unique_id=self.interaction_identifier, tag=self.interaction_identifier
             )
 
             if loaded_history is None:
-                prog.print(f"Error: No interaction found with ID or tag '{self.interaction_identifier}'.")
+                prog.print(
+                    f"Error: No interaction found with ID or tag '{self.interaction_identifier}'."
+                )
                 sys.exit(1)
             else:
                 self.interaction_history = loaded_history
-                self.initial_interaction_history_length = len(self.interaction_history.contents)
+                self.initial_interaction_history_length = len(
+                    self.interaction_history.contents
+                )
                 # need to add the preamble injection
                 ghostbox_history = self.interaction_history.to_chat_messages()
                 if ghostbox_history:
-                    content = ghostbox_history[0].content                    
+                    content = ghostbox_history[0].content
                     if isinstance(content, str):
-                        ghostbox_history[0].content = self._prefix_preamble_string(content)
+                        ghostbox_history[0].content = self._prefix_preamble_string(
+                            content
+                        )
                     else:
                         # technically the content can be a list or a dict, but we never use this
-                        logger.warning(f"Non-string content field in first ghostbox history message. This means we didn't add the preamble injection string.")
+                        logger.warning(
+                            f"Non-string content field in first ghostbox history message. This means we didn't add the preamble injection string."
+                        )
                 prog.coder_box.set_history(ghostbox_history)
-                prog.print(f"Continuing interaction '{self.interaction_history.title}' (ID: {self.interaction_history.unique_id}).")
+                prog.print(
+                    f"Continuing interaction '{self.interaction_history.title}' (ID: {self.interaction_history.unique_id})."
+                )
 
         # start the actual loop in another method
         return self._interact_loop(result, prog)
 
         # This code is unreachable but in the future error handling/control flow of this method might become more complicated and we may need it
         return result
-    
+
     def _make_preamble(self, prog: Program) -> str:
         """Plaintext context that is inserted before the user prompt - though only once."""
         return prompts.make_prompt(
             prog,
             prompt_config=prompts.PromptConfig.minimal(
                 project_metadata=True,
-                style_file = True,
+                style_file=True,
                 context_files="full",
-                recent_interaction_summaries = "full",
+                recent_interaction_summaries="full",
                 # could add shell here?
             ),
         )
 
-    
     def _prefix_preamble_string(self, prompt: str) -> str:
         """
         Prefixes the user's prompt with the magic `{_{_preamble_injection_}_}` placeholder (without the outer underscores).
@@ -835,7 +869,7 @@ class InteractCommand(BaseModel, CommandInterface):
         """
         # note the song-and-dance with string concatenation below is so that we can use ghostcode on itself without an unwanted expansion of the preamble magic string
         return "{{" + "preamble_injection" + "}}" + f"# User Prompt\n\n{prompt}"
-    
+
     def _make_user_prompt(self, prog: Program, prompt: str) -> str:
         """Prepare a user prompt to be sent to the backend.
 
@@ -860,8 +894,8 @@ class InteractCommand(BaseModel, CommandInterface):
         # Subsequent messages rely on `prog.coder_box.set_vars` to keep the preamble updated.
         if self.interaction_history.empty():
             return self._prefix_preamble_string(prompt)
-        return prompt    
-        
+        return prompt
+
     def _dump_interaction(self, prog: Program) -> None:
         """Dumps interaction history to .ghostcode/current_interaction.txt and .ghostcode/current_interaction.json"""
         if (
@@ -906,10 +940,13 @@ class InteractCommand(BaseModel, CommandInterface):
             # nothing to do
             return
 
-        if len(self.interaction_history.contents) == self.initial_interaction_history_length:
+        if (
+            len(self.interaction_history.contents)
+            == self.initial_interaction_history_length
+        ):
             # history may have been loaded and wasn't change -> do nothing
             return
-        
+
         logger.info(f"Finishing interaction.")
         new_title = worker.worker_generate_title(prog, self.interaction_history)
         self.interaction_history.title = (
@@ -991,13 +1028,19 @@ class InteractCommand(BaseModel, CommandInterface):
         # lock guard
         if (lock_id := prog.lock_read()) is not None:
             if self.force_lock:
-                logger.warning(f"Failed to acquire lock because of interaction {lock_id}, but lock will be forced.")
+                logger.warning(
+                    f"Failed to acquire lock because of interaction {lock_id}, but lock will be forced."
+                )
                 prog.lock_release()
             else:
-                logger.error(f"Failed to acquire interaction lock due to ongoing interaction {lock_id} .")
-                intermediate_result.print(f"Failed to acquire lock. Aborting.\nAnother ghostcode session (interaction {lock_id}) is currently in progress. Please finish that interaction, or\nrestart ghostcode with `ghostcode interaction --force` to force it closed. This may lead to data loss. You have been warned.")
+                logger.error(
+                    f"Failed to acquire interaction lock due to ongoing interaction {lock_id} ."
+                )
+                intermediate_result.print(
+                    f"Failed to acquire lock. Aborting.\nAnother ghostcode session (interaction {lock_id}) is currently in progress. Please finish that interaction, or\nrestart ghostcode with `ghostcode interaction --force` to force it closed. This may lead to data loss. You have been warned."
+                )
                 return intermediate_result
-            
+
         # Initial prompt handling
         if self.initial_prompt is not None:
             current_user_input = self.initial_prompt
@@ -1018,7 +1061,7 @@ class InteractCommand(BaseModel, CommandInterface):
 
         try:
             with prog.interaction_lock(
-                    interaction_history_id=self.interaction_history.unique_id
+                interaction_history_id=self.interaction_history.unique_id
             ):
 
                 while True:
@@ -1034,7 +1077,9 @@ class InteractCommand(BaseModel, CommandInterface):
                         break  # User pressed CTRL+D, exit interaction
 
                     # Handle slash commands
-                    match slash_commands.try_command(prog, self.interaction_history, line):
+                    match slash_commands.try_command(
+                        prog, self.interaction_history, line
+                    ):
                         case slash_commands.SlashCommandResult.OK:
                             continue  # Command handled, go to next loop iteration (ask for input)
                         case slash_commands.SlashCommandResult.HALT:
@@ -1050,15 +1095,23 @@ class InteractCommand(BaseModel, CommandInterface):
                         case slash_commands.SlashCommandResult.ACTIONS_OFF:
                             if self.actions:
                                 self.actions = False
-                                prog.print("Enabled talk mode. Coder backend will generate text only, no file edits.")
+                                prog.print(
+                                    "Enabled talk mode. Coder backend will generate text only, no file edits."
+                                )
                             else:
-                                prog.print("Talk mode already enabled, use /interact to switch to interactive mode.")
+                                prog.print(
+                                    "Talk mode already enabled, use /interact to switch to interactive mode."
+                                )
                         case slash_commands.SlashCommandResult.ACTIONS_ON:
-                            if not(self.actions):
+                            if not (self.actions):
                                 self.actions = True
-                                prog.print("Interact mode enabled. Coder backend will generate code and produce file edits.")
+                                prog.print(
+                                    "Interact mode enabled. Coder backend will generate code and produce file edits."
+                                )
                             else:
-                                prog.print("Interact mode already enabled. Use /talk to disable code generation and file edits.")
+                                prog.print(
+                                    "Interact mode already enabled. Use /talk to disable code generation and file edits."
+                                )
                         case _:
                             pass  # Not a slash command, accumulate input
 
@@ -1066,9 +1119,13 @@ class InteractCommand(BaseModel, CommandInterface):
                     if line != "\\":
                         current_user_input += "\n" + line
 
-                        if prog.user_config.newbie and current_user_input.endswith("\n\n"):
+                        if prog.user_config.newbie and current_user_input.endswith(
+                            "\n\n"
+                        ):
                             # user may be frantically trying to submit
-                            prog.print("(Hint: Enter a single backslash (\\) and hit enter to submit your prompt. Disable this message with `ghostcode config set newbie False`)")
+                            prog.print(
+                                "(Hint: Enter a single backslash (\\) and hit enter to submit your prompt. Disable this message with `ghostcode config set newbie False`)"
+                            )
 
                         continue  # Keep accumulating
 
@@ -1083,23 +1140,41 @@ class InteractCommand(BaseModel, CommandInterface):
                     current_user_input = ""  # Clear buffer for next turn
                     self._dump_interaction(prog)  # Save state after each turn
         except types.InteractionLockError as e:
-            logger.error(f"Failed to acquire lock: {e}")                
-            prog.print(f"Cannot proceed because another ghostcode session is in progress (interaction {prog.lock_read()}).\nPlease finish the ongoing interaction, or force it to close by running ghostcode \nwith `ghostcode interaction --force`. Data may be lost. You have been warned.")
+            logger.error(f"Failed to acquire lock: {e}")
+            prog.print(
+                f"Cannot proceed because another ghostcode session is in progress (interaction {prog.lock_read()}).\nPlease finish the ongoing interaction, or force it to close by running ghostcode \nwith `ghostcode interaction --force`. Data may be lost. You have been warned."
+            )
 
         # End of interaction
-        prog.debug_dump()                
+        prog.debug_dump()
         self._save_interaction(prog)
 
         return CommandOutput(text="Finished interaction.")
 
+
 class NagCommand(BaseModel):
     """Used to start a read-only voice chat session that monitors certain outputs (tests, type-checkers, log files) and notifies the user about problems (that's the nagging part)."""
 
+    files: List[str] = Field(
+        default_factory=list,
+        description="List of files given with -f or --file arguments to the nag subcommand. These will be turned into NagSourceFile instances to track.",
+    )
+
+    urls: List[str] = Field(
+        default_factory=list,
+        description="URLs that were given to the nag subcommand with the -u or --url command line parameter. These will be turned into NagSourceHTTPRequests and periodically checked.",
+    )
+
+    executables: List[str] = Field(
+        default_factory = list,
+        description = "Provided with -e or --executable to the nag subcommand. List of executables that will be run with a shell command to be potentially nagged about. These will be turned into NagSourceSubprocess."
+    )
     
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         return result
-    
+
+
 class VerifyCommand(BaseModel):
     """Command to verify program integrity and configuration.
     This is currently only used internally to check for API keys."""
@@ -1171,21 +1246,23 @@ def _main() -> None:
 
     # -- coder-backend argument
     parser.add_argument(
-        "-C", "--coder-backend",
+        "-C",
+        "--coder-backend",
         type=str,
         choices=[backend.name for _, backend in enumerate(ghostbox.LLMBackend)],
         default="",
         help="Set the choice of backend for the coder LLM. This will override both project and user configuration options for the coder backend.",
-    )    
+    )
 
     parser.add_argument(
-        "-W", "--worker-backend",
+        "-W",
+        "--worker-backend",
         type=str,
         choices=[backend.name for _, backend in enumerate(ghostbox.LLMBackend)],
         default="",
         help="Set the choice of backend for the worker LLM. This will override both project and user configuration options for the coder backend.",
-    )    
-    
+    )
+
     # Add --logging argument
     parser.add_argument(
         "--logging",
@@ -1204,7 +1281,7 @@ def _main() -> None:
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Enable debug logging, showing verbose internal messages."
+        help="Enable debug logging, showing verbose internal messages.",
     )
 
     subparsers = parser.add_subparsers(
@@ -1277,16 +1354,20 @@ def _main() -> None:
         "ls", aliases=["list"], help="List all files in the project context."
     )
     context_ls_parser.set_defaults(func=lambda args: ContextCommand(subcommand="ls"))
-    
+
     context_clean_parser = context_subparsers.add_parser(
         "clean", aliases=[], help="Remove bogus or non-existing files from context."
     )
-    context_clean_parser.set_defaults(func=lambda args: ContextCommand(subcommand="clean"))
+    context_clean_parser.set_defaults(
+        func=lambda args: ContextCommand(subcommand="clean")
+    )
 
     context_wipe_parser = context_subparsers.add_parser(
         "wipe", help="Remove all files from the project context."
     )
-    context_wipe_parser.set_defaults(func=lambda args: ContextCommand(subcommand="wipe"))
+    context_wipe_parser.set_defaults(
+        func=lambda args: ContextCommand(subcommand="wipe")
+    )
 
     context_lock_parser = context_subparsers.add_parser(
         "lock", help="Lock file(s) in the project context, preventing their removal."
@@ -1343,7 +1424,6 @@ def _main() -> None:
         func=lambda args: ContextCommand(subcommand="rm", filepaths=args.filepaths)
     )
 
-
     # Discover command
     discover_parser = subparsers.add_parser(
         "discover",
@@ -1358,16 +1438,16 @@ def _main() -> None:
     for lang in sorted(DiscoverCommand.possible_languages):
         discover_parser.add_argument(
             f"--{lang}",
-            action="append_const", # Use append_const to collect multiple languages
+            action="append_const",  # Use append_const to collect multiple languages
             const=lang,
-            dest="languages_enabled", # All --lang flags append to this list
+            dest="languages_enabled",  # All --lang flags append to this list
             help=f"Include files primarily written in {lang.capitalize()}.",
         )
         discover_parser.add_argument(
             f"--no-{lang}",
             action="append_const",
             const=lang,
-            dest="languages_disabled", # All --no-lang flags append to this list
+            dest="languages_disabled",  # All --no-lang flags append to this list
             help=f"Exclude files primarily written in {lang.capitalize()}.",
         )
 
@@ -1424,7 +1504,9 @@ def _main() -> None:
         func=lambda args: DiscoverCommand(
             filepath=args.filepath,
             languages_enabled=args.languages_enabled if args.languages_enabled else [],
-            languages_disabled=args.languages_disabled if args.languages_disabled else [],
+            languages_disabled=(
+                args.languages_disabled if args.languages_disabled else []
+            ),
             min_lines=args.min_lines,
             max_lines=args.max_lines,
             size_heuristic=args.size_heuristic,
@@ -1432,7 +1514,7 @@ def _main() -> None:
             all=args.all,
         )
     )
-    
+
     # Interact command
     interact_parser = subparsers.add_parser(
         "interact", help="Launches an interactive session with the Coder LLM."
@@ -1480,7 +1562,9 @@ def _main() -> None:
         help="Specify a Git branch to checkout before starting the interaction.",
     )
     interact_parser.set_defaults(
-        func=lambda args: _create_interact_command(args, actions=args.actions, force_lock=args.force, branch=args.branch)
+        func=lambda args: _create_interact_command(
+            args, actions=args.actions, force_lock=args.force, branch=args.branch
+        )
     )
 
     # Talk command
@@ -1525,9 +1609,11 @@ def _main() -> None:
         help="Specify a Git branch to checkout before starting the interaction.",
     )
     talk_parser.set_defaults(
-        func=lambda args: _create_interact_command(args, actions=False, force_lock=args.force, branch=args.branch)
+        func=lambda args: _create_interact_command(
+            args, actions=False, force_lock=args.force, branch=args.branch
+        )
     )
-    
+
     # Log command
     log_parser = subparsers.add_parser("log", help="Display past interaction history.")
     log_parser.add_argument(
@@ -1538,13 +1624,15 @@ def _main() -> None:
     log_parser.add_argument(
         "--all-branches",
         action="store_true",
-        help="Do not filter any interactions based on branches."
+        help="Do not filter any interactions based on branches.",
     )
     log_parser.set_defaults(
-        func=lambda args: LogCommand(interaction_identifier=args.interaction, all_branches=args.all_branches)
+        func=lambda args: LogCommand(
+            interaction_identifier=args.interaction, all_branches=args.all_branches
+        )
     )
 
-    args = parser.parse_args()    
+    args = parser.parse_args()
     # --- Determine project_root early for logging configuration ---
 
     current_project_root: Optional[str] = None
@@ -1632,10 +1720,14 @@ def _main() -> None:
     # Pass API keys from user_config to Ghostbox instances
     # we catch missing API key and other backend initialization errors here, and inform the user later in commands that actually require backends
     try:
-        worker_backend = project.config.worker_backend if args.worker_backend == "" else args.worker_backend
+        worker_backend = (
+            project.config.worker_backend
+            if args.worker_backend == ""
+            else args.worker_backend
+        )
         worker_box = Ghostbox(
             endpoint=project.config.worker_endpoint,
-            backend= worker_backend,
+            backend=worker_backend,
             character_folder=os.path.join(
                 current_project_root, ".ghostcode", project._WORKER_CHARACTER_FOLDER
             ),
@@ -1643,7 +1735,7 @@ def _main() -> None:
             google_api_key=user_config.google_api_key,
             openai_api_key=user_config.openai_api_key,
             deepseek_api_key=user_config.deepseek_api_key,
-            model = user_config.get_model(types.AIAgent.CODER, worker_backend),            
+            model=user_config.get_model(types.AIAgent.CODER, worker_backend),
             **quiet_options,
         )
     except Exception as e:
@@ -1651,7 +1743,11 @@ def _main() -> None:
         worker_box = ghostbox.from_dummy(**quiet_options)
 
     try:
-        coder_backend = project.config.coder_backend if args.coder_backend == "" else args.coder_backend
+        coder_backend = (
+            project.config.coder_backend
+            if args.coder_backend == ""
+            else args.coder_backend
+        )
         coder_box = Ghostbox(
             endpoint=project.config.coder_endpoint,
             backend=coder_backend,
@@ -1662,7 +1758,7 @@ def _main() -> None:
             google_api_key=user_config.google_api_key,
             openai_api_key=user_config.openai_api_key,
             deepseek_api_key=user_config.deepseek_api_key,
-            model = user_config.get_model(types.AIAgent.CODER, coder_backend),
+            model=user_config.get_model(types.AIAgent.CODER, coder_backend),
             **quiet_options,
         )
     except Exception as e:
@@ -1686,7 +1782,10 @@ def _main() -> None:
 
 
 def _create_interact_command(
-    args: argparse.Namespace, actions: bool, force_lock: bool = False, branch: Optional[str] = None
+    args: argparse.Namespace,
+    actions: bool,
+    force_lock: bool = False,
+    branch: Optional[str] = None,
 ) -> InteractCommand:
     """Helper function to create InteractCommand, handling skip_to logic and mutual exclusivity."""
     skip_to_agent: Optional[types.AIAgent] = None
