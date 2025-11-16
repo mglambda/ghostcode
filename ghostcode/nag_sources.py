@@ -62,7 +62,7 @@ class NagSourceFile(NagSourceBase):
     type: Literal["NagSourceFile"] = "NagSourceFile"
     filepath: str    
     nag_interval_seconds: int = Field(
-        default = 60,
+        default = 3,
         description = "Number of seconds between file reads. 1 minute is the default because we don't expect files to change super frequently."
     )
 
@@ -81,6 +81,8 @@ class NagSourceHTTPRequest(NagSourceBase):
         description = "The URL to send the http request to."
     )
 
+    nag_interval_seconds: int = 60
+    
     def identity(self) -> str:
         return self.url
 
@@ -91,10 +93,10 @@ class NagSourceHTTPRequest(NagSourceBase):
 class NagSourceSubprocess(NagSourceBase):
     """Represents an executable process that is invoked and nagged about if there are problems."""
     type: Literal["NagSourceExecutable"] = "NagSourceExecutable"
-    shell_command: str
-
+    command: str
+    nag_interval_seconds: int = 30
     def identity(self) -> str:
-        return self.shell_command
+        return self.command
 
     def check(self, box: Ghostbox) -> NagCheckResult:
         # stub

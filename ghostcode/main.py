@@ -28,7 +28,7 @@ from . import prompts
 from .utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP, language_from_extension
 from .logconfig import ExceptionListHandler, _configure_logging
 from .program import Program
-from .nag_sources import NagSource
+from .nag_sources import NagSource, NagSourceFile, NagSourceHTTPRequest, NagSourceSubprocess
 
 # logger will be configured after argument parsing
 logger: logging.Logger  # Declare logger globally, will be assigned later
@@ -1170,7 +1170,18 @@ class NagCommand(BaseModel):
         error_str = ""
         nag_sources: List[NagSource] = []
 
-        # ...
+        for f in self.files:
+            nag_sources.append(NagSourceFile(display_name=os.path.basename(f), filepath=f))
+            logger.info(f"Monitoring file: {f}")
+            
+        for u in self.urls:
+            nag_sources.append(NagSourceHTTPRequest(display_name=u, url=u))
+            logger.info(f"Monitoring URL: {u}")
+
+        for c in self.shell_commands:
+            nag_sources.append(NagSourceSubprocess(display_name=c, command=c))
+            logger.info(f"Monitoring command: {c}")
+
         return error_str, nag_sources
     
     def run(self, prog: Program) -> CommandOutput:
