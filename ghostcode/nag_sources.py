@@ -86,12 +86,12 @@ class NagSourceFile(NagSourceBase):
         abs_filepath = self.filepath
 
         if not os.path.exists(abs_filepath):
-            return problem(source_content=f"File '{self.filepath}' not found.")
+            return problem(source_content="", error_while_checking=f"File '{self.filepath}' not found.")
         
         try:
             current_mtime = os.path.getmtime(abs_filepath)
         except OSError as e:
-            return problem(source_content=f"Could not get modification time for '{self.filepath}': {e}")
+            return problem(source_content="", error_while_checking=f"Could not get modification time for '{self.filepath}': {e}")
 
         if self.last_modified_timestamp != 0.0 and current_mtime == self.last_modified_timestamp:
             # File hasn't changed since last check, no need to re-read or re-classify
@@ -104,7 +104,7 @@ class NagSourceFile(NagSourceBase):
             with open(abs_filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         except IOError as e:
-            return problem(source_content=f"Could not read file '{self.filepath}': {e}")
+            return problem(source_content="", error_while_checking=f"Could not read file '{self.filepath}': {e}")
         
         class FileProblemClassification(BaseModel):
             has_problem: bool
@@ -115,7 +115,7 @@ class NagSourceFile(NagSourceBase):
                 f"These are the contents of file `{self.filepath}.\nPlease inspect the file contents and identify if there is a potential problem or not.\n\n```\n{content}\n```"
             )
         except Exception as e:
-            return problem(source_content=content + f"\n\n---\nAdditionally, an exception was encountered while trying to classify the file: {e}.")
+            return problem(source_content=content, error_while_checking=f"An exception was encountered while trying to classify the file: {e}.")
         return NagCheckResult(has_problem=result.has_problem, source_content=content)
     
 class NagSourceHTTPRequest(NagSourceBase):
