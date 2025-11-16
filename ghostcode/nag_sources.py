@@ -192,9 +192,10 @@ class NagSourceSubprocess(NagSourceBase):
             
             if process.returncode != 0:
                 # Command failed (non-zero exit code)
+                # compilers, type checkers and test suites universally use this to signify a probelm
+                # so it just made our job very easy - and also this is therefore not considered an error_while_checking
                 return problem(
                     source_content=combined_output,
-                    error_while_checking=f"Command exited with non-zero status {process.returncode}."
                 )
             else:
                 # Command succeeded (zero exit code), but check its output for problems

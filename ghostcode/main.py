@@ -2,6 +2,7 @@ from typing import *
 import json
 import traceback
 import ghostbox
+import time
 import os
 from ghostbox import Ghostbox, ChatMessage
 from ghostbox.definitions import BrokenBackend
@@ -1212,6 +1213,7 @@ class NagCommand(BaseModel):
         # FIXME: clear history or not?
         speaker_box.text_stream(
             f"Please create a short notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational, while getting the essential points across. Highlight potential problems and issues, and give a summary if there are no obvious problems.\n\n```\n{nag_result.source_content}\n```",
+            chunk_callback=lambda chunk: None,
             generation_callback=capture_generation
         )
         # block until speaking is done
@@ -1238,6 +1240,7 @@ class NagCommand(BaseModel):
         # nag loop
         while True:
             for nag_source in nag_sources:
+                time.sleep(self.interval)
                 # process source does TTS output asynchronously
                 # but we print textual data (which may diverge from TTS) here
                 if (text_output := self._process_source(prog, nag_source, speaker_box=speaker_box)):
