@@ -150,7 +150,7 @@ class IdleWorker:
                 continue
 
             # skip problematic interactions
-            if current_interaction_id in self._skip_interaction_ids:
+            if interaction.unique_id in self._skip_interaction_ids:
                 continue
             
             made_changes = False
