@@ -603,9 +603,8 @@ class LogCommand(BaseModel, CommandInterface):
         default=False, description="Do not filter any interactions based on branches."
     )
 
-    def _overview_show_interaction(
-        self, interaction: types.InteractionHistory, num_turns: int
-    ) -> str:
+    def _overview_header(self, interaction: types.InteractionHistory) -> str:
+        num_turns = len(interaction.contents)
         turns_str = f"turns: {num_turns}\n"
         tag_str = f"tag: {interaction.tag}\n" if interaction.tag else ""
         branch_str = (
@@ -625,7 +624,11 @@ class LogCommand(BaseModel, CommandInterface):
             )
         else:
             time_str = ""
+        return f"""interaction {interaction.unique_id}
+{tag_str}{branch_str}{git_str}{turns_str}{time_str}{title_str}"""
 
+    def _overview_show_interaction(self, interaction: types.InteractionHistory) -> str:
+        num_turns = len(interaction.contents)
         if interaction.empty():
             first_msg = ""
         else:
@@ -640,8 +643,7 @@ class LogCommand(BaseModel, CommandInterface):
                 if len(first_msg) >= limit:
                     first_msg = first_msg[:limit].strip() + "..."
 
-        return f"""interaction {interaction.unique_id}
-        {tag_str}{branch_str}{git_str}{turns_str}{time_str}{title_str}
+        return f"""{self._overview_header(interaction)}
 {first_msg}
 """
 
@@ -661,9 +663,7 @@ class LogCommand(BaseModel, CommandInterface):
             found_by_id = [i for i in project.interactions if i.unique_id == target_id]
             if len(found_by_id) == 1:
                 interaction = found_by_id[0]
-                result.print(
-                    f"--- Interaction Details (ID: {interaction.unique_id}, Tag: {interaction.tag}) ---"
-                )
+                result.print(self._overview_header(interaction))
                 result.print(interaction.show())
                 return result
             elif len(found_by_id) > 1:
@@ -677,9 +677,7 @@ class LogCommand(BaseModel, CommandInterface):
             found_by_tag = [i for i in project.interactions if i.tag == target_id]
             if len(found_by_tag) == 1:
                 interaction = found_by_tag[0]
-                result.print(
-                    f"--- Interaction Details (ID: {interaction.unique_id}, Tag: {interaction.tag}) ---"
-                )
+                result.print(self._overview_header(interaction))
                 result.print(interaction.show())
                 return result
             elif len(found_by_tag) > 1:
@@ -688,7 +686,7 @@ class LogCommand(BaseModel, CommandInterface):
                 )
                 for interaction in found_by_tag:
                     result.print(
-                        f"  - ID: {interaction.unique_id}, Tag: {interaction.tag}, Title: '{interaction.title}', Turns: {len(interaction.contents)}"
+                        self._overview_header(interaction)
                     )
                 return result
             else:
@@ -711,10 +709,7 @@ class LogCommand(BaseModel, CommandInterface):
                             num_filtered += 1
                             continue
 
-                    num_turns = len(interaction.contents)
-                    result.print(
-                        self._overview_show_interaction(interaction, num_turns)
-                    )
+                    result.print(self._overview_show_interaction(interaction))
 
             if num_filtered > 0:
                 result.print(
@@ -1165,11 +1160,11 @@ class NagCommand(BaseModel):
         description="URLs that were given to the nag subcommand with the -u or --url command line parameter. These will be turned into NagSourceHTTPRequests and periodically checked.",
     )
 
-    executables: List[str] = Field(
-        default_factory = list,
-        description = "Provided with -e or --executable to the nag subcommand. List of executables that will be run with a shell command to be potentially nagged about. These will be turned into NagSourceSubprocess."
+    shell_commands: List[str] = Field(
+        default_factory=list,
+        description="Provided with -c or --command to the nag subcommand. List of shell commands that will be run with a subprocess to be potentially nagged about. These will be turned into NagSourceSubprocess.",
     )
-    
+
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         return result

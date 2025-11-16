@@ -91,10 +91,10 @@ class NagSourceHTTPRequest(NagSourceBase):
 class NagSourceSubprocess(NagSourceBase):
     """Represents an executable process that is invoked and nagged about if there are problems."""
     type: Literal["NagSourceExecutable"] = "NagSourceExecutable"
-    executable_filepath: str
+    shell_command: str
 
     def identity(self) -> str:
-        return self.executable_filepath
+        return self.shell_command
 
     def check(self, box: Ghostbox) -> NagCheckResult:
         # stub
