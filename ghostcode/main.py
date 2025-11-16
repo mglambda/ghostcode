@@ -1223,7 +1223,8 @@ class NagCommand(BaseModel):
         # FIXME: clear history or not?
         #logger.debug(f"debug2: \n{json.dumps(speaker_box.get_options(), indent=4)}")
         speaker_box.text_stream(
-            f"Please create a short notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational, while getting the essential points across. Highlight potential problems and issues, and give a summary if there are no obvious problems.\n\n```\n{nag_result.source_content}\n```",
+            f"Please create a very concise and brief notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational. Focus on the *type* of problem and its *impact*, rather than listing individual errors. Do not list more than 2-3 specific errors; if there are many, summarize them. Crucially, always provide some text, even if it's just a brief acknowledgment of the output.",
+            #f"Please create a short notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational, while getting the essential points across. Highlight potential problems and issues, and give a summary if there are no obvious problems.\n\n```\n{nag_result.source_content}\n```",
             chunk_callback=lambda chunk: chunk,
             generation_callback=capture_generation,
         )
@@ -1251,7 +1252,6 @@ class NagCommand(BaseModel):
         # we use this to vocalize and transcribe
         # usually, it is a variant of the worker_box
         speaker_box = prog.get_speaker_box()
-        print(f"debug: {speaker_box._plumbing.tts}")
         speaker_box.tts_say(f"Initialized and ready to nag you about {len(nag_sources)} sources." + "" if len(nag_sources) != 0 else "Wait, zero? Oh, looks like I won't get to nag very much.") 
         speaker_box.tts_wait()
         # nag loop
