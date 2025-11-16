@@ -1167,6 +1167,9 @@ class NagCommand(BaseModel):
 
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
+        # The actual logic for the nag command will be implemented here later.
+        # For now, it just returns an empty output.
+        result.print("Nag command executed. Monitoring not yet implemented.")
         return result
 
 
@@ -1608,6 +1611,47 @@ def _main() -> None:
             args, actions=False, force_lock=args.force, branch=args.branch
         )
     )
+
+            # Nag command
+    nag_parser = subparsers.add_parser(
+        "nag",
+        help="Starts a read-only voice chat session that monitors certain outputs (tests, type-checkers, log files) and notifies the user about problems.",
+    )
+    nag_parser.add_argument(
+        "-f",
+        "--file",
+        nargs="+",
+        action="append",
+        dest="files",
+        default=[],
+        help="Add one or more file paths to monitor. Can be specified multiple times.",
+    )
+    nag_parser.add_argument(
+        "-u",
+        "--url",
+        nargs="+",
+        action="append",
+        dest="urls",
+        default=[],
+        help="Add one or more URLs to monitor. Can be specified multiple times.",
+    )
+    nag_parser.add_argument(
+        "-c",
+        "--command",
+        nargs="+",
+        action="append",
+        dest="shell_commands",
+        default=[],
+        help="Add one or more shell commands to monitor. Can be specified multiple times.",
+    )
+    nag_parser.set_defaults(
+        func=lambda args: NagCommand(
+            files=[item for sublist in args.files for item in sublist] if args.files else [],
+            urls=[item for sublist in args.urls for item in sublist] if args.urls else [],
+            shell_commands=[item for sublist in args.shell_commands for item in sublist] if args.shell_commands else [],
+        )
+    )
+    
 
     # Log command
     log_parser = subparsers.add_parser("log", help="Display past interaction history.")
