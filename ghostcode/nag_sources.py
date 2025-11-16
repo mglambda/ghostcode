@@ -27,9 +27,9 @@ def ok(source_content: Optional[str] = None) -> NagCheckResult:
     """Return a default NagCheckResult that signals everything is ok."""
     return NagCheckResult(source_content = source_content if source_content is not None else "", has_problem = False)
 
-def problem(source_content: Optional[str] = None) -> NagCheckResult:
+def problem(source_content: Optional[str] = None, error_while_checking: str = "") -> NagCheckResult:
     """Returns a NagCheckResult that has a problem and may need to be nagged about."""
-    return NagCheckResult(source_content=source_content if source_content is not None else "", has_problem=True)
+    return NagCheckResult(source_content=source_content if source_content is not None else "", has_problem=True, error_while_checking=error_while_checking)
 
 
 
@@ -72,7 +72,7 @@ class NagSourceFile(NagSourceBase):
         default = 3,
         description = "Number of seconds between file reads. 1 minute is the default because we don't expect files to change super frequently."
     )
-    _last_modified_timestamp: float = Field(
+    last_modified_timestamp: float = Field(
         default = 0.0,
         description = "Internal timestamp of the last time the file was modified, used to avoid re-reading unchanged files."
     )
@@ -93,12 +93,12 @@ class NagSourceFile(NagSourceBase):
         except OSError as e:
             return problem(source_content=f"Could not get modification time for '{self.filepath}': {e}")
 
-        if self._last_modified_timestamp != 0.0 and current_mtime == self._last_modified_timestamp:
+        if self.last_modified_timestamp != 0.0 and current_mtime == self.last_modified_timestamp:
             # File hasn't changed since last check, no need to re-read or re-classify
             return ok(source_content=f"File '{self.filepath}' unchanged.")
 
         # File has changed or it's the first check, proceed to read and classify
-        self._last_modified_timestamp = current_mtime
+        self.last_modified_timestamp = current_mtime
         
         try:
             with open(abs_filepath, "r", encoding="utf-8", errors="ignore") as f:
