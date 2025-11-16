@@ -4,6 +4,7 @@ from typing import *
 from abc import ABC, abstractmethod, abstractproperty
 import os
 import subprocess
+import requests
 from enum import StrEnum
 import json
 from pydantic import BaseModel, Field, TypeAdapter
@@ -131,8 +132,42 @@ class NagSourceHTTPRequest(NagSourceBase):
         return self.url
 
     def check(self, prog: 'Program') -> NagCheckResult:
-        # stub
-        return ok()
+        try:
+            response = requests.get(self.url, timeout=10) # 10 second timeout
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            content = response.text
+
+            class HTTPResponseClassification(BaseModel):
+                has_problem: bool = Field(description="True if the HTTP response content indicates a problem (e.g., error messages, unexpected status codes, or specific content indicating a failure), False otherwise.")
+                reason: str = Field(description="A brief reason for the classification.")
+
+            try:
+                classification_result = prog.worker_box.new(
+                    HTTPResponseClassification,
+                    f"The following HTTP GET request was made to URL: `{self.url}`\n\nIts response content is:\n```\n{content}\n```\nPlease inspect the content and determine if it indicates any problems (e.g., error messages, unexpected status codes, or specific content indicating a failure). Respond with `has_problem: true` if there's an issue, `false` otherwise, and a brief `reason`."
+                )
+                return NagCheckResult(
+                    source_content=content,
+                    has_problem=classification_result.has_problem,
+                    error_while_checking="" # No error during checking, LLM classified output
+                )
+            except Exception as e:
+                # Error during LLM classification
+                return problem(
+                    source_content=content,
+                    error_while_checking=f"HTTP request succeeded, but LLM classification failed: {e}"
+                )
+
+        except requests.exceptions.Timeout:
+            return problem(source_content="", error_while_checking=f"HTTP request to '{self.url}' timed out.")
+        except requests.exceptions.ConnectionError as e:
+            return problem(source_content="", error_while_checking=f"Failed to connect to '{self.url}': {e}")
+        except requests.exceptions.HTTPError as e:
+            return problem(source_content="", error_while_checking=f"HTTP error for '{self.url}': {e}")
+        except requests.exceptions.RequestException as e:
+            return problem(source_content="", error_while_checking=f"An unexpected request error occurred for '{self.url}': {e}")
+        except Exception as e:
+            return problem(source_content="", error_while_checking=f"An unexpected error occurred during HTTP check for '{self.url}': {e}")
 
 class NagSourceSubprocess(NagSourceBase):
     type: Literal["NagSourceSubprocess"] = "NagSourceSubprocess"

@@ -1,4 +1,8 @@
 * work-in-progress (WIP, limit 5)
+Implement nag command.
+Make nag command work well with mypy.
+Make nag command speak with tts.
+Fix nag htt psource not being very sensitive to content (needs testing).
 Add take_a_break IdleTask to idle worker.
 Think about implementing a lock around dumping history.
 Yeah, refactor history saving (_dump_interaction_history)

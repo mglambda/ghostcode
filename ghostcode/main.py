@@ -1165,6 +1165,11 @@ class NagCommand(BaseModel):
         description="Provided with -c or --command to the nag subcommand. List of shell commands that will be run with a subprocess to be potentially nagged about. These will be turned into NagSourceSubprocess.",
     )
 
+    interval: float = Field(
+        default = 5.0,
+        description = "Number of seconds to wait between checks for nagging. The individual nag_interval_seconds value of nag sources serve as additional minimum limits on check intervals, while this value determines the de-facto sleep pause between iterations."
+    )
+    
     def _prepare_sources(self) -> Tuple[str, List[NagSource]]:
         """Assembles the various command line parameters into sources, returning a (potential) error report and the list of constructed nag sources."""
         error_str = ""
@@ -1183,16 +1188,63 @@ class NagCommand(BaseModel):
             logger.info(f"Monitoring command: {c}")
 
         return error_str, nag_sources
-    
+    def _process_source(self, prog: Program, nag_source: NagSource, speaker_box: Ghostbox) -> str:
+        """Process a single source by checking if it's ok or not, and producing text and speech output if it is not.
+        This function blocks until speech output has finished."""
+        nag_result = nag_source.check(prog)
+        if nag_result.error_while_checking:
+            prog.sound_error()
+            logger.warning(f"While checking {nag_source.display_name}: {nag_result.error_while_checking}")
+            return f"Error while checking: {nag_result.error_while_checking}"
+
+        if not nag_result.has_problem:
+            # nothing to nag about :(
+            return ""
+
+        # now we get to nag :D
+        output_text = ""
+        def capture_generation(w: str) -> None:
+            nonlocal output_text
+            output_text = w
+            
+        # speaker_box is guaranteed to be configure in a way where it automatically speaks what it generates
+        # this is also why we can't do strctured output here at all
+        # FIXME: clear history or not?
+        speaker_box.text_stream(
+            f"Please create a short notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational, while getting the essential points across. Highlight potential problems and issues, and give a summary if there are no obvious problems.\n\n```\n{nag_result.source_content}\n```",
+            generation_callback=capture_generation
+        )
+        # block until speaking is done
+        speaker_box.tts_wait()
+        return output_text
+        
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
+        if prog.project is None:
+            result.print(f"No project gholder found. Please initialize a ghostcode project with `ghostcode init`.")
+            return result
+        
         # construct sources
         error_str, nag_sources = self._prepare_sources()
-        result.print(error_str)
-        
-        # The actual logic for the nag command will be implemented here later.
-        # For now, it just returns an empty output.
-        result.print("Nag command executed. Monitoring not yet implemented.")
+        prog.print(error_str)
+        if nag_sources == [] and prog.user_config.newbie:
+            prog.print(f"No sources to nag about. Specify sources with --file, --url or --command.")
+
+        # we use this to vocalize and transcribe
+        # usually, it is a variant of the worker_box
+        speaker_box = prog.get_speaker_box()
+        speaker_box.tts_say(f"Initialized and ready to nag you about {len(nag_sources)} sources." + "" if len(nag_sources) != 0 else "Wait, zero? Oh, looks like I won't get to nag very much.") 
+            
+        # nag loop
+        while True:
+            for nag_source in nag_sources:
+                # process source does TTS output asynchronously
+                # but we print textual data (which may diverge from TTS) here
+                if (text_output := self._process_source(prog, nag_source, speaker_box=speaker_box)):
+                    prog.print(f"[{nag_source.display_name}]\n{text_output}")
+
+                
+        # end of nag loop
         return result
 
 

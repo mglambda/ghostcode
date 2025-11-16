@@ -566,3 +566,25 @@ class Program:
 
         # git stuff is handled by the project method
         return self.project.get_branch_interactions(exclude_interaction_ids = exclude_ids)    
+
+    def get_speaker_box(self) -> Ghostbox:
+        """Returns a clone of the worker box, configured for TTS.
+        This is useful as the speaker box will have various TTS options set, and is ideal for text streaming directly to TTS."""
+        logger.info(f"Constructing speaker box.")
+        
+        if self.project is None:
+            logger.error(f"Null project on trying to create speaker box.")
+            raise RuntimeError(f"No project root. Please initialize a ghostbox project with `ghostbox init`")
+
+        # assemble user overrides
+        user_options = default_tts_options
+        user_options["tts_model"] = self.user_config.tts_model
+        user_options["tts_voice"] = self.user_config.tts_voice
+        if not self.user_config.sound_enabled:
+            logger.warning(f"Disabling sound on speaker box because of user disabled sound option.")
+            user_options["tts"] = False
+            user_options["quiet"] = True
+        
+        options = self.worker_box.get_options() | user_options
+        logger.debug(f"Initializing speaker_box with the following options:\n{json.dumps(options, indent=4)}")
+        return Ghostbox(**options)

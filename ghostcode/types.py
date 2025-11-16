@@ -107,6 +107,26 @@ DEFAULT_WORKER_LLM_CONFIG = {
     "history_retroactive_vars": True,
 }
 
+# tts options override one of the above config dicts, replacing some but not all settings
+default_tts_options = {
+    "tts": True,
+    # kokoro is a good default choice because it runs on a potato
+    # orpheus is high quality but knocks off ~4GB vram
+    "tts_model": "kokoro",
+    # personal favorite in kokoro
+    "tts_voice": "af_sky",
+    # means transcription onset will automatically interrupt the TTS output
+    "tts_interrupt": True,    
+    "quiet": False,
+    # streaming is important for tts to start speaking quick
+    "stream": True,
+    # these options define chunking of sentences before they are streamed
+    # sometimes with code or error msgs it can be good not to chunk, but flex is a good default
+    "stream_flush": "flex",
+    # 50 characters to prebuffer at minimum before flushing. this prevents weird speech with e.g. bullet point lists, which LLMs love to do. 
+    "stream_flush_flex_value": 50,
+}
+    
 # Default project metadata
 DEFAULT_PROJECT_METADATA = {
     "name": "New Ghostcode Project",
@@ -276,6 +296,18 @@ class UserConfig(BaseModel):
     sound_volume: float = Field(
         default = 1.0,
         description = "Factor to scale the interface sound volume. 1.0 means normal volume, 2.0 means twice as loud, 0.5 is half volume."
+    )
+
+    # there are more options but we don't want to overwhelm users
+    # just expose model and voice for now
+    tts_model: str = Field(
+        default = cast(str, default_tts_options["tts_model"]),
+        description = "The TTS to use with ghostbox-tts, for subcommands that have speech output (like ghostcode nag)."
+    )
+
+    tts_voice: str = Field(
+        default = cast(str, default_tts_options["tts_voice"]),
+        description = "The voice to use with ghostbox-tts for command where voice output is enabled."
     )
     
     _GHOSTCODE_CONFIG_FILE: ClassVar[str] = ".ghostcodeconfig"
