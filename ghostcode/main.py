@@ -1173,6 +1173,11 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         description = "Number of seconds to wait between checks for nagging. The individual nag_interval_seconds value of nag sources serve as additional minimum limits on check intervals, while this value determines the de-facto sleep pause between iterations."
     )
 
+    system_prompt: str = Field(
+        default = "",
+        description = "Additional system instructions that can be provided by the user."
+    )
+    
     content_hashes: Dict[str, str] = Field(
         default_factory = dict,
         description = "Contains hash value for different nag sources, allowing to skip reevaluating unchanged content."
@@ -1261,7 +1266,6 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
 
         # it has a problem - but is it a new one?
         if self._is_known_problem(nag_source, nag_result):
-            # FIXME: repeat logic
             logger.debug(f"Skipping probelm with {nag_source.display_name} because problem hash has been seen.")
             return ""
         else:
@@ -1301,7 +1305,14 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
 
         # since we are streaming output we have nothing additional to return here
         return "\n---\n"
-    
+
+    @staticmethod
+    def _append_system_prompt(speaker_box: Ghostbox, additional_system_instructions: str) -> None:
+        """Appends the given system instructions to the box's system message."""
+        speaker_box.set_vars(
+            {"system_msg": speaker_box.geet_var("system_msg") + "\n\n" + additional_system_instructions}
+        )
+        
     def _customize_speaker(self, prog: Program, speaker_box: Ghostbox) -> None:
         """Modifies the personality and speaking voice of a ghostbox instance based on user settings.
         Only called if TTS is enabled."""
@@ -1310,14 +1321,13 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
             return
 
         tts_instructions = prompts.make_tts_instruction()
-        personality, instructions = prompts.llm_personality_instruction(prog.user_config.nag_personality)
-        system_prompt = "\n\n".join(
-            [speaker_box.get_var("system_msg"),
-             tts_instructions,
-             instructions
-             ])
-        speaker_box.set_vars(
-            {"system_msg": system_prompt}
+        personality, personality_instructions = prompts.llm_personality_instruction(prog.user_config.nag_personality)
+
+
+        self._append_system_prompt(
+            speaker_box,
+            "\n\n".join([tts_instructions,
+             personality_instructions])
         )
 
         # get the stock phrase unless user set it
@@ -1376,6 +1386,12 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         speaker_box.tts_say(f"Initialized and ready to nag you about {n} {noun}." + "" if n != 0 else "Wait, zero? Oh, looks like I won't get to nag very much.") 
         speaker_box.tts_wait()
 
+        # append user system prompt
+        # this happens regardless of wether tts is enabled
+        if self.system_prompt:
+            logger.info(f"Appending to nag system prompt: {self.system_prompt}")
+            self._append_system_prompt(speaker_box, self.system_prompt)
+        
         # start audio transcription if user desires
         if prog.user_config.nag_audio_input:
             self._start_audio_input(prog, speaker_box)

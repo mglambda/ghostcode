@@ -290,11 +290,12 @@ Provide a short, descriptive reason for your assesment along with your response.
 """
 
 def make_tts_instruction() -> str:
-    """Returns generic system instructions for a model that procudes TTS output."""
+    """Returns generic system instructions for a model that produces TTS output."""
     return """You produce text that will be output to a TTS (text-to-speech) program. Because of this, pleace
  - avoid all markdown.
  - avoid bullet point lists
- - avoid all other formatting, that would normally help to clarify text but wouldn't work for a TTS"""    
+ - do not use emogees or smileys
+ - avoid all other formatting that would normally help to clarify text but wouldn't work for a TTS"""    
 
 def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersonality, str]:
     """Returns an LLMPersonality, instruction string pair for a system prompt based on a given LLM personality."""

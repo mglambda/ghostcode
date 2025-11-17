@@ -1,7 +1,6 @@
 * work-in-progress (WIP, limit 5)
 Fix nag command with audio input not quitting
-Make audio input be able to shup up nag command.
-Make nag command notice that a problem has been fixed.
+Make audio input be able to shup up (as in, take a break) nag command.
 Maybe give nag command more context.
 Fix nag htt psource not being very sensitive to content (needs testing).
 Add take_a_break IdleTask to idle worker.
@@ -105,3 +104,4 @@ Nag personalities.
 Make nag sources use a hash in nagresult if there is a problem.
 Make nag command check hash and not repeat same problem (or only twice).
 Nag with audio input.
+Make nag command notice that a problem has been fixed.
