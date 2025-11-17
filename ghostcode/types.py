@@ -307,6 +307,10 @@ class UserConfig(BaseModel):
         description = """Choose a personality for the responses in the `ghostcode nag` subcommand. Special values are "none" which disables personality instructions, and "random" which uses a random personality each time."""
     )
 
+    nag_solved_phrase: Optional[str] = Field(
+        default = None,
+        description = "Stock phrase that the LLM will say when a nagged-about problem is suddenly fixed."
+    )
     nag_audio_input: bool = Field(
         default = True,
         description = "Wether or not the nag subcommand will record and transcribe audio in the background in order to react to queries."

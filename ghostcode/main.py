@@ -1178,8 +1178,14 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         description = "Contains hash value for different nag sources, allowing to skip reevaluating unchanged content."
     )
 
-    audio_thread: Optional[threading.Thread] = None
-    audio_stop_flag: threading.Event = Field(default_factory = threading.Event)
+    nag_solved_phrase: str = Field(
+        default = "Problem solved.",
+        description = "Stock phrase that the LLM says when a nagged about problem is fixed."
+    )
+    
+    nag_loop_thread: Optional[threading.Thread] = None
+    nag_loop_done: threading.Event = Field(default_factory = threading.Event)
+    
     def _prepare_sources(self) -> Tuple[str, List[NagSource]]:
         """Assembles the various command line parameters into sources, returning a (potential) error report and the list of constructed nag sources."""
         error_str = ""
@@ -1231,6 +1237,9 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
     def _process_source(self, prog: Program, nag_source: NagSource, speaker_box: Ghostbox) -> str:
         """Process a single source by checking if it's ok or not, and producing text and speech output if it is not.
         This function blocks until speech output has finished."""
+        # we use this throughout to id the source
+        nag_id = nag_source.identity()
+        
         # important to clear this
         # check uses the **worker** internally not the speaker
         # it's fine to clear the worker
@@ -1243,6 +1252,11 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
 
         if not nag_result.has_problem:
             # nothing to nag about :(
+            # was there a problem just before?
+            if nag_id in self.content_hashes:
+                logger.debug("Nagged about problem with {nag_id} solved.")                
+                del self.content_hashes[nag_id]
+                speaker_box.tts_say(self.nag_solved_phrase)
             return ""
 
         # it has a problem - but is it a new one?
@@ -1288,24 +1302,58 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         # since we are streaming output we have nothing additional to return here
         return "\n---\n"
     
-    def _add_personality(self, prog: Program, speaker_box: Ghostbox) -> None:
-        """Modifies the personality and speaking voice of a ghostbox instance based on user settings."""
+    def _customize_speaker(self, prog: Program, speaker_box: Ghostbox) -> None:
+        """Modifies the personality and speaking voice of a ghostbox instance based on user settings.
+        Only called if TTS is enabled."""
         # right now the only way to set this is in user_config
         if prog.user_config.nag_personality == LLMPersonality.none:
             return
-        
+
+        tts_instructions = prompts.make_tts_instruction()
         personality, instructions = prompts.llm_personality_instruction(prog.user_config.nag_personality)
-        system_prompt = speaker_box.get_var("system_msg") + "\n" + instructions
+        system_prompt = "\n\n".join(
+            [speaker_box.get_var("system_msg"),
+             tts_instructions,
+             instructions
+             ])
         speaker_box.set_vars(
             {"system_msg": system_prompt}
         )
 
+        # get the stock phrase unless user set it
+        if prog.user_config.nag_solved_phrase is not None:
+            self.nag_solved_phrase = prog.user_config.nag_solved_phrase
+        else:
+            self.nag_solved_phrase = speaker_box.text("Please generate a very short (couple words) and characteristic phrase that you would say when a problem is suddenly fixed.")
+        
         newbie_msg = " You can change this with `ghostcode config set user.nag_personality`" if prog.user_config.newbie else ""
         if prog.user_config.nag_personality == LLMPersonality.random:
             prog.print(f"Personality `{personality}` has been randomly selected." + newbie_msg)
         else:
             prog.print(f"Using personality `{personality}`." + newbie_msg)
 
+            
+    def _start_nag_loop(self, *, prog: Program, nag_sources: List[NagSource], speaker_box: Ghostbox) -> None:
+        def nag_loop() -> None:
+            logger.debug(f"NagCommand: Entering main nag loop with interval {self.interval}s.")
+            self.nag_loop_done.clear()
+            while not self.nag_loop_done.is_set():
+                # this has to be cleared at some point but when?? maybe this is actually a case for ghostbox smart context lol
+                #speaker_box.clear_history()
+
+                for nag_source in nag_sources:
+                    logger.debug(f"NagCommand: Processing nag source: {nag_source.display_name}")
+                    time.sleep(self.interval)
+                    # process source does TTS output asynchronously
+                    # it also does text output that precedes the streamed LLM response
+                    # rest is output here
+                    if (text_output := self._process_source(prog, nag_source, speaker_box=speaker_box)):
+                        prog.print(text_output)
+                        
+        # end of def
+        self.nag_loop_thread = threading.Thread(target=nag_loop, daemon=True)
+        self.nag_loop_thread.start()
+        
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         if prog.project is None:
@@ -1322,7 +1370,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         # we use this to vocalize and transcribe
         # usually, it is a variant of the worker_box
         speaker_box = prog.get_speaker_box()
-        self._add_personality(prog, speaker_box)
+        self._customize_speaker(prog, speaker_box)
         n = len(nag_sources)
         noun = "source" if n == 1 else "sources"
         speaker_box.tts_say(f"Initialized and ready to nag you about {n} {noun}." + "" if n != 0 else "Wait, zero? Oh, looks like I won't get to nag very much.") 
@@ -1331,24 +1379,34 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         # start audio transcription if user desires
         if prog.user_config.nag_audio_input:
             self._start_audio_input(prog, speaker_box)
-        # nag loop
-        logger.debug(f"NagCommand: Entering main nag loop with interval {self.interval}s.")
+
+            # start the actual nag loof on a seperate threadp
+        self._start_nag_loop(
+            prog = prog,
+            nag_sources = nag_sources,
+            speaker_box = speaker_box
+        )
+
+
+        # main thread loop
+        # we just loop on input
         while True:
-            # this has to be cleared at some point but when?? maybe this is actually a case for ghostbox smart context lol
-            #speaker_box.clear_history()
-
-            for nag_source in nag_sources:
-                logger.debug(f"NagCommand: Processing nag source: {nag_source.display_name}")
-                time.sleep(self.interval)
-                # process source does TTS output asynchronously
-                # it also does text output that precedes the streamed LLM response
-                # rest is output here
-                if (text_output := self._process_source(prog, nag_source, speaker_box=speaker_box)):
-                    prog.print(text_output)
-
+            try:
+                user_input = input()
+            except EOFError:
+                logger.info(f"Exiting nag command main loop due to EOF.")
+            except Exception as e:
+                # e.g. ctrl + c
+                logger.info(f"Exiting ang command main loop due to exception: {e}")
                 
-        # end of nag loop
+        # shutdown
         logger.debug(f"NagCommand: Exiting run method.")
+        self.nag_loop_done.set()
+        # give nag thread time to wind down
+        if self.nag_loop_thread and self.nag_loop_thread.isalive():
+            logger.info(f"Waiting for nag loop thread to finish.")
+            self.nag_loop_thread.join()
+
         return result
 
 

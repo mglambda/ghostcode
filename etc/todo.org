@@ -1,7 +1,7 @@
 * work-in-progress (WIP, limit 5)
-Nag personalities.
-Make nag sources use a hash in nagresult if there is a problem.
-Make nag command check hash and not repeat same problem (or only twice).
+Fix nag command with audio input not quitting
+Make audio input be able to shup up nag command.
+Make nag command notice that a problem has been fixed.
 Maybe give nag command more context.
 Fix nag htt psource not being very sensitive to content (needs testing).
 Add take_a_break IdleTask to idle worker.
@@ -101,3 +101,7 @@ Add summarization to idle worker tasks.
 Implement nag command.
 Make nag command work well with mypy.
 Make nag command speak with tts.
+Nag personalities.
+Make nag sources use a hash in nagresult if there is a problem.
+Make nag command check hash and not repeat same problem (or only twice).
+Nag with audio input.

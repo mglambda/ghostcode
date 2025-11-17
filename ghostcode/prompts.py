@@ -289,6 +289,12 @@ Please determine the state of the latest interaction in the above shell interact
 Provide a short, descriptive reason for your assesment along with your response. In the case of giving a process more time to finish, provide a reasonable amount of time to wait. Once this time has completed, you will be asked to reassess the state of the shell interaction.
 """
 
+def make_tts_instruction() -> str:
+    """Returns generic system instructions for a model that procudes TTS output."""
+    return """You produce text that will be output to a TTS (text-to-speech) program. Because of this, pleace
+ - avoid all markdown.
+ - avoid bullet point lists
+ - avoid all other formatting, that would normally help to clarify text but wouldn't work for a TTS"""    
 
 def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersonality, str]:
     """Returns an LLMPersonality, instruction string pair for a system prompt based on a given LLM personality."""
