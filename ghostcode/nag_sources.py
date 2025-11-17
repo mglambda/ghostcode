@@ -3,10 +3,11 @@ from typing import *
 from abc import ABC, abstractmethod, abstractproperty
 import os
 import subprocess
+import hashlib
 import requests
 from enum import StrEnum
 import json
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, model_validator
 if TYPE_CHECKING:
     from .program import Program
 import logging
@@ -32,6 +33,15 @@ class NagCheckResult(BaseModel):
         default = None,
         description = "A hash of the content. Providing this let's users of a check result quickly see if content has changed when a problem persists across multiple checks."
     )
+
+    @model_validator(mode='before')
+    @classmethod
+    def _compute_hash_if_missing(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if values.get('hash') is None and values.get('source_content') is not None:
+            import hashlib
+            content_bytes = values['source_content'].encode('utf-8')
+            values['hash'] = hashlib.sha256(content_bytes).hexdigest()
+        return values
         
 def ok(source_content: Optional[str] = None) -> NagCheckResult:
     """Return a default NagCheckResult that signals everything is ok."""
