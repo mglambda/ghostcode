@@ -1879,6 +1879,7 @@ def _main() -> None:
         default=[],
         help="Add one or more file paths to monitor. Can be specified multiple times.",
     )
+    
     nag_parser.add_argument(
         "-u",
         "--url",
@@ -1886,22 +1887,31 @@ def _main() -> None:
         action="append",
         dest="urls",
         default=[],
-        help="Add one or more URLs to monitor. Can be specified multiple times.",
-    )
+        help="Add one or more URLs to monitor. Can be specified multiple times.")
+    
     nag_parser.add_argument(
         "-c",
         "--command",
-        nargs="+",
+        nargs=
+        "+",
         action="append",
         dest="shell_commands",
         default=[],
         help="Add one or more shell commands to monitor. Can be specified multiple times.",
+    )
+    nag_parser.add_argument(
+        "-p",
+        "--system-prompt",
+        type=str,
+        default="",
+        help="Additional system instructions for the LLM in the nag session.",
     )
     nag_parser.set_defaults(
         func=lambda args: NagCommand(
             files=[item for sublist in args.files for item in sublist] if args.files else [],
             urls=[item for sublist in args.urls for item in sublist] if args.urls else [],
             shell_commands=[item for sublist in args.shell_commands for item in sublist] if args.shell_commands else [],
+            system_prompt=args.system_prompt,
         )
     )
     
