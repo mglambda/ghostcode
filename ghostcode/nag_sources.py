@@ -26,7 +26,13 @@ class NagCheckResult(BaseModel):
     error_while_checking: str = Field(
         default = "",
         description = "A string describing an error that occured during the checking process itself. This is distinguished from actual errors or problems with the source, which should not be described here. This string may contain e.g. File not found for a file source, or network connection error for an HTTP source."
-    )    
+    )
+
+    hash: Optional[str] = Field(
+        default = None,
+        description = "A hash of the content. Providing this let's users of a check result quickly see if content has changed when a problem persists across multiple checks."
+    )
+        
 def ok(source_content: Optional[str] = None) -> NagCheckResult:
     """Return a default NagCheckResult that signals everything is ok."""
     return NagCheckResult(source_content = source_content if source_content is not None else "", has_problem = False)
