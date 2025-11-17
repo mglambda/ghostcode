@@ -31,7 +31,7 @@ from . import prompts
 from .utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP, language_from_extension
 from .logconfig import ExceptionListHandler, _configure_logging
 from .program import Program
-from .nag_sources import NagSource, NagSourceFile, NagSourceHTTPRequest, NagSourceSubprocess
+from .nag_sources import NagSource, NagSourceFile, NagSourceHTTPRequest, NagSourceSubprocess, NagCheckResult
 
 # logger will be configured after argument parsing
 logger: logging.Logger  # Declare logger globally, will be assigned later
@@ -1172,6 +1172,11 @@ class NagCommand(BaseModel):
         default = 5.0,
         description = "Number of seconds to wait between checks for nagging. The individual nag_interval_seconds value of nag sources serve as additional minimum limits on check intervals, while this value determines the de-facto sleep pause between iterations."
     )
+
+    content_hashes: Dict[str, str] = Field(
+        default_factory = dict,
+        description = "Contains hash value for different nag sources, allowing to skip reevaluating unchanged content."
+    )
     
     def _prepare_sources(self) -> Tuple[str, List[NagSource]]:
         """Assembles the various command line parameters into sources, returning a (potential) error report and the list of constructed nag sources."""
@@ -1195,6 +1200,23 @@ class NagCommand(BaseModel):
 
         logger.debug(f"NagCommand: Prepared {len(nag_sources)} nag sources.")
         return error_str, nag_sources
+
+    def _make_problem_known(self, nag_source: NagSource, nag_result: NagCheckResult) -> None:
+        """Stores one nag result for a given source in memory, so we can know if we've seen it already."""
+        if nag_result.hash is None:
+            # prevent overwriting of a previous hash if this one is none
+            return
+        self.content_hashes[nag_source.identity()] = nag_result.hash
+        
+    def _is_known_problem(self, nag_source: NagSource, nag_result: NagCheckResult) -> bool:
+        """Returns true if a nag result's hash is already stored in memory."""
+        if nag_result.hash is None:
+            return False
+        
+        return nag_result.hash == self.content_hashes.get(nag_source.identity())
+
+    
+    
     def _process_source(self, prog: Program, nag_source: NagSource, speaker_box: Ghostbox) -> str:
         """Process a single source by checking if it's ok or not, and producing text and speech output if it is not.
         This function blocks until speech output has finished."""
@@ -1208,6 +1230,14 @@ class NagCommand(BaseModel):
             # nothing to nag about :(
             return ""
 
+        # it has a problem - but is it a new one?
+        if self._is_known_problem(nag_source, nag_result):
+            # FIXME: repeat logic
+            logger.debug(f"Skipping probelm with {nag_source.display_name} because problem hash has been seen.")
+            return ""
+        else:
+            self._make_problem_known(nag_source, nag_result)
+        
         # now we get to nag :D
         output_text = ""
         done = threading.Event()
