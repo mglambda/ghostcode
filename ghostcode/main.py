@@ -1227,6 +1227,10 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
     def _process_source(self, prog: Program, nag_source: NagSource, speaker_box: Ghostbox) -> str:
         """Process a single source by checking if it's ok or not, and producing text and speech output if it is not.
         This function blocks until speech output has finished."""
+        # important to clear this
+        # check uses the **worker** internally not the speaker
+        # it's fine to clear the worker
+        prog.worker_box.clear_history()
         nag_result = nag_source.check(prog)
         if nag_result.error_while_checking:
             prog.sound_error()
@@ -1322,9 +1326,8 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         # nag loop
         logger.debug(f"NagCommand: Entering main nag loop with interval {self.interval}s.")
         while True:
-            # we have to clear this because history will fill up with garbage tokens from constant checking
-            # FIXME: consider clearing it in _process method even, this kind of depends on use case tbh
-            speaker_box.clear_history()
+            # this has to be cleared at some point but when?? maybe this is actually a case for ghostbox smart context lol
+            #speaker_box.clear_history()
 
             for nag_source in nag_sources:
                 logger.debug(f"NagCommand: Processing nag source: {nag_source.display_name}")
