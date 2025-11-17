@@ -306,6 +306,15 @@ class UserConfig(BaseModel):
         default = LLMPersonality.random,
         description = """Choose a personality for the responses in the `ghostcode nag` subcommand. Special values are "none" which disables personality instructions, and "random" which uses a random personality each time."""
     )
+
+    nag_audio_input: bool = Field(
+        default = True,
+        description = "Wether or not the nag subcommand will record and transcribe audio in the background in order to react to queries."
+    )
+    nag_audio_transcription_user_subtitles: bool = Field(
+        default = True,
+        description = "Whether the nag command will show the transcriptions of user audio input."
+    )
     
     # there are more options but we don't want to overwhelm users
     # just expose model and voice for now

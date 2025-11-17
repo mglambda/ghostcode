@@ -1219,10 +1219,14 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
 
     def _start_audio_input(self, prog: Program, speaker_box: Ghostbox) -> None:
         """Starts a new thread on which we listen for audio input's by the user."""
-        def listen_loop() -> None:
-            return
-        self.audio_thread = threading.Thread(target = listen_loop, daemon=True)
-        self.audio_thread.start()
+        def transcription_callback(w: str) -> str:
+            if prog.user_config.nag_audio_transcription_user_subtitles:
+                prog.print(f"  `{w}`")
+            return w
+        
+        speaker_box.audio_on_transcription(transcription_callback)
+        speaker_box.audio = True
+        prog.print(f"Enabled audio input. Speak into your microphone to have ghostcode react.")
     
     def _process_source(self, prog: Program, nag_source: NagSource, speaker_box: Ghostbox) -> str:
         """Process a single source by checking if it's ok or not, and producing text and speech output if it is not.
@@ -1323,6 +1327,10 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         noun = "source" if n == 1 else "sources"
         speaker_box.tts_say(f"Initialized and ready to nag you about {n} {noun}." + "" if n != 0 else "Wait, zero? Oh, looks like I won't get to nag very much.") 
         speaker_box.tts_wait()
+
+        # start audio transcription if user desires
+        if prog.user_config.nag_audio_input:
+            self._start_audio_input(prog, speaker_box)
         # nag loop
         logger.debug(f"NagCommand: Entering main nag loop with interval {self.interval}s.")
         while True:
