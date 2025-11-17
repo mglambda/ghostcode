@@ -1178,6 +1178,11 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         description = "Additional system instructions that can be provided by the user."
     )
     
+    personality: Optional[types.LLMPersonality] = Field(
+        default=None,
+        description="Optional personality override from CLI. If None, uses user_config.nag_personality.",
+    )
+
     content_hashes: Dict[str, str] = Field(
         default_factory = dict,
         description = "Contains hash value for different nag sources, allowing to skip reevaluating unchanged content."
@@ -1316,12 +1321,15 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
     def _customize_speaker(self, prog: Program, speaker_box: Ghostbox) -> None:
         """Modifies the personality and speaking voice of a ghostbox instance based on user settings.
         Only called if TTS is enabled."""
-        # right now the only way to set this is in user_config
-        if prog.user_config.nag_personality == LLMPersonality.none:
+        
+        # Determine the effective personality: CLI override first, then user config
+        effective_personality = self.personality if self.personality is not None else prog.user_config.nag_personality
+
+        if effective_personality == types.LLMPersonality.none:
             return
 
         tts_instructions = prompts.make_tts_instruction()
-        personality, personality_instructions = prompts.llm_personality_instruction(prog.user_config.nag_personality)
+        personality_enum, personality_instructions = prompts.llm_personality_instruction(effective_personality)
 
 
         self._append_system_prompt(
@@ -1334,13 +1342,14 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         if prog.user_config.nag_solved_phrase is not None:
             self.nag_solved_phrase = prog.user_config.nag_solved_phrase
         else:
+            # The speaker_box's system message is already updated with the personality
             self.nag_solved_phrase = speaker_box.text("Please generate a very short (couple words) and characteristic phrase that you would say when a problem is suddenly fixed.")
         
         newbie_msg = " You can change this with `ghostcode config set user.nag_personality`" if prog.user_config.newbie else ""
-        if prog.user_config.nag_personality == LLMPersonality.random:
-            prog.print(f"Personality `{personality}` has been randomly selected." + newbie_msg)
+        if effective_personality == types.LLMPersonality.random:
+            prog.print(f"Personality `{personality_enum.name}` has been randomly selected." + newbie_msg)
         else:
-            prog.print(f"Using personality `{personality}`." + newbie_msg)
+            prog.print(f"Using personality `{personality_enum.name}`." + newbie_msg)
 
             
     def _start_nag_loop(self, *, prog: Program, nag_sources: List[NagSource], speaker_box: Ghostbox) -> None:
@@ -1906,12 +1915,22 @@ def _main() -> None:
         default="",
         help="Additional system instructions for the LLM in the nag session.",
     )
+    nag_parser.add_argument(
+        "-P",
+        "--personality",
+        type=str,
+        choices=[p.name for p in types.LLMPersonality],
+        default=None,
+        help=f"Choose a personality for the responses in the nag session. "
+             f"Overrides user configuration. Available: {', '.join([p.name for p in types.LLMPersonality])}",
+    )
     nag_parser.set_defaults(
         func=lambda args: NagCommand(
             files=[item for sublist in args.files for item in sublist] if args.files else [],
             urls=[item for sublist in args.urls for item in sublist] if args.urls else [],
             shell_commands=[item for sublist in args.shell_commands for item in sublist] if args.shell_commands else [],
             system_prompt=args.system_prompt,
+            personality=types.LLMPersonality[args.personality] if args.personality else None,
         )
     )
     

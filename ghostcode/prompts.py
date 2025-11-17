@@ -295,7 +295,9 @@ def make_tts_instruction() -> str:
  - avoid all markdown.
  - avoid bullet point lists
  - do not use emogees or smileys
- - avoid all other formatting that would normally help to clarify text but wouldn't work for a TTS"""    
+ - avoid all other formatting that would normally help to clarify text but wouldn't work for a TTS
+
+If the user ever asks you to be quiet, stop speaking, just says 'Ok', or otherwise signifies that they are winding down the conversation, you will return an empty string or a one word reply at most."""
 
 def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersonality, str]:
     """Returns an LLMPersonality, instruction string pair for a system prompt based on a given LLM personality."""
