@@ -118,7 +118,6 @@ default_tts_options = {
     # means transcription onset will automatically interrupt the TTS output
     "tts_interrupt": True,    
     "quiet": False,
-    "stdout": True,
     # streaming is important for tts to start speaking quick
     "stream": True,
     # these options define chunking of sentences before they are streamed

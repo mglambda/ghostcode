@@ -406,3 +406,12 @@ def quoted_if_nonempty(*, text: str, heading: str = "", heading_level: int = 2, 
 def show_model_nt(obj: Any, heading: str = "", abridge: Optional[int] = None) -> str:
     heading_str = f"# [{heading}]\n" if heading else ""
     return heading_str + nestedtext.dumps(obj.model_dump())
+
+def clamp_string(w: str, limit: int = 5000) -> str:
+    """Returns a string as is, or clamped by snipping out parts in the middle."""
+    n = len(w)
+    if n < limit:
+        return w
+
+    h = limit // 2
+    return w[:h] + "\n...\n" + w[h:]

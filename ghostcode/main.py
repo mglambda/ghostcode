@@ -28,7 +28,7 @@ from . import git
 from . import slash_commands
 from .progress_printer import ProgressPrinter
 from . import prompts
-from .utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP, language_from_extension
+from .utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP, language_from_extension, clamp_string
 from .logconfig import ExceptionListHandler, _configure_logging
 from .program import Program
 from .nag_sources import NagSource, NagSourceFile, NagSourceHTTPRequest, NagSourceSubprocess, NagCheckResult
@@ -1150,7 +1150,7 @@ class InteractCommand(BaseModel, CommandInterface):
         return CommandOutput(text="Finished interaction.")
 
 
-class NagCommand(BaseModel):
+class NagCommand(BaseModel, arbitrary_types_allowed=True):
     """Used to start a read-only voice chat session that monitors certain outputs (tests, type-checkers, log files) and notifies the user about problems (that's the nagging part)."""
 
     files: List[str] = Field(
@@ -1177,7 +1177,9 @@ class NagCommand(BaseModel):
         default_factory = dict,
         description = "Contains hash value for different nag sources, allowing to skip reevaluating unchanged content."
     )
-    
+
+    audio_thread: Optional[threading.Thread] = None
+    audio_stop_flag: threading.Event = Field(default_factory = threading.Event)
     def _prepare_sources(self) -> Tuple[str, List[NagSource]]:
         """Assembles the various command line parameters into sources, returning a (potential) error report and the list of constructed nag sources."""
         error_str = ""
@@ -1215,7 +1217,12 @@ class NagCommand(BaseModel):
         
         return nag_result.hash == self.content_hashes.get(nag_source.identity())
 
-    
+    def _start_audio_input(self, prog: Program, speaker_box: Ghostbox) -> None:
+        """Starts a new thread on which we listen for audio input's by the user."""
+        def listen_loop() -> None:
+            return
+        self.audio_thread = threading.Thread(target = listen_loop, daemon=True)
+        self.audio_thread.start()
     
     def _process_source(self, prog: Program, nag_source: NagSource, speaker_box: Ghostbox) -> str:
         """Process a single source by checking if it's ok or not, and producing text and speech output if it is not.
@@ -1248,15 +1255,19 @@ class NagCommand(BaseModel):
             nonlocal done
             output_text = w
             done.set()
-            
-        # speaker_box is guaranteed to be configure in a way where it automatically speaks what it generates
+
+
+            # print a heading
+            prog.print(f"[{nag_source.display_name}]")
+        # we can already print the raw result
+        source_content = clamp_string(nag_result.source_content, 3000)
+        prog.print(f"```\n{source_content}\n```\n\n")
+        # speaker_box is guaranteed to be configured in a way where it automatically speaks what it generates
         # this is also why we can't do strctured output here at all
-        # FIXME: clear history or not?
-        #logger.debug(f"debug2: \n{json.dumps(speaker_box.get_options(), indent=4)}")
         speaker_box.text_stream(
-            f"Please create a very concise and brief notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational. Focus on the *type* of problem and its *impact*, rather than listing individual errors. Do not list more than 2-3 specific errors; if there are many, summarize them. Crucially, always provide some text, even if it's just a brief acknowledgment of the output.",
-            #f"Please create a short notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational, while getting the essential points across. Highlight potential problems and issues, and give a summary if there are no obvious problems.\n\n```\n{nag_result.source_content}\n```",
-            chunk_callback=lambda chunk: chunk,
+            #f"Please create a very concise and brief notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational. Focus on the *type* of problem and its *impact*, rather than listing individual errors. Do not list more than 2-3 specific errors; if there are many, summarize them. Crucially, always provide some text, even if it's just a brief acknowledgment of the output.",
+            f"Please create a short notification message for the following output from {nag_source.display_name}. Your output will be vocalized with a TTS program, so keep it reasonably conversational, while getting the essential points across. Highlight potential problems and issues, and give a summary if there are no obvious problems.\n\n```\n{nag_result.source_content}\n```",
+            chunk_callback=lambda chunk: prog.print(chunk, end="", flush=True),
             generation_callback=capture_generation,
         )
 
@@ -1265,7 +1276,10 @@ class NagCommand(BaseModel):
         # block until speaking is done - speaking is usually slower than generation so the order matters here.
         speaker_box.tts_wait()        
         logger.debug(f"output_text: {output_text}")
-        return output_text
+
+        # since we are streaming output we have nothing additional to return here
+        return "\n---\n"
+    
     def _add_personality(self, prog: Program, speaker_box: Ghostbox) -> None:
         """Modifies the personality and speaking voice of a ghostbox instance based on user settings."""
         # right now the only way to set this is in user_config
@@ -1308,13 +1322,18 @@ class NagCommand(BaseModel):
         # nag loop
         logger.debug(f"NagCommand: Entering main nag loop with interval {self.interval}s.")
         while True:
+            # we have to clear this because history will fill up with garbage tokens from constant checking
+            # FIXME: consider clearing it in _process method even, this kind of depends on use case tbh
+            speaker_box.clear_history()
+
             for nag_source in nag_sources:
                 logger.debug(f"NagCommand: Processing nag source: {nag_source.display_name}")
                 time.sleep(self.interval)
                 # process source does TTS output asynchronously
-                # but we print textual data (which may diverge from TTS) here
+                # it also does text output that precedes the streamed LLM response
+                # rest is output here
                 if (text_output := self._process_source(prog, nag_source, speaker_box=speaker_box)):
-                    prog.print(f"[{nag_source.display_name}]\n{text_output}")
+                    prog.print(text_output)
 
                 
         # end of nag loop
