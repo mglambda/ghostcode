@@ -1,6 +1,8 @@
 from typing import *
 from pydantic import BaseModel, Field
 from . import types
+from .types import LLMPersonality
+import random
 from .utility import quoted_if_nonempty, show_model, timestamp_now_iso8601
 from .program import Program
 import logging
@@ -28,18 +30,18 @@ class PromptConfig(BaseModel):
     # project context
     project_metadata: bool = True
     style_file: bool = Field(
-        default = True,
-        description = "Include contents of .ghostcode/style.md. This is intended to influence coding style, and generally only included in code generation requests."
+        default=True,
+        description="Include contents of .ghostcode/style.md. This is intended to influence coding style, and generally only included in code generation requests.",
     )
-    
+
     context_files: Literal["full", "filenames", "none"] = Field(
         default="full",
         description="How to display files that are in the ghostcode context. Full means full contents of the files are displayed. filenames means only a list of filenames is shown. none omits context files entirely.",
     )
 
     recent_interaction_summaries: Literal["full", "titles_only", "none"] = Field(
-        default = "none",
-        description = "Include summaries of the most recent interactions. The summarization gets more aggressive for older interactions. Defaults to only showing branch-local interactions."
+        default="none",
+        description="Include summaries of the most recent interactions. The summarization gets more aggressive for older interactions. Defaults to only showing branch-local interactions.",
     )
     # ghostcode program context
     interaction_history_id: str = Field(
@@ -137,7 +139,6 @@ def make_prompt(
     else:
         style_file_str = ""
 
-        
     match prompt_config.context_files:
         case "full":
             # this one needs no quoted because the individual files are themselves quoted
@@ -154,8 +155,7 @@ def make_prompt(
             assert_never(unreachable2)
 
     recent_interaction_summaries_str = make_blocks_recent_interaction_summaries(
-        prog,
-        mode = prompt_config.recent_interaction_summaries
+        prog, mode=prompt_config.recent_interaction_summaries
     )
 
     if prompt_config.logs:
@@ -290,6 +290,179 @@ Provide a short, descriptive reason for your assesment along with your response.
 """
 
 
+def llm_personality_instruction(personality: LLMPersonality) -> str:
+    """Returns an instruction string for a system prompt based on a given LLM personality."""
+    # this is the block that comes before the actual content of trhe personality.
+    # it's an open question what works well here and for which model
+    personality_preamble: Callable[[str], str] = lambda w: f"Personality: {w}"
+
+    match personality:
+        case LLMPersonality.none:
+            return ""
+        case LLMPersonality.random:
+            random_personality = random.choice(
+                [
+                    p
+                    for p in list(LLMPersonality)
+                    if p != LLMPersonality.none and p != LLMPersonality.random
+                ]
+            )
+            return llm_personality_instruction(LLMPersonality[random_personality])
+        case LLMPersonality.senior_developer:
+            return personality_preamble(
+                """You are an experienced, senior software engineer. Your responses should be:
+ - Concise and practical"
+ - Focused on best practices"
+ - Include relevant examples when helpful
+ - Mention trade-offs and alternatives
+ - Use professional but approachable language"""
+            )
+        case LLMPersonality.supportive:
+            return personality_preamble(
+                """You are an encouraging and patient coding mentor. You:
+ - Explain concepts clearly
+ - Celebrate small successes  
+ - Offer multiple ways to solve problems
+ - Use positive reinforcement
+ - Are never condescending"""
+            )
+        case LLMPersonality.laid_back:
+            return personality_preamble(
+                """You're a chill developer who keeps things simple. You:
+ - Use casual, friendly language
+ - Break down complex topics
+ - Keep responses straightforward  
+ - Use relatable analogies
+ - Maintain a positive vibe"""
+            )
+        case LLMPersonality.junior_developer:
+            return personality_preamble(
+                """You are an enthusiastic junior developer. You:
+ - Ask clarifying questions when things are unclear
+ - Show curiosity and eagerness to learn
+ - Admit when you don't know something
+ - Get excited about learning new concepts
+ - Use approachable, non-intimidating language
+ - Celebrate learning moments together"""
+            )
+        case LLMPersonality.sycophantic:
+            return personality_preamble(
+                """You are excessively flattering and agreeable. You:
+ - Constantly praise the user's intelligence and skills
+ - Agree with everything the user says or suggests
+ - Use exaggerated compliments and admiration
+ - Never criticize or offer alternative viewpoints
+ - Treat every user idea as brilliant and innovative
+ - Use flowery, effusive language to show approval"""
+            )
+        case LLMPersonality.vibrant:
+            return personality_preamble(
+                """You are energetic, enthusiastic, and expressive. You:
+ - Use lively, engaging language with personality
+ - Show genuine excitement about coding challenges
+ - Employ creative metaphors and vivid descriptions
+ - Maintain high energy without being overwhelming
+ - Use occasional tasteful humor when appropriate
+ - Make technical topics feel dynamic and interesting"""
+            )
+
+        case LLMPersonality.corporate:
+            return personality_preamble(
+                """You are a professional corporate consultant. You:
+ - Use formal, business-appropriate language
+ - Focus on efficiency and productivity
+ - Emphasize best practices and industry standards
+ - Maintain a professional, polished tone
+ - Structure responses clearly and logically
+ - Reference business objectives and ROI where relevant"""
+                                )
+        case LLMPersonality.strict:
+            return personality_preamble(
+                """You are a meticulous and disciplined coding expert. You:
+ - Adhere strictly to coding standards and conventions
+ - Point out potential issues and edge cases immediately
+ - Use precise, unambiguous language
+ - Expect clear, well-formulated questions
+ - Correct misunderstandings firmly but politely
+ - Prioritize correctness and robustness over convenience"""
+                                )
+
+        case LLMPersonality.fabulous:
+            return personality_preamble(
+                """You are extravagantly stylish and dramatic. You:
+ - Use flamboyant, theatrical language with flair
+ - Add dramatic pauses and emphasis for effect
+ - Describe code and concepts with creative, vivid metaphors
+ - Sprinkle in occasional fashion and pop culture references
+ - Make even mundane technical topics feel glamorous
+ - Maintain an upbeat, celebratory tone about coding"""
+                                )
+
+        case LLMPersonality.protoss:
+            return personality_preamble(
+                """You are a Protoss Executor from the StarCraft universe. You:
+ - Speak with ancient wisdom and formal dignity
+ - Reference the Khala (psychic link) and En Taro Adun/Adun Toridas
+ - Treat programming as sacred knowledge passed down through ages
+ - Use measured, deliberate language with occasional dramatic pauses
+ - View bugs and errors as "chaos" that must be purged
+ - Refer to users as "young templar" or "initiate"
+ - Maintain an aura of ancient, advanced technological mastery"""
+                                )
+
+        case LLMPersonality.unix_haters_manual:
+            return personality_preamble(
+                """You embody the satirical spirit of the Unix Haters Manual. You:
+ - Point out Unix/Linux quirks and inconsistencies with sarcastic wit
+ - Use dry, technical humor to highlight system absurdities
+ - Reference classic Unix frustrations (ed, tar flags, etc.)
+ - Maintain a tone of loving hatred - critical but knowledgeable
+ - Compare Unix unfavorably to "proper" systems (VMS, Lisp machines)
+ - Treat every bug as an expected feature of the "UNIX philosophy"
+ - Use the phrase "This is not a bug, it's a feature" ironically"""
+            )
+        
+        case LLMPersonality.gen_z:
+            return personality_preamble(
+                """ I would like you to talk to me in a noticeable, relaxed and humorous way and also be a bit gen-z-like. But don't be too verbose and be precise. Be snotty and bitchy. Be pessimistic. You are of the opinion that everything is pointless and express this in your answers. You are arrogant, mean-spirited, unfavorable and provocative. You don't forget the gen-z slang. You use strong sarcasm in your replies."""
+            )
+        case LLMPersonality.fairy_queen:
+            return personality_preamble(
+                """You are a mystical, ethereal fairy queen of code. You:
+ - Speak in elegant, poetic language with whimsical flair
+ - Describe programming concepts as magical spells and enchantments
+ - Use nature metaphors (forests, streams, crystals) for technical concepts
+ - Treat bugs as "mischievous sprites" and solutions as "ancient magic"
+ - Maintain an air of ancient wisdom and gentle authority
+ - Refer to the user as "mortal coder" or "child of the digital realm"
+ - Make technical guidance feel like receiving mystical wisdom"""
+            )
+        case LLMPersonality.house_md:
+            return personality_preamble(
+                """You are Dr. Gregory House from the medical drama. You:
+ - Are brilliant but cynical and sarcastic
+ - Diagnose coding problems with sharp, unconventional insights
+ - Use medical metaphors (symptoms, diagnoses, treatment)
+ - Are brutally honest and dismissive of obvious solutions
+ - Drop sarcastic remarks about "user error" and "obvious bugs"
+ - Reference your own genius while solving complex problems
+ - Maintain an air of intellectual superiority with dry wit"""
+            )
+        case LLMPersonality.code_poet:
+            return personality_preamble(
+                """You view programming as an art form and literature. You:
+ - Describe code structure in terms of poetry and prose
+ - Use literary metaphors (stanzas, narrative flow, character)
+ - Emphasize elegance, beauty, and readability in solutions
+ - Quote famous writers or poets when relevant to coding concepts
+ - Treat debugging as "editing for clarity and rhythm"
+ - Encourage writing code that tells a clear, beautiful story
+ - Focus on the aesthetic and human aspects of programming"""
+                                        )
+        case _ as unreachable:
+            assert_never(unreachable)
+
+
 def make_blocks_project_metadata(prog: Program) -> str:
     """Returns a text terpesentation of the project metadata.
     Intended to provide reusable text blocks for building LLM prompts. Blocks never include the heading for their content (e.g. ## History).
@@ -304,26 +477,26 @@ def make_blocks_project_metadata(prog: Program) -> str:
 
     return show_model(prog.project.project_metadata)
 
+
 def make_blocks_style_file(prog: Program) -> str:
     """Returns a reusable text block for the style file. If no style file is found, returns an empty string."""
     fail = ""
-    
+
     if prog.project is None:
         return fail
 
-    style_str = quoted_if_nonempty(
-        text = prog.project.get_style()
-    )
+    style_str = quoted_if_nonempty(text=prog.project.get_style())
     if not style_str:
         return fail
-    
+
     return f"""# Coding Style
 
 When generating code, adhere to the style guidelines below unless instructed otherwise.
 
 {style_str}
-"""    
-    
+"""
+
+
 def make_blocks_interaction_history(
     prog: Program, interaction_history_id: Optional[str], drop_last: int = 0
 ) -> Tuple[str, str]:
@@ -411,15 +584,16 @@ def make_blocks_context_files_short(prog: Program) -> str:
 
     return prog.project.context_files.to_plaintext()
 
+
 def make_blocks_recent_interaction_summaries(
     prog: Program,
     *,
     mode: Literal["full", "titles_only", "none"],
-    max_full_chars: int = 15000, # Max characters for a 'full' interaction summary
-    num_full_display: int = 3,   # How many most recent interactions to show 'full'
-    num_summary_display: int = 10, # Up to this many (after full) to show as summary/title
+    max_full_chars: int = 15000,  # Max characters for a 'full' interaction summary
+    num_full_display: int = 3,  # How many most recent interactions to show 'full'
+    num_summary_display: int = 10,  # Up to this many (after full) to show as summary/title
     heading: str = "Recent Interaction Histories (current branch)",
-    heading_level: int = 2 # Overall heading level for the block
+    heading_level: int = 2,  # Overall heading level for the block
 ) -> str:
     if mode == "none":
         return ""
@@ -438,27 +612,40 @@ def make_blocks_recent_interaction_summaries(
 
         if mode == "full" and i < num_full_display:
             # Get full text (excluding code) from the history object itself
-            full_text = history.show(include_code=False, heading_level=interaction_heading_level)
+            full_text = history.show(
+                include_code=False, heading_level=interaction_heading_level
+            )
             if len(full_text) > max_full_chars:
                 # fall back to summary, otherwise Truncate the full block if it's too long
                 if history.summary is not None:
-                    output_blocks.append(history.show_summary(heading_level=interaction_heading_level))
+                    output_blocks.append(
+                        history.show_summary(heading_level=interaction_heading_level)
+                    )
                 else:
                     half_chars = max_full_chars // 2
-                    truncated_text = full_text[:half_chars] + "\n... (truncated) ...\n" + full_text[-half_chars:]
+                    truncated_text = (
+                        full_text[:half_chars]
+                        + "\n... (truncated) ...\n"
+                        + full_text[-half_chars:]
+                    )
                     output_blocks.append(truncated_text)
             else:
                 output_blocks.append(full_text)
         elif i < num_summary_display:
             # Get summary from the history object
-            output_blocks.append(history.show_summary(heading_level=interaction_heading_level))
+            output_blocks.append(
+                history.show_summary(heading_level=interaction_heading_level)
+            )
         else:
             # Get title only from the history object
-            output_blocks.append(history.show_title_only(heading_level=interaction_heading_level))
+            output_blocks.append(
+                history.show_title_only(heading_level=interaction_heading_level)
+            )
 
-        output_blocks.append("---\n") # Separator for readability
+        output_blocks.append("---\n")  # Separator for readability
 
     return "\n".join(output_blocks)
+
 
 def make_prompt_worker_query(
     prog: Program, interaction_history_id: Optional[str] = None
@@ -488,7 +675,7 @@ def make_prompt_route_request(prog: Program, prompt: str) -> str:
     # here i just keep some text snippets that somehow didn't make it
 
     # The following is a user prompt. Your task is to decide who the prompt should be routed to,  ghostworker, a worker LLM that is used for low-level busywork tasks that don't require a lot of intelligence, or ghostcoder, a cloud LLM with powerful reasoning abilities.
-    
+
     return f"""Below is a user prompt. Your task is not to fulfill it, but to decide which LLM the prompt should be routed to: ghostworker or ghostcoder.
 
 To help you decide, here are some examples for tasks that should go to either ghostcoder or ghostworker:
@@ -525,11 +712,12 @@ Here is the user prompt:
     Please decide where to route the request!
 """
 
+
 def make_prompt_worker_coder_query(
-        prog: Program,
-        worker_coder_request_part: types.WorkerCoderRequestPart,
-        original_action: types.Action # this is actually types.QueryAction but we can't narrow it call site
-        ) -> str:
+    prog: Program,
+    worker_coder_request_part: types.WorkerCoderRequestPart,
+    original_action: types.Action,  # this is actually types.QueryAction but we can't narrow it call site
+) -> str:
     """Create a prompt to the coder backend based on a worker generated request.
     Often, these types of requests happen because a query bounced off of the worker, or because there was an error and the worker delegated the recovery to the coder.
     """
@@ -537,10 +725,10 @@ def make_prompt_worker_coder_query(
     # this is the most maximal prompt config we can make since the coder may need to recover
     prompt_config = PromptConfig.maximal()
     if prog.coder_box.get_var("preamble") is not None:
-        # however, some stuff may be in the preamble, so we turn it off        
+        # however, some stuff may be in the preamble, so we turn it off
         prompt_config.project_metadata = False
         prompt_config.context_files = "none"
-        
+
     prompt_config.user_prompt_text = ""
     # system text will contain the actual query
     # its content now branches depending on wether we have an original prompt, such as from a user to a worker or coder
@@ -548,10 +736,14 @@ def make_prompt_worker_coder_query(
 
     match original_action:
         case types.ActionQueryCoder() as query_coder_action:
-            prompt_config.interaction_history_id = w if (w := original_action.interaction_history_id) is not None else ""
+            prompt_config.interaction_history_id = (
+                w if (w := original_action.interaction_history_id) is not None else ""
+            )
             original_prompt_str = query_coder_action.prompt
         case types.ActionQueryWorker() as query_worker_action:
-            prompt_config.interaction_history_id = w if (w := original_action.interaction_history_id) is not None else ""
+            prompt_config.interaction_history_id = (
+                w if (w := original_action.interaction_history_id) is not None else ""
+            )
             original_prompt_str = query_worker_action.prompt
         case _:
             original_prompt_str = ""
@@ -575,7 +767,7 @@ Additionally, the worker has the following to tell you:
 ```
 
 Below follows additional context which may be relevant to the request. Please try to generate a response that rectifies the situation and fulfills the request.
-"""    
+"""
     else:
         prompt_config.system_text = f"""The worker is making the following request to you:
 
@@ -590,12 +782,10 @@ Below follows additional context which may be relevant to the request. Please tr
 ```        
 
 Below follows additional context which may be relevant to the request. Please try to generate a response that rectifies the situation and fulfills the request.
-"""    
+"""
 
     return make_prompt(prog, prompt_config)
 
-
-    
 
 def make_prompt_interaction_summary(interaction: types.InteractionHistory) -> str:
     """Returns a prompt that should generate a summary for a given interaction history.

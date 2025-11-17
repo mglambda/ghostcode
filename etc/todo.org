@@ -1,4 +1,5 @@
 * work-in-progress (WIP, limit 5)
+Nag personalities.
 Make nag sources use a hash in nagresult if there is a problem.
 Make nag command check hash and not repeat same problem (or only twice).
 Maybe give nag command more context.

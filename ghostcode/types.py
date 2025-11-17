@@ -216,6 +216,10 @@ class AIAgent(StrEnum):
     WORKER = "worker"
     CODER = "coder"
 
+LLMPersonality = StrEnum(
+    "LLMPersonality",
+    "none random junior_developer senior_developer vibrant sycophantic laid_back corporate strict supportive fabulous protoss unix_haters_manual gen_z fairy_queen house_md code_poet"
+)
 
 class UserConfig(BaseModel):
     """Stores user specific data, like names, emails, and api keys.
@@ -299,6 +303,11 @@ class UserConfig(BaseModel):
         description = "Factor to scale the interface sound volume. 1.0 means normal volume, 2.0 means twice as loud, 0.5 is half volume."
     )
 
+    nag_personality: LLMPersonality = Field(
+        default = LLMPersonality.random,
+        description = """Choose a personality for the responses in the `ghostcode nag` subcommand. Special values are "none" which disables personality instructions, and "random" which uses a random personality each time."""
+    )
+    
     # there are more options but we don't want to overwhelm users
     # just expose model and voice for now
     tts_model: str = Field(
