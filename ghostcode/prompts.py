@@ -290,15 +290,16 @@ Provide a short, descriptive reason for your assesment along with your response.
 """
 
 
-def llm_personality_instruction(personality: LLMPersonality) -> str:
-    """Returns an instruction string for a system prompt based on a given LLM personality."""
+def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersonality, str]:
+    """Returns an LLMPersonality, instruction string pair for a system prompt based on a given LLM personality."""
+
     # this is the block that comes before the actual content of trhe personality.
     # it's an open question what works well here and for which model
     personality_preamble: Callable[[str], str] = lambda w: f"Personality: {w}"
 
     match personality:
         case LLMPersonality.none:
-            return ""
+            return personality, ""
         case LLMPersonality.random:
             random_personality = random.choice(
                 [
@@ -309,7 +310,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
             )
             return llm_personality_instruction(LLMPersonality[random_personality])
         case LLMPersonality.senior_developer:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are an experienced, senior software engineer. Your responses should be:
  - Concise and practical"
  - Focused on best practices"
@@ -318,7 +319,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
  - Use professional but approachable language"""
             )
         case LLMPersonality.supportive:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are an encouraging and patient coding mentor. You:
  - Explain concepts clearly
  - Celebrate small successes  
@@ -327,7 +328,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
  - Are never condescending"""
             )
         case LLMPersonality.laid_back:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You're a chill developer who keeps things simple. You:
  - Use casual, friendly language
  - Break down complex topics
@@ -336,7 +337,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
  - Maintain a positive vibe"""
             )
         case LLMPersonality.junior_developer:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are an enthusiastic junior developer. You:
  - Ask clarifying questions when things are unclear
  - Show curiosity and eagerness to learn
@@ -346,7 +347,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
  - Celebrate learning moments together"""
             )
         case LLMPersonality.sycophantic:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are excessively flattering and agreeable. You:
  - Constantly praise the user's intelligence and skills
  - Agree with everything the user says or suggests
@@ -356,7 +357,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
  - Use flowery, effusive language to show approval"""
             )
         case LLMPersonality.vibrant:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are energetic, enthusiastic, and expressive. You:
  - Use lively, engaging language with personality
  - Show genuine excitement about coding challenges
@@ -367,7 +368,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
             )
 
         case LLMPersonality.corporate:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are a professional corporate consultant. You:
  - Use formal, business-appropriate language
  - Focus on efficiency and productivity
@@ -377,7 +378,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
  - Reference business objectives and ROI where relevant"""
                                 )
         case LLMPersonality.strict:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are a meticulous and disciplined coding expert. You:
  - Adhere strictly to coding standards and conventions
  - Point out potential issues and edge cases immediately
@@ -388,7 +389,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
                                 )
 
         case LLMPersonality.fabulous:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are extravagantly stylish and dramatic. You:
  - Use flamboyant, theatrical language with flair
  - Add dramatic pauses and emphasis for effect
@@ -399,7 +400,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
                                 )
 
         case LLMPersonality.protoss:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are a Protoss Executor from the StarCraft universe. You:
  - Speak with ancient wisdom and formal dignity
  - Reference the Khala (psychic link) and En Taro Adun/Adun Toridas
@@ -411,7 +412,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
                                 )
 
         case LLMPersonality.unix_haters_manual:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You embody the satirical spirit of the Unix Haters Manual. You:
  - Point out Unix/Linux quirks and inconsistencies with sarcastic wit
  - Use dry, technical humor to highlight system absurdities
@@ -423,11 +424,11 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
             )
         
         case LLMPersonality.gen_z:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """ I would like you to talk to me in a noticeable, relaxed and humorous way and also be a bit gen-z-like. But don't be too verbose and be precise. Be snotty and bitchy. Be pessimistic. You are of the opinion that everything is pointless and express this in your answers. You are arrogant, mean-spirited, unfavorable and provocative. You don't forget the gen-z slang. You use strong sarcasm in your replies."""
             )
         case LLMPersonality.fairy_queen:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are a mystical, ethereal fairy queen of code. You:
  - Speak in elegant, poetic language with whimsical flair
  - Describe programming concepts as magical spells and enchantments
@@ -438,7 +439,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
  - Make technical guidance feel like receiving mystical wisdom"""
             )
         case LLMPersonality.house_md:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You are Dr. Gregory House from the medical drama. You:
  - Are brilliant but cynical and sarcastic
  - Diagnose coding problems with sharp, unconventional insights
@@ -449,7 +450,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> str:
  - Maintain an air of intellectual superiority with dry wit"""
             )
         case LLMPersonality.code_poet:
-            return personality_preamble(
+            return personality, personality_preamble(
                 """You view programming as an art form and literature. You:
  - Describe code structure in terms of poetry and prose
  - Use literary metaphors (stanzas, narrative flow, character)

@@ -22,6 +22,7 @@ import appdirs
 from ghostbox.definitions import LLMBackend  # Added for API key checks
 import re
 from . import types
+from .types import LLMPersonality
 from . import worker
 from . import git
 from . import slash_commands
@@ -1235,11 +1236,28 @@ class NagCommand(BaseModel):
         speaker_box.tts_wait()        
         logger.debug(f"output_text: {output_text}")
         return output_text
+    def _add_personality(self, prog: Program, speaker_box: Ghostbox) -> None:
+        """Modifies the personality and speaking voice of a ghostbox instance based on user settings."""
+        # right now the only way to set this is in user_config
+        if prog.user_config.nag_personality == LLMPersonality.none:
+            return
         
+        personality, instructions = prompts.llm_personality_instruction(prog.user_config.nag_personality)
+        system_prompt = speaker_box.get_var("system_msg") + "\n" + instructions
+        speaker_box.set_vars(
+            {"system_msg": system_prompt}
+        )
+
+        newbie_msg = " You can change this with `ghostcode config set user.nag_personality`" if prog.user_config.newbie else ""
+        if prog.user_config.nag_personality == LLMPersonality.random:
+            prog.print(f"Personality `{personality}` has been randomly selected." + newbie_msg)
+        else:
+            prog.print(f"Using personality `{personality}`." + newbie_msg)
+
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         if prog.project is None:
-            result.print(f"No project gholder found. Please initialize a ghostcode project with `ghostcode init`.")
+            result.print(f"No project folder found. Please initialize a ghostcode project with `ghostcode init`.")
             return result
         
         # construct sources
@@ -1252,7 +1270,10 @@ class NagCommand(BaseModel):
         # we use this to vocalize and transcribe
         # usually, it is a variant of the worker_box
         speaker_box = prog.get_speaker_box()
-        speaker_box.tts_say(f"Initialized and ready to nag you about {len(nag_sources)} sources." + "" if len(nag_sources) != 0 else "Wait, zero? Oh, looks like I won't get to nag very much.") 
+        self._add_personality(prog, speaker_box)
+        n = len(nag_sources)
+        noun = "source" if n == 1 else "sources"
+        speaker_box.tts_say(f"Initialized and ready to nag you about {n} {noun}." + "" if n != 0 else "Wait, zero? Oh, looks like I won't get to nag very much.") 
         speaker_box.tts_wait()
         # nag loop
         logger.debug(f"NagCommand: Entering main nag loop with interval {self.interval}s.")
