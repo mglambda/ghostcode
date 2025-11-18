@@ -1,7 +1,14 @@
 * work-in-progress (WIP, limit 5)
-Make nag command not save project.
-Make audio input be able to shup up (as in, take a break) nag command.
+Let nag communicate with interact sessions.
+Read current interaction content with nag and (possibley) put it into context.
+Add (maybe?) ghostcode interaction as a nagsource.
+Create inter process communication for  ghostcode processes (ugh).
+Make nag command send message to current itneract session on certain user requests.
 Maybe give nag command more context.
+Create emacsbuffer nag source.
+Create current emacs buffer nag source.
+Write emacs.py function to get buffer around point.
+Put current emacs buffer with +/- 20 lines around point into nag context.
 Fix nag htt psource not being very sensitive to content (needs testing).
 Add take_a_break IdleTask to idle worker.
 Think about implementing a lock around dumping history.
@@ -9,6 +16,7 @@ Yeah, refactor history saving (_dump_interaction_history)
 find out why sometimes titles aren't being assigned
 RAG on past itneractions.
 
+Make audio input be able to shup up (as in, take a break) nag command.
 * todo
 ** general
 Narrow the type of Action in actions_from_response_part (since it's a response it must be a query action)
@@ -106,3 +114,4 @@ Make nag command check hash and not repeat same problem (or only twice).
 Nag with audio input.
 Make nag command notice that a problem has been fixed.
 Fix nag command with audio input not quitting
+Make nag command not save project.

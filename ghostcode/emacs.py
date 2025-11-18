@@ -39,6 +39,17 @@ class Buffer(BaseModel):
     mode_name: emacs_str = ""
     default_directory: emacs_str = ""
 
+class ActiveBufferContent(BaseModel):
+    """
+    Represents the content of the active Emacs buffer, including surrounding lines.
+    """
+    buffer_name: emacs_str
+    file_name: emacs_str = ""
+    content: emacs_str = ""
+    current_line: Optional[int] = None
+    current_column: Optional[int] = None
+    point: Optional[int] = None
+
     
 def send_code(elisp: str) -> Optional[str]:
     try:
@@ -112,6 +123,77 @@ def get_buffers():
         return []
 
     return [Buffer(**data) for data in json_loads_fixed(r.strip())]
+
+def get_single_buffer(buffer_name: str) -> Optional[Buffer]:
+    """Retrieves information for a single Emacs buffer by name."""
+    elisp = f"""
+    (progn
+      (require 'cl-lib)
+      (require 'json)
+      (let ((buf (get-buffer \"{buffer_name}\")))
+        (if buf
+            (with-current-buffer buf
+              (json-encode
+               (list
+                (cons 'name (buffer-name buf))
+                (cons 'file_name (buffer-file-name buf))
+                (cons 'read_only buffer-read-only)
+                (cons 'modified (buffer-modified-p buf))
+                (cons 'major_mode major-mode)
+                (cons 'mode_name mode-name)
+                (cons 'default_directory default-directory))))
+          (json-encode nil))))
+    """
+    if (r := send_code(elisp)) is None:
+        return None
     
+    # Emacsclient returns "nil" (as a string) if buffer not found, which json_loads_fixed handles.
+    data = json_loads_fixed(r.strip())
+    if data is None:
+        return None
+    try:
+        return Buffer(**data)
+    except ValidationError as e:
+        print(f"Error validating buffer data for '{buffer_name}': {e}")
+        return None
+
+def get_active_buffer(before_lines: Optional[int] = None, after_lines: Optional[int] = None) -> Optional[ActiveBufferContent]:
+    """Retrieves the content of the active Emacs buffer, including lines before and after the cursor."""
+    elisp = f"""
+    (progn
+      (require 'cl-lib)
+      (require 'json)
+      (let* ((buf (current-buffer))
+             (buffer-name (buffer-name buf))
+             (file-name (buffer-file-name buf))
+             (current-point (point))
+             (current-line (line-number-at-pos current-point))
+             (current-column (- current-point (line-beginning-position current-point)))
+             (start-line (if {before_lines} (max 1 (- current-line {before_lines})) 1))
+             (end-line (if {after_lines} (+ current-line {after_lines}) (line-number-at-pos (point-max))))
+             (start-pos (line-beginning-position start-line))
+             (end-pos (line-end-position end-line))
+             (content (buffer-substring-no-properties (max (point-min) start-pos) (min (point-max) end-pos))))
+        (json-encode
+         (list
+          (cons 'buffer_name buffer-name)
+          (cons 'file_name (or file-name ""))
+          (cons 'content content)
+          (cons 'current_line current-line)
+          (cons 'current_column current-column)
+          (cons 'point current-point))))) 
+    """
+    if (r := send_code(elisp)) is None:
+        return None
+
+    data = json_loads_fixed(r.strip())
+    if data is None:
+        return None
+    try:
+        return ActiveBufferContent(**data)
+    except ValidationError as e:
+        print(f"Error validating active buffer content: {e}")
+        return None
+
 class EmacsState(BaseModel):
     pass
