@@ -1271,7 +1271,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
 
         # it has a problem - but is it a new one?
         if self._is_known_problem(nag_source, nag_result):
-            logger.debug(f"Skipping probelm with {nag_source.display_name} because problem hash has been seen.")
+            logger.debug(f"Skipping problem with {nag_source.display_name} because problem hash has been seen.")
             return ""
         else:
             self._make_problem_known(nag_source, nag_result)
@@ -1305,7 +1305,8 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         # block until generation is done (we might be running with sound_enabled = False)
         done.wait()
         # block until speaking is done - speaking is usually slower than generation so the order matters here.
-        speaker_box.tts_wait()        
+        # FIXME: currently not stopping this so that LLM can interrupt itself when things "get fixed" -> this might not work well with multiple sources
+        #speaker_box.tts_wait()        
         logger.debug(f"output_text: {output_text}")
 
         # since we are streaming output we have nothing additional to return here
@@ -1315,7 +1316,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
     def _append_system_prompt(speaker_box: Ghostbox, additional_system_instructions: str) -> None:
         """Appends the given system instructions to the box's system message."""
         speaker_box.set_vars(
-            {"system_msg": speaker_box.geet_var("system_msg") + "\n\n" + additional_system_instructions}
+            {"system_msg": speaker_box.get_var("system_msg") + "\n\n" + additional_system_instructions}
         )
         
     def _customize_speaker(self, prog: Program, speaker_box: Ghostbox) -> None:
