@@ -390,7 +390,9 @@ def apply_create_file(
         )
 
     try:
-        os.makedirs(os.path.dirname(create_action.filepath), exist_ok=True)
+        dir = os.path.dirname(create_action.filepath)
+        if dir != "":
+            os.makedirs(dir, exist_ok=True)
         with open(create_action.filepath, "w") as f:
             f.write(create_action.content)
     except Exception as e:
