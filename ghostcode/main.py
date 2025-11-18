@@ -31,7 +31,7 @@ from . import prompts
 from .utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP, language_from_extension, clamp_string
 from .logconfig import ExceptionListHandler, _configure_logging
 from .program import Program
-from .nag_sources import NagSource, NagSourceFile, NagSourceHTTPRequest, NagSourceSubprocess, NagSourceEmacsBuffer, NagCheckResult
+from .nag_sources import NagSource, NagSourceFile, NagSourceHTTPRequest, NagSourceSubprocess, NagSourceEmacsBuffer, NagSourceEmacsActiveBuffer, NagCheckResult
 
 
 # logger will be configured after argument parsing
@@ -1202,7 +1202,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
     nag_loop_thread: Optional[threading.Thread] = None
     nag_loop_done: threading.Event = Field(default_factory = threading.Event)
     
-    def _prepare_sources(self) -> Tuple[str, List[NagSource]]:
+    def _prepare_sources(self, prog: Program) -> Tuple[str, List[NagSource]]:
         """Assembles the various command line parameters into sources, returning a (potential) error report and the list of constructed nag sources."""
         error_str = ""
         nag_sources: List[NagSource] = []
@@ -1224,8 +1224,25 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
 
         logger.debug(f"NagCommand: Preparing sources from Emacs buffers: {self.emacs_buffers}")
         for b in self.emacs_buffers:
+            if not prog.user_config.emacs_integration:
+                logger.warning(f"Skipping emacs buffer {b} because emacs integration is disabled in user config.")
+                continue
             nag_sources.append(NagSourceEmacsBuffer(display_name=b, buffer_name=b))
             logger.info(f"Monitoring Emacs buffer: {b}")
+
+        if prog.user_config.emacs_integration and prog.user_config.nag_emacs_active_buffer_source:
+            if (n := prog.user_config.nag_emacs_active_buffer_region_size // 2) != -1:
+                num_lines = n // 2
+            else:
+                # entire buffer
+
+                
+                num_lines = -1
+        
+        if prog.user_config.emacs_integration and prog.user_config.nag_emacs_active_buffer_source:
+            region_size = prog.user_config.nag_emacs_active_buffer_region_size
+            nag_sources.append(NagSourceEmacsActiveBuffer(region_size=region_size))
+            logger.info(f"Monitoring active Emacs buffer region with size {region_size}.")
 
         logger.debug(f"NagCommand: Prepared {len(nag_sources)} nag sources.")
         return error_str, nag_sources
@@ -1392,7 +1409,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
             return result
         
         # construct sources
-        error_str, nag_sources = self._prepare_sources()
+        error_str, nag_sources = self._prepare_sources(prog)
         prog.print(error_str)
         if nag_sources == [] and prog.user_config.newbie:
             prog.print(f"No sources to nag about. Specify sources with --file, --url or --command.")

@@ -333,8 +333,92 @@ class NagSourceEmacsBuffer(NagSourceBase):
                 error_while_checking=f"An unexpected error occurred during Emacs buffer check for '{self.buffer_name}': {e}"
             )
 
+class NagSourceEmacsActiveBuffer(NagSourceBase):
+    """Represents the region around point of the currently active emacs buffer.
+    This can be checked as a source to identify obvious spelling or code errors.
+    Requires emacs to be run in server-mode."""
+    
+    type: Literal["NagSourceEmacsActiveBuffer"] = "NagSourceEmacsActiveBuffer"
+    # this should always be the same and is a magic value
+    display_name: str = Field(
+        default = "**Active emacs buffer region**"
+    )
+    nag_interval_seconds: int = 5 # Default interval, can be adjusted
+
+    # New attribute for region size
+    region_size: int = Field(
+        default = 40, # Default to 40 lines (20 before, 20 after)
+        description = "The number of lines to include around point when inspecting the currently active buffer. A value of e.g. 40 will inspect 20 lines above and 20 lines below point. Set to -1 to include the entire buffer (not recommended)."
+    )
+
+    def identity(self) -> str:
+        # fixed value for this type
+        return "__GHOSTCODE_EMACS_ACTIVE_BUFFER_REGION__"
+
+    def check(self, prog: 'Program') -> NagCheckResult:
+        logger.debug(f"Checking NagSourceEmacsActiveBuffer with region_size: {self.region_size}")
+        
+        if not prog.user_config.emacs_integration:
+            return problem(
+                source_content="",
+                error_while_checking="Emacs integration is disabled in user config."
+            )
+
+        before_lines = None
+        after_lines = None
+        if self.region_size != -1:
+            half_size = self.region_size // 2
+            before_lines = half_size
+            after_lines = half_size
+
+        try:
+            active_buffer_info = emacs.get_active_buffer(
+                before_lines=before_lines,
+                after_lines=after_lines
+            )
+
+            if active_buffer_info is None:
+                return problem(
+                    source_content="",
+                    error_while_checking="Could not retrieve active Emacs buffer content. Is Emacs server running?"
+                )
+
+            buffer_content = active_buffer_info.content
+            # Provide metadata as additional context if helpful
+            buffer_metadata_json = active_buffer_info.model_dump_json(indent=2)
+
+            # Use the same classification model as NagSourceEmacsBuffer
+            try:
+                prog.print(f"debug: {buffer_content}")
+                classification_result = prog.worker_box.new(
+                    EmacsBufferProblemClassification, # Reusing this Pydantic model
+                    f"The following is the content of the active Emacs buffer region (buffer: '{active_buffer_info.buffer_name}', file: '{active_buffer_info.file_name}'):\n```\n{buffer_content}\n```\n\nAdditionally, here is its metadata:\n```json\n{buffer_metadata_json}\n```\n\n"
+                    #+ "Please inspect the buffer content and metadata and determine if it indicates any problems (e.g., syntax errors, warnings, uncommitted changes, or specific keywords indicating an issue). Respond with `has_problem: true` if there's an issue, `false` otherwise, and a brief `reason`."
+                    + "Please consider the buffer's major mode and content. If it appears to be programming language code, indicate a problem if there are obvious code mistakes, syntax errors, or anything else that might indicate a problem. This is a heuristic, you do not need to be 100% sure if there is a problem. Better be safe than sorry. If you detect an issue, respond with has_problem: true, and false otherwise. If you state a reason, it should be extremely brief."
+                )
+                logger.debug(f"LLM classified active Emacs buffer region: has_problem={classification_result.has_problem}, reason='{classification_result.reason}'")
+                return NagCheckResult(
+                    source_content=buffer_content,
+                    has_problem=classification_result.has_problem,
+                    error_while_checking=""
+                )
+            except Exception as e:
+                logger.error(f"LLM classification failed for active Emacs buffer region: {e}")
+                return problem(
+                    source_content=buffer_content,
+                    error_while_checking=f"Active Emacs buffer content retrieved, but LLM classification failed: {e}"
+                )
+
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during active Emacs buffer check: {e}")
+            return problem(
+                source_content="",
+                error_while_checking=f"An unexpected error occurred during active Emacs buffer check: {e}"
+            )
+
+        
 NagSource = Annotated[
-    NagSourceFile | NagSourceHTTPRequest | NagSourceSubprocess | NagSourceEmacsBuffer,
+    NagSourceFile | NagSourceHTTPRequest | NagSourceSubprocess | NagSourceEmacsBuffer | NagSourceEmacsActiveBuffer,
     Field(discriminator="type")
 ]
 

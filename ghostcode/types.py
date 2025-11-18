@@ -302,6 +302,11 @@ class UserConfig(BaseModel):
         description = "Factor to scale the interface sound volume. 1.0 means normal volume, 2.0 means twice as loud, 0.5 is half volume."
     )
 
+    emacs_integration: bool = Field(
+        default = True,
+        description = "Enable various emacs integration features. Most of these use the emacsclient program and require you to have the emacs server running (do M-x server-mode to enable it). If you don't use emacs at all you can turn integration off to disable some warning messages."
+    )
+    
     nag_personality: LLMPersonality = Field(
         default = LLMPersonality.random,
         description = """Choose a personality for the responses in the `ghostcode nag` subcommand. Special values are "none" which disables personality instructions, and "random" which uses a random personality each time."""
@@ -311,13 +316,30 @@ class UserConfig(BaseModel):
         default = None,
         description = "Stock phrase that the LLM will say when a nagged-about problem is suddenly fixed."
     )
+    
     nag_audio_input: bool = Field(
         default = True,
         description = "Wether or not the nag subcommand will record and transcribe audio in the background in order to react to queries."
     )
+    
     nag_audio_transcription_user_subtitles: bool = Field(
         default = True,
         description = "Whether the nag command will show the transcriptions of user audio input."
+    )
+
+    nag_emacs_active_buffer_source: bool = Field(
+        default = True,
+        description = "Whether to use the currently active buffer as a nag source. This will periodically ask the nag session to analyze the regoin around point for obvious problems."
+    )
+
+    nag_emacs_active_buffer_region_size: int = Field(
+        default = 40,
+        description = "The number of lines to include around point when inspecting the currently active buffer. A value of e.g. 40 will inspect 20 lines above and 20 lines below point. Set to -1 to include the entire buffer (not recommended)."
+    )
+    
+    nag_emacs_active_buffer_context: bool = Field(
+        default = True,
+        description = "Whether to include a snapshot of the current region around the point in failed nag checks. This gives the responses a bit more context. This is different and seperate from using the active region as a source."
     )
     
     # there are more options but we don't want to overwhelm users
