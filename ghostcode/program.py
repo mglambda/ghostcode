@@ -24,6 +24,7 @@ from .utility import (
 )
 if TYPE_CHECKING:
     from .idle_worker import IdleWorker, IdleTask
+from .ipc import IPCServer
 
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
