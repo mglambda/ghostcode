@@ -31,7 +31,7 @@ from . import prompts
 from .utility import show_model_nt, EXTENSION_TO_LANGUAGE_MAP, language_from_extension, clamp_string
 from .logconfig import ExceptionListHandler, _configure_logging
 from .program import Program
-from .nag_sources import NagSource, NagSourceFile, NagSourceHTTPRequest, NagSourceSubprocess, NagCheckResult
+from .nag_sources import NagSource, NagSourceFile, NagSourceHTTPRequest, NagSourceSubprocess, NagSourceEmacsBuffer, NagCheckResult
 
 
 # logger will be configured after argument parsing
@@ -1169,6 +1169,11 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         description="Provided with -c or --command to the nag subcommand. List of shell commands that will be run with a subprocess to be potentially nagged about. These will be turned into NagSourceSubprocess.",
     )
 
+    emacs_buffers: List[str] = Field(
+        default_factory=list,
+        description="List of Emacs buffer names to monitor. These will be turned into NagSourceEmacsBuffer instances."
+    )
+
     interval: float = Field(
         default = 5.0,
         description = "Number of seconds to wait between checks for nagging. The individual nag_interval_seconds value of nag sources serve as additional minimum limits on check intervals, while this value determines the de-facto sleep pause between iterations."
@@ -1216,6 +1221,11 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         for c in self.shell_commands:
             nag_sources.append(NagSourceSubprocess(display_name=c, command=c))
             logger.info(f"Monitoring command: {c}")
+
+        logger.debug(f"NagCommand: Preparing sources from Emacs buffers: {self.emacs_buffers}")
+        for b in self.emacs_buffers:
+            nag_sources.append(NagSourceEmacsBuffer(display_name=b, buffer_name=b))
+            logger.info(f"Monitoring Emacs buffer: {b}")
 
         logger.debug(f"NagCommand: Prepared {len(nag_sources)} nag sources.")
         return error_str, nag_sources
@@ -1922,6 +1932,16 @@ def _main() -> None:
         help="Add one or more shell commands to monitor. Can be specified multiple times.",
     )
     nag_parser.add_argument(
+        "-b",
+        "--emacs-buffer",
+        nargs=
+        "+",
+        action="append",
+        dest="emacs_buffers",
+        default=[],
+        help="Add one or more Emacs buffer names to monitor. Can be specified multiple times."
+    )
+    nag_parser.add_argument(
         "-p",
         "--system-prompt",
         type=str,
@@ -1942,6 +1962,7 @@ def _main() -> None:
             files=[item for sublist in args.files for item in sublist] if args.files else [],
             urls=[item for sublist in args.urls for item in sublist] if args.urls else [],
             shell_commands=[item for sublist in args.shell_commands for item in sublist] if args.shell_commands else [],
+            emacs_buffers=[item for sublist in args.emacs_buffers for item in sublist] if args.emacs_buffers else [],
             system_prompt=args.system_prompt,
             personality=types.LLMPersonality[args.personality] if args.personality else None,
         )
