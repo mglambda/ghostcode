@@ -18,7 +18,7 @@ class IPCNotification(IPCMessageBase):
     
 class IPCCoderQuery(IPCMessageBase):
     """Represents a request to query the ghostcoder model."""
-
+    type: Literal["IPCCoderQuery"] = "IPCCoderQuery"
     query_coder_action: types.ActionQueryCoder = Field(
         description = "The action that will be used to query the coder."
     )
