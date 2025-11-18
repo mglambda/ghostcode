@@ -1415,23 +1415,34 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
 
 
         # main thread loop
-        # we just loop on input
-        while True:
-            try:
+        prog.print(f"Type /quit to end.")
+        try:        # we just loop on input
+            while True:
                 user_input = input()
-            except EOFError:
-                logger.info(f"Exiting nag command main loop due to EOF.")
-            except Exception as e:
-                # e.g. ctrl + c
-                logger.info(f"Exiting ang command main loop due to exception: {e}")
-                
-        # shutdown
-        logger.debug(f"NagCommand: Exiting run method.")
-        self.nag_loop_done.set()
-        # give nag thread time to wind down
-        if self.nag_loop_thread and self.nag_loop_thread.isalive():
-            logger.info(f"Waiting for nag loop thread to finish.")
-            self.nag_loop_thread.join()
+                if user_input == "/quit":
+                    break
+
+                # we can't really  have a prompt here, because it's designed to push continuous asnychronous output
+                # however if user inputs stuff we might as well push it to the LLM
+                speaker_box.text_stream(
+                    user_input,
+                    chunk_callback = lambda chunk: prog.print(chunk, end="", flush=True)
+                )
+        except EOFError:
+            logger.info(f"Exiting nag command main loop due to EOF.")
+        except Exception as e:
+            # e.g. ctrl + c
+            logger.info(f"Exiting ang command main loop due to exception: {e}")
+        finally:
+            # shutdown
+            logger.debug(f"NagCommand: Exiting run method.")
+            # we only need the following line if we use a custom transcriber, which we currently don't, but might in the future, so I'm leaving it here.
+            #speaker_box.audio_transcription_stop()
+            self.nag_loop_done.set()
+            # give nag thread time to wind down
+            if self.nag_loop_thread and self.nag_loop_thread.is_alive():
+                logger.info(f"Waiting for nag loop thread to finish.")
+                self.nag_loop_thread.join()
 
         return result
 
