@@ -174,17 +174,18 @@ def get_active_buffer(
     (progn
       (require 'cl-lib)
       (require 'json)
-      (let* ((buf (current-buffer))
+      (let* (
+             (buf (window-buffer (selected-window)))
              (buffer-name (buffer-name buf))
              (file-name (buffer-file-name buf))
-             (current-point (point))
-             (current-line (line-number-at-pos current-point))
-             (current-column (- current-point (line-beginning-position current-point)))
+             (current-point (with-current-buffer buf (point)))
+             (current-line (with-current-buffer buf (line-number-at-pos current-point)))
+             (current-column (with-current-buffer buf (- current-point (line-beginning-position current-point))))
              (start-line (if {before_lines} (max 1 (- current-line {before_lines})) 1))
-             (end-line (if {after_lines} (+ current-line {after_lines}) (line-number-at-pos (point-max))))
-             (start-pos (line-beginning-position start-line))
-             (end-pos (line-end-position end-line))
-             (content (buffer-substring-no-properties (max (point-min) start-pos) (min (point-max) end-pos))))
+             (end-line (if {after_lines} (+ current-line {after_lines}) (with-current-buffer buf (line-number-at-pos (point-max)))))
+             (start-pos (with-current-buffer buf (line-beginning-position start-line)))
+             (end-pos (with-current-buffer buf (line-end-position end-line)))
+             (content (with-current-buffer buf (buffer-substring-no-properties (max (point-min) start-pos) (min (point-max) end-pos)))))
         (json-encode
          (list
           (cons 'buffer_name buffer-name)

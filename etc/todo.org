@@ -1,14 +1,10 @@
 * work-in-progress (WIP, limit 5)
 Fix idle worker showing progress printer output.
 Let nag communicate with interact sessions.
-Read current interaction content with nag and (possibley) put it into context.
-Add (maybe?) ghostcode interaction as a nagsource.
 Create inter process communication for  ghostcode processes (ugh).
 Make nag command send message to current itneract session on certain user requests.
 Maybe give nag command more context.
-
 Create current emacs buffer nag source.
-Put current emacs buffer with +/- 20 lines around point into nag context.
 Fix nag htt psource not being very sensitive to content (needs testing).
 Add take_a_break IdleTask to idle worker.
 Think about implementing a lock around dumping history.
@@ -117,3 +113,6 @@ Fix nag command with audio input not quitting
 Make nag command not save project.
 Create emacsbuffer nag source.
 Write emacs.py function to get buffer around point.
+Read current interaction content with nag and (possibley) put it into context.
+Add (maybe?) ghostcode interaction as a nagsource.
+Put current emacs buffer with +/- 20 lines around point into nag context.
