@@ -1244,7 +1244,10 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
             nag_sources.append(NagSourceEmacsActiveBuffer(region_size=region_size))
             logger.info(f"Monitoring active Emacs buffer region with size {region_size}.")
 
-        logger.debug(f"NagCommand: Prepared {len(nag_sources)} nag sources.")
+        logger.info(f"NagCommand: Prepared {len(nag_sources)} nag sources: {[s.display_name for s in nag_sources]}")
+        prog.print(f"Monitoring {len(nag_sources)} sources:")
+        for source in nag_sources:
+            prog.print(f" - {source.display_name}")
         return error_str, nag_sources
 
     def _make_problem_known(self, nag_source: NagSource, nag_result: NagCheckResult) -> None:
