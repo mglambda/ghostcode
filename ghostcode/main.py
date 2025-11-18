@@ -1189,11 +1189,15 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         description="Optional personality override from CLI. If None, uses user_config.nag_personality.",
     )
 
-    content_hashes: Dict[str, str] = Field(
+    problem_hashes: Dict[str, str] = Field(
         default_factory = dict,
-        description = "Contains hash value for different nag sources, allowing to skip reevaluating unchanged content."
+        description = "Contains hash value for previous problematic nag results, allowing to skip reevaluating unchanged content."
     )
 
+    good_hashes: Dict[str, str] = Field(
+        default_factory = dict,
+        description = "Cotnains hashes of previous nag results that were problem free."
+    )
     nag_solved_phrase: str = Field(
         default = "Problem solved.",
         description = "Stock phrase that the LLM says when a nagged about problem is fixed."
@@ -1245,25 +1249,42 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
             logger.info(f"Monitoring active Emacs buffer region with size {region_size}.")
 
         logger.info(f"NagCommand: Prepared {len(nag_sources)} nag sources: {[s.display_name for s in nag_sources]}")
-        prog.print(f"Monitoring {len(nag_sources)} sources:")
+        prog.print(f"Monitoring {len(nag_sources)} source(s):")
         for source in nag_sources:
             prog.print(f" - {source.display_name}")
         return error_str, nag_sources
 
     def _make_problem_known(self, nag_source: NagSource, nag_result: NagCheckResult) -> None:
-        """Stores one nag result for a given source in memory, so we can know if we've seen it already."""
+        """Stores one problematic nag result for a given source in memory, so we can know if we've seen it already."""
+        if (source_id := nag_source.identity()) in self.good_hashes:
+            del self.good_hashes[source_id]
+            
         if nag_result.hash is None:
             # prevent overwriting of a previous hash if this one is none
             return
-        self.content_hashes[nag_source.identity()] = nag_result.hash
+        self.problem_hashes[source_id] = nag_result.hash
         
     def _is_known_problem(self, nag_source: NagSource, nag_result: NagCheckResult) -> bool:
         """Returns true if a nag result's hash is already stored in memory."""
         if nag_result.hash is None:
             return False
         
-        return nag_result.hash == self.content_hashes.get(nag_source.identity())
+        return nag_result.hash == self.problem_hashes.get(nag_source.identity())
 
+    def _make_known_good(self, nag_source: NagSource, nag_check_result: NagCheckResult) -> None:
+        """Store a nag result that was previously known to be good."""
+        if (source_id := nag_source.identity()) in self.problem_hashes:
+            del self.problem_hashes[source_id]
+        if nag_check_result.hash is None:
+            return
+        self.good_hashes[source_id] = nag_check_result.hash
+
+    def is_known_good(self, nag_source: NagSource, nag_check_result: NagCheckResult) -> bool:
+        """Returns true if a nag source has been previously known to be good for a certain hash value."""
+        if (hash := nag_check_result.hash) is None:
+            return False
+        return hash == self.good_hashes.get(nag_source.identity())
+    
     def _start_audio_input(self, prog: Program, speaker_box: Ghostbox) -> None:
         """Starts a new thread on which we listen for audio input's by the user."""
         def transcription_callback(w: str) -> str:
@@ -1279,13 +1300,15 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         """Process a single source by checking if it's ok or not, and producing text and speech output if it is not.
         This function blocks until speech output has finished."""
         # we use this throughout to id the source
-        nag_id = nag_source.identity()
+        nag_source_id = nag_source.identity()
         
         # important to clear this
         # check uses the **worker** internally not the speaker
         # it's fine to clear the worker
         prog.worker_box.clear_history()
-        previous_hash = self.content_hashes.get(nag_source.identity())
+
+        # get previous hash to perhaps short circuit check
+        previous_hash = self.good_hashes.get(nag_source_id)
         nag_result = nag_source.check(prog, previous_hash=previous_hash)
         if nag_result.error_while_checking:
             prog.sound_error()
@@ -1295,10 +1318,10 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         if not nag_result.has_problem:
             # nothing to nag about :(
             # was there a problem just before?
-            if nag_id in self.content_hashes:
+            if nag_source_id in self.problem_hashes:
                 logger.debug("Nagged about problem with {nag_id} solved.")                
-                del self.content_hashes[nag_id]
                 speaker_box.tts_say(self.nag_solved_phrase)
+            self._make_known_good(nag_source, nag_result)
             return ""
 
         # it has a problem - but is it a new one?
@@ -1312,6 +1335,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         output_text = ""
         done = threading.Event()
         done.clear()
+
         
         def capture_generation(w: str) -> None:
             nonlocal output_text
