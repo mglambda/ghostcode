@@ -328,19 +328,20 @@ class UserConfig(BaseModel):
     )
 
     nag_emacs_active_buffer_source: bool = Field(
-        default = True,
+        default = False,
         description = "Whether to use the currently active buffer as a nag source. This will periodically ask the nag session to analyze the regoin around point for obvious problems."
     )
 
     nag_emacs_active_buffer_region_size: int = Field(
-        default = 40,
+        default = 20,
         description = "The number of lines to include around point when inspecting the currently active buffer. A value of e.g. 40 will inspect 20 lines above and 20 lines below point. Set to -1 to include the entire buffer (not recommended)."
     )
-    
-    nag_emacs_active_buffer_context: bool = Field(
-        default = True,
-        description = "Whether to include a snapshot of the current region around the point in failed nag checks. This gives the responses a bit more context. This is different and seperate from using the active region as a source."
-    )
+
+    # currently disabled because I don't know if it's helpful
+    #nag_emacs_active_buffer_context: bool = Field(
+        #default = True,
+        #description = "Whether to include a snapshot of the current region around the point in failed nag checks. This gives the responses a bit more context. This is different and seperate from using the active region as a source."
+    #)
     
     # there are more options but we don't want to overwhelm users
     # just expose model and voice for now

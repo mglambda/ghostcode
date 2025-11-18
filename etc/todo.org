@@ -1,4 +1,5 @@
 * work-in-progress (WIP, limit 5)
+Add previous_hash as optional parameter to check method in nag sources (so we can short circuit the check and save tokens)
 Fix idle worker showing progress printer output.
 Let nag communicate with interact sessions.
 Create inter process communication for  ghostcode processes (ugh).

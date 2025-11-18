@@ -1282,7 +1282,8 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         # check uses the **worker** internally not the speaker
         # it's fine to clear the worker
         prog.worker_box.clear_history()
-        nag_result = nag_source.check(prog)
+        previous_hash = self.content_hashes.get(nag_source.identity())
+        nag_result = nag_source.check(prog, previous_hash=previous_hash)
         if nag_result.error_while_checking:
             prog.sound_error()
             logger.warning(f"While checking {nag_source.display_name}: {nag_result.error_while_checking}")

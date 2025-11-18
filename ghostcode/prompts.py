@@ -6,6 +6,7 @@ import random
 from .utility import quoted_if_nonempty, show_model, timestamp_now_iso8601
 from .program import Program
 import logging
+from . import emacs
 
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.prompts")
@@ -655,6 +656,30 @@ def make_blocks_recent_interaction_summaries(
         output_blocks.append("---\n")  # Separator for readability
 
     return "\n".join(output_blocks)
+
+def make_prompt_nag_emacs_active_buffer(prog: Program, *, active_buffer_info: emacs.ActiveBufferContent, buffer_content: str, region_size: Optional[int] = None) -> str:
+    buffer_metadata_json = active_buffer_info.model_dump_json(indent=2)
+    
+    intro_str = f"The following is the content of the active Emacs buffer region (buffer: '{active_buffer_info.buffer_name}', file: '{active_buffer_info.file_name}'):"
+    metadata_str = f"""Additionally, here is its metadata:
+```json
+{buffer_metadata_json}
+```
+"""
+    content_str = quoted_if_nonempty(text=buffer_content)
+
+    if region_size and region_size != -1:
+        _region_size_str = f" Please note that you are only seeing a small portion of the entire buffer, spanning {region_size} lines around the point, so take this into account when you assess whether there is a problem. Do not raise issues that might be resolved by something just outside the region, or in a completely different part of the buffer. "
+    else:
+        _region_size_str = ""
+    task_str = f"Please consider the buffer's major mode and content. If it appears to be programming language code, indicate a problem if there are obvious code mistakes, syntax errors, or anything else that looks erroneous or confused. This is a heuristic, Please only classify this as a problem if you are certain there is a problem. {_region_size_str}If you detect an issue, respond with has_problem: true, and false otherwise. If you state a reason, it should be extremely brief. If you cannot identify the content as programming related, simply classify it as problem-free."    
+    #+ "Please inspect the buffer content and metadata and determine if it indicates any problems (e.g., syntax errors, warnings, uncommitted changes, or specific keywords indicating an issue). Respond with `has_problem: true` if there's an issue, `false` otherwise, and a brief `reason`."
+
+    return f"""{intro_str}
+{metadata_str}
+{content_str}
+{task_str}
+"""
 
 
 def make_prompt_worker_query(

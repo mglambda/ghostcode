@@ -44,13 +44,13 @@ class NagCheckResult(BaseModel):
             values['hash'] = hashlib.sha256(content_bytes).hexdigest()
         return values
         
-def ok(source_content: Optional[str] = None) -> NagCheckResult:
+def ok(source_content: Optional[str] = None, hash: Optional[str] = None) -> NagCheckResult:
     """Return a default NagCheckResult that signals everything is ok."""
-    return NagCheckResult(source_content = source_content if source_content is not None else "", has_problem = False)
+    return NagCheckResult(source_content = source_content if source_content is not None else "", has_problem = False, hash = hash)
 
-def problem(source_content: Optional[str] = None, error_while_checking: str = "") -> NagCheckResult:
+def problem(source_content: Optional[str] = None, error_while_checking: str = "", hash: Optional[str] = None) -> NagCheckResult:
     """Returns a NagCheckResult that has a problem and may need to be nagged about."""
-    return NagCheckResult(source_content=source_content if source_content is not None else "", has_problem=True, error_while_checking=error_while_checking)
+    return NagCheckResult(source_content=source_content if source_content is not None else "", has_problem=True, error_while_checking=error_while_checking, hash=hash)
 
 
 class EmacsBufferProblemClassification(BaseModel):
@@ -83,7 +83,7 @@ class NagSourceBase(BaseModel):
         pass
     
     @abstractmethod
-    def check(self, prog: 'Program') -> NagCheckResult:
+    def check(self, prog: 'Program', previous_hash: Optional[str] = None) -> NagCheckResult:
         """Returns the source content and whether the source is generally ok or not, potentially using a provided LLM request client.
         This does not deliver an accurate report, it merely classifies the source as being ok or not, allowing for further processing."""
         pass
@@ -106,7 +106,7 @@ class NagSourceFile(NagSourceBase):
     def identity(self) -> str:
         return self.filepath
 
-    def check(self, prog: 'Program') -> NagCheckResult:
+    def check(self, prog: 'Program', previous_hash: Optional[str] = None) -> NagCheckResult:
         """Reads the file content if it has been updated since the last time it was checked, and returns an LLMs classification."""
         # the filepaths we use here are different from context files and are **not** relative to the root
         abs_filepath = self.filepath
@@ -126,7 +126,7 @@ class NagSourceFile(NagSourceBase):
         if self.last_modified_timestamp != 0.0 and current_mtime == self.last_modified_timestamp:
             logger.debug(f"File '{self.filepath}' unchanged since last check.")
             # File hasn't changed since last check, no need to re-read or re-classify
-            return ok(source_content=f"File '{self.filepath}' unchanged.")
+            return ok(source_content=None, hash=previous_hash)
 
         # File has changed or it's the first check, proceed to read and classify
         self.last_modified_timestamp = current_mtime
@@ -140,6 +140,12 @@ class NagSourceFile(NagSourceBase):
             logger.warning(f"Could not read file '{self.filepath}': {e}")
             return problem(source_content="", error_while_checking=f"Could not read file '{self.filepath}': {e}")
         
+        # Compute hash for current content
+        current_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+        if previous_hash is not None and current_hash == previous_hash:
+            logger.debug(f"NagSourceFile: Content hash for '{self.filepath}' matches previous hash. Returning ok.")
+            return ok(source_content=content, hash=previous_hash)
+
         class FileProblemClassification(BaseModel):
             has_problem: bool
 
@@ -150,7 +156,7 @@ class NagSourceFile(NagSourceBase):
             )
         except Exception as e:
             return problem(source_content=content, error_while_checking=f"An exception was encountered while trying to classify the file: {e}.")
-        return NagCheckResult(has_problem=result.has_problem, source_content=content)
+        return NagCheckResult(has_problem=result.has_problem, source_content=content, hash=current_hash)
     
 class NagSourceHTTPRequest(NagSourceBase):
     type: Literal["NagSourceHTTPRequest"] = "NagSourceHTTPRequest"
@@ -163,7 +169,7 @@ class NagSourceHTTPRequest(NagSourceBase):
     def identity(self) -> str:
         return self.url
 
-    def check(self, prog: 'Program') -> NagCheckResult:
+    def check(self, prog: 'Program', previous_hash: Optional[str] = None) -> NagCheckResult:
         logger.debug(f"Checking NagSourceHTTPRequest: {self.url}")
         try:
             logger.debug(f"Sending GET request to {self.url}")
@@ -171,6 +177,12 @@ class NagSourceHTTPRequest(NagSourceBase):
             response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
             content = response.text
             logger.debug(f"Received HTTP response (status: {response.status_code}, length: {len(content)}).")
+
+            # Compute hash for current content
+            current_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            if previous_hash is not None and current_hash == previous_hash:
+                logger.debug(f"NagSourceHTTPRequest: Content hash for '{self.url}' matches previous hash. Returning ok.")
+                return ok(source_content=content, hash=previous_hash)
 
             class HTTPResponseClassification(BaseModel):
                 has_problem: bool = Field(description="True if the HTTP response content indicates a problem (e.g., error messages, unexpected status codes, or specific content indicating a failure), False otherwise.")
@@ -185,14 +197,16 @@ class NagSourceHTTPRequest(NagSourceBase):
                 return NagCheckResult(
                     source_content=content,
                     has_problem=classification_result.has_problem,
-                    error_while_checking="" # No error during checking, LLM classified output
+                    error_while_checking="", # No error during checking, LLM classified output
+                    hash=current_hash
                 )
             except Exception as e:
                 # Error during LLM classification
                 logger.error(f"LLM classification failed for HTTP response from {self.url}: {e}")
                 return problem(
                     source_content=content,
-                    error_while_checking=f"HTTP request succeeded, but LLM classification failed: {e}"
+                    error_while_checking=f"HTTP request succeeded, but LLM classification failed: {e}",
+                    hash=current_hash
                 )
 
         except requests.exceptions.Timeout:
@@ -218,7 +232,7 @@ class NagSourceSubprocess(NagSourceBase):
     def identity(self) -> str:
         return self.command
 
-    def check(self, prog: 'Program') -> NagCheckResult:
+    def check(self, prog: 'Program', previous_hash: Optional[str] = None) -> NagCheckResult:
         logger.debug(f"Checking NagSourceSubprocess: {self.command}")
         try:
             # Execute the command
@@ -235,6 +249,12 @@ class NagSourceSubprocess(NagSourceBase):
             combined_output = process.stdout + process.stderr
             logger.debug(f"Command '{self.command}' finished with exit code {process.returncode}. Output length: {len(combined_output)}")
             
+            # Compute hash for current content
+            current_hash = hashlib.sha256(combined_output.encode('utf-8')).hexdigest()
+            if previous_hash is not None and current_hash == previous_hash:
+                logger.debug(f"NagSourceSubprocess: Output hash for '{self.command}' matches previous hash. Returning ok.")
+                return ok(source_content=combined_output, hash=previous_hash)
+
             if process.returncode != 0:
                 logger.debug(f"Command returned non-zero exit code: {process.returncode}. Classifying as problem.")
                 # Command failed (non-zero exit code)
@@ -242,6 +262,7 @@ class NagSourceSubprocess(NagSourceBase):
                 # so it just made our job very easy - and also this is therefore not considered an error_while_checking
                 return problem(
                     source_content=combined_output,
+                    hash=current_hash
                 )
             else:
                 # Command succeeded (zero exit code), but check its output for problems
@@ -258,14 +279,16 @@ class NagSourceSubprocess(NagSourceBase):
                     return NagCheckResult(
                         source_content=combined_output,
                         has_problem=classification_result.has_problem,
-                        error_while_checking="" # No error during checking, LLM classified output
+                        error_while_checking="", # No error during checking, LLM classified output
+                        hash=current_hash
                     )
                 except Exception as e:
                     # Error during LLM classification
                     logger.error(f"LLM classification failed for command '{self.command}': {e}")
                     return problem(
                         source_content=combined_output,
-                        error_while_checking=f"Command succeeded, but LLM classification failed: {e}"
+                        error_while_checking=f"Command succeeded, but LLM classification failed: {e}",
+                        hash=current_hash
                     )
 
         except FileNotFoundError:
@@ -293,7 +316,7 @@ class NagSourceEmacsBuffer(NagSourceBase):
     def identity(self) -> str:
         return f"emacs-buffer:{self.buffer_name}"
 
-    def check(self, prog: 'Program') -> NagCheckResult:
+    def check(self, prog: 'Program', previous_hash: Optional[str] = None) -> NagCheckResult:
         logger.debug(f"Checking NagSourceEmacsBuffer: {self.buffer_name}")
         try:
             buffer_info = emacs.get_single_buffer(self.buffer_name)
@@ -305,6 +328,12 @@ class NagSourceEmacsBuffer(NagSourceBase):
                 )
 
             buffer_content = buffer_info.content
+            # Compute hash for current content
+            current_hash = hashlib.sha256(buffer_content.encode('utf-8')).hexdigest()
+            if previous_hash is not None and current_hash == previous_hash:
+                logger.debug(f"NagSourceEmacsBuffer: Content hash for '{self.buffer_name}' matches previous hash. Returning ok.")
+                return ok(source_content=buffer_content, hash=previous_hash)
+
             # We can still provide metadata as additional context if helpful, but the primary focus is content.
             buffer_metadata_json = buffer_info.model_dump_json(indent=2)
 
@@ -317,13 +346,15 @@ class NagSourceEmacsBuffer(NagSourceBase):
                 return NagCheckResult(
                     source_content=buffer_content,
                     has_problem=classification_result.has_problem,
-                    error_while_checking=""
+                    error_while_checking="",
+                    hash=current_hash
                 )
             except Exception as e:
                 logger.error(f"LLM classification failed for Emacs buffer '{self.buffer_name}': {e}")
                 return problem(
                     source_content=buffer_content,
-                    error_while_checking=f"Emacs buffer content retrieved, but LLM classification failed: {e}"
+                    error_while_checking=f"Emacs buffer content retrieved, but LLM classification failed: {e}",
+                    hash=current_hash
                 )
 
         except Exception as e:
@@ -355,7 +386,7 @@ class NagSourceEmacsActiveBuffer(NagSourceBase):
         # fixed value for this type
         return "__GHOSTCODE_EMACS_ACTIVE_BUFFER_REGION__"
 
-    def check(self, prog: 'Program') -> NagCheckResult:
+    def check(self, prog: 'Program', previous_hash: Optional[str] = None) -> NagCheckResult:
         logger.debug(f"Checking NagSourceEmacsActiveBuffer with region_size: {self.region_size}")
         
         if not prog.user_config.emacs_integration:
@@ -384,29 +415,36 @@ class NagSourceEmacsActiveBuffer(NagSourceBase):
                 )
 
             buffer_content = active_buffer_info.content
+            # Compute hash for current content
+            current_hash = hashlib.sha256(buffer_content.encode('utf-8')).hexdigest()
+            if previous_hash is not None and current_hash == previous_hash:
+                logger.debug(f"NagSourceEmacsActiveBuffer: Content hash for active buffer matches previous hash. Returning ok.")
+                return ok(source_content=buffer_content, hash=previous_hash)
+
             # Provide metadata as additional context if helpful
             buffer_metadata_json = active_buffer_info.model_dump_json(indent=2)
 
             # Use the same classification model as NagSourceEmacsBuffer
             try:
-                prog.print(f"debug: {buffer_content}")
                 classification_result = prog.worker_box.new(
                     EmacsBufferProblemClassification, # Reusing this Pydantic model
                     f"The following is the content of the active Emacs buffer region (buffer: '{active_buffer_info.buffer_name}', file: '{active_buffer_info.file_name}'):\n```\n{buffer_content}\n```\n\nAdditionally, here is its metadata:\n```json\n{buffer_metadata_json}\n```\n\n"
                     #+ "Please inspect the buffer content and metadata and determine if it indicates any problems (e.g., syntax errors, warnings, uncommitted changes, or specific keywords indicating an issue). Respond with `has_problem: true` if there's an issue, `false` otherwise, and a brief `reason`."
-                    + "Please consider the buffer's major mode and content. If it appears to be programming language code, indicate a problem if there are obvious code mistakes, syntax errors, or anything else that might indicate a problem. This is a heuristic, you do not need to be 100% sure if there is a problem. Better be safe than sorry. If you detect an issue, respond with has_problem: true, and false otherwise. If you state a reason, it should be extremely brief."
+                    + "Please consider the buffer's major mode and content. If it appears to be programming language code, indicate a problem if there are obvious code mistakes, syntax errors, or anything else that looks erroneous or confused. This is a heuristic, Please only classify this as a problem if you are certain there is a problem. Better be safe than sorry. If you detect an issue, respond with has_problem: true, and false otherwise. If you state a reason, it should be extremely brief. If you cannot identify the content as programming relatex, simply classify it as problem-free."
                 )
-                logger.debug(f"LLM classified active Emacs buffer region: has_problem={classification_result.has_problem}, reason='{classification_result.reason}'")
+                prog.print(f"LLM classified active Emacs buffer region: has_problem={classification_result.has_problem}, reason='{classification_result.reason}'")
                 return NagCheckResult(
                     source_content=buffer_content,
                     has_problem=classification_result.has_problem,
-                    error_while_checking=""
+                    error_while_checking="",
+                    hash=current_hash
                 )
             except Exception as e:
                 logger.error(f"LLM classification failed for active Emacs buffer region: {e}")
                 return problem(
                     source_content=buffer_content,
-                    error_while_checking=f"Active Emacs buffer content retrieved, but LLM classification failed: {e}"
+                    error_while_checking=f"Active Emacs buffer content retrieved, but LLM classification failed: {e}",
+                    hash=current_hash
                 )
 
         except Exception as e:
