@@ -978,7 +978,7 @@ def worker_recover(
     )
 
 
-def worker_generate_title(prog: Program, interaction: types.InteractionHistory) -> str:
+def worker_generate_title(prog: Program, interaction: types.InteractionHistory, headless: bool = True) -> str:
     """Query the worker to generate a title for a given interaction.
     This works best if the interaction has some content.
     It can be repeatedly called on the same interaction for different titles."""
@@ -988,6 +988,7 @@ def worker_generate_title(prog: Program, interaction: types.InteractionHistory) 
             message=f"{prog.last_print_text} Querying 🔧 ",
             postfix_message=f"{prog.last_print_text}",
             print_function=prog.make_tagged_printer("action_queue"),
+            disabled=headless,
         ):
             prog.worker_box.clear_history()
             return prog.worker_box.text(

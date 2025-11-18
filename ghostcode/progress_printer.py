@@ -20,7 +20,8 @@ class ProgressPrinter:
     # will be displayed after progress printing is done.
     postfix_message: str = ""
     print_function: Callable[[str], None] = field(default=print)
-
+    disabled: bool = False
+    
     _print_thread: Optional[threading.Thread] = None
     _is_running: threading.Event = field(default_factory=threading.Event)
 
@@ -28,6 +29,9 @@ class ProgressPrinter:
         self._is_running.clear()
 
     def _print_spinner(self) -> None:
+        if self.disabled:
+            return
+        
         spinner_chars = ["|", "/", "-", "\\"]
         i = 0
         while self._is_running.is_set():
@@ -41,6 +45,9 @@ class ProgressPrinter:
         self.print_function("\r", end=self.postfix_message, flush=True)  # type: ignore
 
     def _print_dots(self) -> None:
+        if self.disabled:
+            return
+        
         dot_patterns = [".  ", ".. ", "..."]
         i = 0
         while self._is_running.is_set():

@@ -1,5 +1,5 @@
 * work-in-progress (WIP, limit 5)
-Add previous_hash as optional parameter to check method in nag sources (so we can short circuit the check and save tokens)
+Workshop active buffer source feedback lol.
 Fix idle worker showing progress printer output.
 Let nag communicate with interact sessions.
 Create inter process communication for  ghostcode processes (ugh).
@@ -117,3 +117,4 @@ Write emacs.py function to get buffer around point.
 Read current interaction content with nag and (possibley) put it into context.
 Add (maybe?) ghostcode interaction as a nagsource.
 Put current emacs buffer with +/- 20 lines around point into nag context.
+Add previous_hash as optional parameter to check method in nag sources (so we can short circuit the check and save tokens)
