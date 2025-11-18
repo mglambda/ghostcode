@@ -10,6 +10,7 @@ import json
 from pydantic import BaseModel, Field, TypeAdapter, model_validator
 if TYPE_CHECKING:
     from .program import Program
+from . import emacs
 import logging
 
 logger = logging.getLogger("ghostcode.nag_sources")
@@ -50,6 +51,11 @@ def ok(source_content: Optional[str] = None) -> NagCheckResult:
 def problem(source_content: Optional[str] = None, error_while_checking: str = "") -> NagCheckResult:
     """Returns a NagCheckResult that has a problem and may need to be nagged about."""
     return NagCheckResult(source_content=source_content if source_content is not None else "", has_problem=True, error_while_checking=error_while_checking)
+
+
+class EmacsBufferProblemClassification(BaseModel):
+    has_problem: bool = Field(description="True if the Emacs buffer content or metadata indicates a problem (e.g., syntax errors, warnings, uncommitted changes, or specific keywords indicating an issue), False otherwise.")
+    reason: str = Field(description="A brief reason for the classification.")
 
 
 
@@ -275,10 +281,62 @@ class NagSourceSubprocess(NagSourceBase):
                 error_while_checking=f"An unexpected error occurred while running command '{self.command}': {e}"
             )
 
+class NagSourceEmacsBuffer(NagSourceBase):
+    """Represents an emacs buffer used as a source to check for problems.
+    Requires emacs to be run in server-mode."""
+    type: Literal["NagSourceEmacsBuffer"] = "NagSourceEmacsBuffer"
+    buffer_name: str = Field(
+        description="The name of the Emacs buffer to monitor."
+    )
+    nag_interval_seconds: int = 5 # Default interval, can be adjusted
+
+    def identity(self) -> str:
+        return f"emacs-buffer:{self.buffer_name}"
+
+    def check(self, prog: 'Program') -> NagCheckResult:
+        logger.debug(f"Checking NagSourceEmacsBuffer: {self.buffer_name}")
+        try:
+            buffer_info = emacs.get_single_buffer(self.buffer_name)
+
+            if buffer_info is None:
+                return problem(
+                    source_content="",
+                    error_while_checking=f"Emacs buffer '{self.buffer_name}' not found or Emacs server not running."
+                )
+
+            buffer_content = buffer_info.content
+            # We can still provide metadata as additional context if helpful, but the primary focus is content.
+            buffer_metadata_json = buffer_info.model_dump_json(indent=2)
+
+            try:
+                classification_result = prog.worker_box.new(
+                    EmacsBufferProblemClassification,
+                    f"The following is the content of Emacs buffer '{self.buffer_name}':\n```\n{buffer_content}\n```\n\nAdditionally, here is its metadata:\n```json\n{buffer_metadata_json}\n```\n\nPlease inspect the buffer content and metadata and determine if it indicates any problems (e.g., syntax errors, warnings, uncommitted changes, or specific keywords indicating an issue). Respond with `has_problem: true` if there's an issue, `false` otherwise, and a brief `reason`."
+                )
+                logger.debug(f"LLM classified Emacs buffer: has_problem={classification_result.has_problem}, reason='{classification_result.reason}'")
+                return NagCheckResult(
+                    source_content=buffer_content,
+                    has_problem=classification_result.has_problem,
+                    error_while_checking=""
+                )
+            except Exception as e:
+                logger.error(f"LLM classification failed for Emacs buffer '{self.buffer_name}': {e}")
+                return problem(
+                    source_content=buffer_content,
+                    error_while_checking=f"Emacs buffer content retrieved, but LLM classification failed: {e}"
+                )
+
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during Emacs buffer check for '{self.buffer_name}': {e}")
+            return problem(
+                source_content="",
+                error_while_checking=f"An unexpected error occurred during Emacs buffer check for '{self.buffer_name}': {e}"
+            )
 
 NagSource = Annotated[
-    NagSourceFile | NagSourceHTTPRequest | NagSourceSubprocess,
+    NagSourceFile | NagSourceHTTPRequest | NagSourceSubprocess | NagSourceEmacsBuffer,
     Field(discriminator="type")
 ]
-        
+
 NagSourceAdapter: TypeAdapter[NagSource] = TypeAdapter(NagSource)
+

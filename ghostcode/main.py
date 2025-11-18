@@ -33,6 +33,7 @@ from .logconfig import ExceptionListHandler, _configure_logging
 from .program import Program
 from .nag_sources import NagSource, NagSourceFile, NagSourceHTTPRequest, NagSourceSubprocess, NagCheckResult
 
+
 # logger will be configured after argument parsing
 logger: logging.Logger  # Declare logger globally, will be assigned later
 
