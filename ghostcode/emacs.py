@@ -139,34 +139,32 @@ def get_single_buffer(buffer_name: str) -> Optional[Buffer]:
     (progn
       (require 'cl-lib)
       (require 'json)
-      (let ((buf (get-buffer \"{buffer_name}\")))
-        (if buf
-            (with-current-buffer buf
-              (json-encode
-               (list
-                (cons 'name (buffer-name buf))
-                (cons 'file_name (buffer-file-name buf))
-                (cons 'read_only buffer-read-only)
-                (cons 'modified (buffer-modified-p buf))
-                (cons 'major_mode major-mode)
-                (cons 'mode_name mode-name)
-                (cons 'default_directory default-directory)
-                (cons 'content (buffer-string))))
-          (json-encode nil))))
+      (let ((buf (get-buffer "{buffer_name}")))
+        (when buf
+          (with-current-buffer buf
+            (json-encode
+             (list
+              :name (buffer-name buf)
+              :file_name (buffer-file-name buf)
+              :read_only buffer-read-only
+              :modified (buffer-modified-p buf)
+              :major_mode major-mode
+              :mode_name mode-name
+              :default_directory default-directory
+              :content (buffer-string)))))))
     """
+
     if (r := send_code(elisp)) is None:
         return None
 
-    # Emacsclient returns "nil" (as a string) if buffer not found, which json_loads_fixed handles.
     data = json_loads_fixed(r.strip())
     if data is None:
         return None
     try:
         return Buffer(**data)
     except ValidationError as e:
-        print(f"Error validating buffer data for '{buffer_name}': {e}")
+        print(f"Error validating single buffer content: {e}")
         return None
-
 
 def get_active_buffer(
     before_lines: Optional[int] = None, after_lines: Optional[int] = None
