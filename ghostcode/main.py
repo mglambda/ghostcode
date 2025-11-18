@@ -2110,8 +2110,11 @@ def _main() -> None:
     # Run the command
     out = command_obj.run(prog_instance)
     print(out.text)
-    if prog_instance.project_root is not None:
-        project.save_to_root(prog_instance.project_root)
+
+    # Only save project if the command is not 'nag'
+    if not isinstance(command_obj, NagCommand):
+        if prog_instance.project_root is not None:
+            project.save_to_root(prog_instance.project_root)
 
 
 def _create_interact_command(
