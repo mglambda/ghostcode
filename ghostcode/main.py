@@ -1151,6 +1151,12 @@ class InteractCommand(BaseModel, CommandInterface):
         prog.debug_dump()
         self._save_interaction(prog)
 
+        # ipc cleanup
+        if prog.ipc_server:
+            logger.info(f"Stopping IPC server and cleaning up info file.")
+            prog.ipc_server.stop()
+            prog._ipc_server_info_clear() # Clear the info file after stopping the server
+        
         return CommandOutput(text="Finished interaction.")
 
 

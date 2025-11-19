@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import atexit
 import traceback
 from contextlib import contextmanager
+import requests
 from threading import Thread
 import os
 import json
@@ -700,6 +701,34 @@ class Program:
             logger.warning("IPC server already running.")
             return
 
+        # Check for existing IPC server info file
+        existing_ipc_info = self._ipc_server_info_get()
+        if existing_ipc_info:
+            host, port = existing_ipc_info
+            logger.info(f"Found existing IPC server info: {host}:{port}. Checking if server is active...")
+            try:
+                # Attempt a quick GET request to see if the server is alive
+                # Use a very short timeout to quickly determine if it's responsive
+                response = requests.get(f"http://{host}:{port}/message", timeout=1)
+                if response.status_code == 200: # Or any success status
+                    logger.warning(f"An IPC server appears to be already running at {host}:{port}. Not starting a new one.")
+                    # If a server is already running, we should probably just use it or inform the user.
+                    # For now, we assume we shouldn't start a duplicate and return.
+                    return
+                else:
+                    logger.info(f"Existing IPC server at {host}:{port} returned status {response.status_code}. Assuming it's not fully functional or stale.")
+                    self._ipc_server_info_clear() # Clear stale info
+            except requests.exceptions.ConnectionError:
+                logger.info(f"No active IPC server found at {host}:{port}. Clearing stale info and proceeding to start a new one.")
+                self._ipc_server_info_clear() # Clear stale info
+            except requests.exceptions.Timeout:
+                logger.info(f"Connection to existing IPC server at {host}:{port} timed out. Clearing stale info and proceeding to start a new one.")
+                self._ipc_server_info_clear() # Clear stale info
+            except Exception as e:
+                logger.error(f"Unexpected error while checking existing IPC server at {host}:{port}: {e}. Clearing stale info and proceeding.", exc_info=True)
+                self._ipc_server_info_clear() # Clear stale info
+
+        
         self.ipc_server = IPCServer()
         try:
             host, port = self.ipc_server.start(self._ipc_server_handle_message)
