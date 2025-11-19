@@ -25,7 +25,7 @@ from .utility import (
 if TYPE_CHECKING:
     from .idle_worker import IdleWorker, IdleTask
 from .ipc import IPCServer
-
+from .ipc_message import IPCMessage
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
 
@@ -51,11 +51,19 @@ class Program:
     idle_worker: 'IdleWorker' = field(
         init = False
     )
+
+    # starlette server for inter process communication
+    # not every subcommand starts one so it's optional
+    ipc_server: Optional[IPCServer] = field(
+        default = None
+    )
+
     # holds the actions that are processes during single interactions. FIFO style
     action_queue: List[Action] = field(
         default_factory=lambda: [],
     )
 
+    
     # flag indicating wether the user wants all actions in the queue to be auto-confirmed during a single interaction.
     action_queue_yolo: bool = False
 
@@ -75,7 +83,7 @@ class Program:
 
     _DEBUG_DIR: ClassVar[str] = ".ghostcode/debug"
     _LOCKFILE: ClassVar[str] = "interaction.lock"
-
+    _IPC_SERVER_FILE: ClassVar[str] = "ipc_server"
     def __post_init__(self) -> None:
         from .idle_worker import IdleWorker, IdleTask        
         sound_dir = ghostcode.get_ghostcode_data("sounds")
@@ -596,3 +604,41 @@ class Program:
             speaker_box.set(k, v)
         logger.debug(f"Initializing speaker_box with the following options:\n{json.dumps(speaker_box.get_options(), indent=4)}")
         return speaker_box
+
+    def _ipc_server_info_save(self, host: str, port: int) -> None:
+        """Writes the connection information for a running IPC server to a file."""
+        pass
+
+    def _ipc_server_info_get(self) -> Optional[Tuple[str, int]]:
+        """Tries to read the IPC server info from the _IPC_SERVER_FILE and returns a pair of < host, port >, and None if it can't be read."""
+        pass
+
+    def _ipc_server_info_clear(self) -> None:
+        """Removes the IPC server info file if it exists."""
+        pass
+
+    def _ipc_server_handle_message(self, message: IPCMessage) -> None:
+        """Default message handler that can be passed to the IPC server as a callback."""
+        from .ipc_message import *
+        import worker
+        logger.debug(f"Handling IPC message: {message}")
+
+        def client_str(client_name: str) -> str:
+            return f"[{client_name}] " if client_name else ""
+        
+        match message:
+            case IPCNotification() as notification_msg:
+                self.print(f"{client_str(notification_msg.client)}{notification_msg.text}")
+            case IPCActions() as ipc_actions_msg:
+                if ipc_actions_msg.text:
+                    self.print(f"{client_str(ipc_actions_msg.client)}{ipc_actions_msg.text}")
+
+                # FIXME: in the future, we will modify the action to e.g. tag it with curentinteraction ID
+                for action in ipc_actions_msg.actions:
+                    self.queue_action(action)
+                    
+                worker.run_action_queue(self)
+                
+    def start_ipc_server(self) -> None:
+        """Initializes the IPC server with a default message handler and writes host/port to the IPC server info file."""
+        
