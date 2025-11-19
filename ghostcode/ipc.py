@@ -9,6 +9,7 @@ from starlette.requests import Request
 import socket
 import logging
 import asyncio
+import os # Added for os.devnull
 
 from .ipc_message import IPCMessage, IPCMessageAdapter
 
@@ -49,8 +50,11 @@ class IPCServer:
             logger.warning("IPCServer already running.")
             return self._actual_host, self._actual_port
 
+        async def route_handler(request: Request) -> JSONResponse:
+            return await self._message_endpoint(request, handle_message)
+
         app = Starlette(routes=[
-            Route("/message", lambda r: self._message_endpoint(r, handle_message), methods=["POST"])
+            Route("/message", route_handler, methods=["POST"])
         ])
 
         # Try to bind to the specified port, with a fallback to port 0
@@ -60,13 +64,14 @@ class IPCServer:
 
         while retries < max_retries:
             try:
-                config = uvicorn.Config(app, host=self.host, port=current_port, log_level="warning", loop="asyncio")
+                config = uvicorn.Config(app, host=self.host, port=current_port, log_config=None, log_level="warning", loop="asyncio")
                 self._server = uvicorn.Server(config)
 
                 # Uvicorn's run() is blocking, so we need to run it in a separate thread
                 # We need to explicitly set the event loop for the new thread
                 def run_server() -> None:
                     asyncio.set_event_loop(asyncio.new_event_loop())
+
                     if self._server is not None:
                         self._server.run()
                     else:

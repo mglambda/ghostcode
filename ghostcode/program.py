@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import atexit
 import traceback
 from contextlib import contextmanager
+from threading import Thread
 import os
 import json
 import appdirs
@@ -687,7 +688,11 @@ class Program:
                         action.interaction_history_id = current_interaction_id
                     self.queue_action(action)
                     
-                worker.run_action_queue(self)
+                # Run the action queue in a separate thread to avoid blocking the IPC server's event loop
+                # This is crucial because run_action_queue can be long-running and interactive.
+                action_thread = Thread(target=worker.run_action_queue, args=(self,))
+                action_thread.daemon = True # Allow the main program to exit even if this thread is still running
+                action_thread.start()
                 
     def start_ipc_server(self) -> None:
         """Initializes the IPC server with a default message handler and writes host/port to the IPC server info file."""

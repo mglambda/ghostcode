@@ -77,7 +77,7 @@ class ProgressPrinter:
         self._print_thread.start()
 
     def stop(self) -> None:
-        if not self._is_running.is_set():
+        if not self._is_running.is_set() or self.disabled:
             return  # Not running
 
         self._is_running.clear()
