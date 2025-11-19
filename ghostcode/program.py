@@ -25,7 +25,7 @@ from .utility import (
 if TYPE_CHECKING:
     from .idle_worker import IdleWorker, IdleTask
 from .ipc import IPCServer
-from .ipc_message import IPCMessage
+from .ipc_message import IPCMessage, IPCNotification, IPCActions
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
 
@@ -607,19 +607,64 @@ class Program:
 
     def _ipc_server_info_save(self, host: str, port: int) -> None:
         """Writes the connection information for a running IPC server to a file."""
-        pass
+        if self.project_root is None:
+            logger.error("Cannot save IPC server info: Project root is not set.")
+            return
+
+        ipc_info_filepath = os.path.join(self.get_data(""), self._IPC_SERVER_FILE)
+        try:
+            with open(ipc_info_filepath, "w") as f:
+                json.dump({"host": host, "port": port}, f)
+            logger.info(f"IPC server info saved to {ipc_info_filepath}: {host}:{port}")
+        except IOError as e:
+            logger.error(f"Failed to save IPC server info to {ipc_info_filepath}: {e}")
 
     def _ipc_server_info_get(self) -> Optional[Tuple[str, int]]:
         """Tries to read the IPC server info from the _IPC_SERVER_FILE and returns a pair of < host, port >, and None if it can't be read."""
-        pass
+        if self.project_root is None:
+            logger.debug("Cannot get IPC server info: Project root is not set.")
+            return None
+
+        ipc_info_filepath = os.path.join(self.get_data(""), self._IPC_SERVER_FILE)
+
+        if not os.path.exists(ipc_info_filepath):
+            logger.debug(f"IPC server info file not found at {ipc_info_filepath}.")
+            return None
+
+        try:
+            with open(ipc_info_filepath, "r") as f:
+                data = json.load(f)
+            host = data.get("host")
+            port = data.get("port")
+            if isinstance(host, str) and isinstance(port, int):
+                logger.debug(f"Retrieved IPC server info from {ipc_info_filepath}: {host}:{port}")
+                return host, port
+            else:
+                logger.error(f"Invalid data in IPC server info file {ipc_info_filepath}.")
+                return None
+        except (IOError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to read or decode IPC server info from {ipc_info_filepath}: {e}")
+            return None
 
     def _ipc_server_info_clear(self) -> None:
         """Removes the IPC server info file if it exists."""
-        pass
+        if self.project_root is None:
+            logger.debug("Cannot clear IPC server info: Project root is not set.")
+            return
+
+        ipc_info_filepath = os.path.join(self.get_data(""), self._IPC_SERVER_FILE)
+
+        if os.path.exists(ipc_info_filepath):
+            try:
+                os.remove(ipc_info_filepath)
+                logger.info(f"IPC server info file {ipc_info_filepath} cleared.")
+            except IOError as e:
+                logger.error(f"Failed to remove IPC server info file {ipc_info_filepath}: {e}")
+        else:
+            logger.debug(f"No IPC server info file found at {ipc_info_filepath} to clear.")
 
     def _ipc_server_handle_message(self, message: IPCMessage) -> None:
         """Default message handler that can be passed to the IPC server as a callback."""
-        from .ipc_message import *
         import worker
         logger.debug(f"Handling IPC message: {message}")
 
@@ -633,12 +678,29 @@ class Program:
                 if ipc_actions_msg.text:
                     self.print(f"{client_str(ipc_actions_msg.client)}{ipc_actions_msg.text}")
 
-                # FIXME: in the future, we will modify the action to e.g. tag it with curentinteraction ID
+                # All actions received via IPC are considered to be from the current interaction
+                # This ensures they are properly associated if an interaction is active
+                current_interaction_id = self.lock_read()
                 for action in ipc_actions_msg.actions:
+                    # For Query actions, set the interaction_history_id if an interaction is active
+                    if isinstance(action, (ActionQueryCoder, ActionQueryWorker)) and current_interaction_id:
+                        action.interaction_history_id = current_interaction_id
                     self.queue_action(action)
                     
                 worker.run_action_queue(self)
                 
     def start_ipc_server(self) -> None:
         """Initializes the IPC server with a default message handler and writes host/port to the IPC server info file."""
-        
+        if self.ipc_server is not None:
+            logger.warning("IPC server already running.")
+            return
+
+        self.ipc_server = IPCServer()
+        try:
+            host, port = self.ipc_server.start(self._ipc_server_handle_message)
+            self._ipc_server_info_save(host, port)
+            logger.info(f"IPC server started successfully on {host}:{port}")
+        except Exception as e:
+            logger.error(f"Failed to start IPC server: {e}", exc_info=True)
+            self.ipc_server = None # Clear server if startup failed
+            self._ipc_server_info_clear() # Ensure no stale info is left
