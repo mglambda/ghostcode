@@ -666,7 +666,7 @@ class Program:
 
     def _ipc_server_handle_message(self, message: IPCMessage) -> None:
         """Default message handler that can be passed to the IPC server as a callback."""
-        import worker
+        from . import worker
         logger.debug(f"Handling IPC message: {message}")
 
         def client_str(client_name: str) -> str:
@@ -674,7 +674,7 @@ class Program:
         
         match message:
             case IPCNotification() as notification_msg:
-                self.print(f"{client_str(notification_msg.client)}{notification_msg.text}")
+                self.print(f"\n{client_str(notification_msg.client)}{notification_msg.text}")
             case IPCActions() as ipc_actions_msg:
                 if ipc_actions_msg.text:
                     self.print(f"{client_str(ipc_actions_msg.client)}{ipc_actions_msg.text}")
