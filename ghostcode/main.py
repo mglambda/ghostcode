@@ -839,6 +839,9 @@ class InteractCommand(BaseModel, CommandInterface):
                     f"Continuing interaction '{self.interaction_history.title}' (ID: {self.interaction_history.unique_id})."
                 )
 
+        # with everything set up, start the IPC server to listen for msgs
+        prog.start_ipc_server()
+        
         # start the actual loop in another method
         return self._interact_loop(result, prog)
 
