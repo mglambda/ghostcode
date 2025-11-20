@@ -1,8 +1,4 @@
 * work-in-progress (WIP, limit 5)
-Make IPC server return message type.
-Change ipc message handler to return the return type.
-Create ipc get current interaction return type.
-create ipc server return type that represents a completion.
 Emacs code to query for code completion at point.
 Make /new slash command to create new interaction.
 * todo
@@ -35,7 +31,6 @@ Keep main command executiong from crashing catastrophically (wrap in try and exi
 ** nag
 Workshop active buffer source feedback lol.
 Maybe give nag command more context.
-Create current emacs buffer nag source.
 Fix nag htt psource not being very sensitive to content (needs testing).
 * emacs integration
 Investigate autocomplete
@@ -117,8 +112,15 @@ Create emacsbuffer nag source.
 Write emacs.py function to get buffer around point.
 Read current interaction content with nag and (possibley) put it into context.
 Add (maybe?) ghostcode interaction as a nagsource.
+Create current emacs buffer nag source.
+
 Put current emacs buffer with +/- 20 lines around point into nag context.
 Add previous_hash as optional parameter to check method in nag sources (so we can short circuit the check and save tokens)
 Fix idle worker showing progress printer output.
 Create inter process communication for  ghostcode processes (ugh).
 Make audio input be able to shup up (as in, take a break) nag command.
+Make IPC server return message type.
+Change ipc message handler to return the return type.
+Create ipc get current interaction return type.
+create ipc server return type that represents a completion.
+Nag reports.

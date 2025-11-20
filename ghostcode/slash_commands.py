@@ -20,7 +20,8 @@ class SlashCommandResult(Enum):
     BAD_ARGUMENTS = 2
     ACTIONS_OFF = 3
     ACTIONS_ON = 4
-
+    RESET_SESSION = 5
+    
 @dataclass
 class SlashCommand:
     """Represents a command that can be invoked with a leading slash (/) during an interactive prompt.
@@ -72,6 +73,13 @@ def slash_save(
     return SlashCommandResult.OK
 
 
+def slash_new(
+    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
+) -> SlashCommandResult:
+    # This function just signals the main loop to perform the reset logic.
+    return SlashCommandResult.RESET_SESSION
+
+
 ### list of slash commands ###
 
 slash_command_list = [
@@ -116,7 +124,13 @@ slash_command_list = [
         args=[],
         help="Turn interact mode on. This causes the coder backend to generate code and attempt to do file edits.",
         function=lambda prog, interaction_history , args: SlashCommandResult.ACTIONS_ON
-    ),        
+    ),
+    SlashCommand(
+        name="new",
+        args=[],
+        help="Start a new interact session without exiting the program. Your previous interaction will be saved.",
+        function=slash_new,
+    ),            
 ]
 
 

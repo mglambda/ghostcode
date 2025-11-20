@@ -1090,10 +1090,10 @@ class InteractCommand(BaseModel, CommandInterface):
                     except EOFError:
                         break  # User pressed CTRL+D, exit interaction
 
-                    # Handle slash commands
-                    match slash_commands.try_command(
+                    slash_result = slash_commands.try_command(
                         prog, self.interaction_history, line
-                    ):
+                    )
+                    match slash_result:
                         case slash_commands.SlashCommandResult.OK:
                             continue  # Command handled, go to next loop iteration (ask for input)
                         case slash_commands.SlashCommandResult.HALT:
@@ -1126,9 +1126,17 @@ class InteractCommand(BaseModel, CommandInterface):
                                 prog.print(
                                     "Interact mode already enabled. Use /talk to disable code generation and file edits."
                                 )
+                        case slash_commands.SlashCommandResult.RESET_SESSION:
+                            self._save_interaction(prog) # Save the current interaction
+                            prog.coder_box.clear_history() # Clear coder's chat history
+                            prog.discard_actions() # Clear any pending actions
+                            self.interaction_history = prog.project.new_interaction_history() # Create a new interaction history
+                            self.initial_interaction_history_length = 0 # Reset length for the new session
+                            prog.print("New interactive session started.")
+                            current_user_input = "" # Clear current input buffer
+                            continue # Continue the loop to get new input
                         case _:
                             pass  # Not a slash command, accumulate input
-
                     # Accumulate user input
                     if line != "\\":
                         current_user_input += "\n" + line
