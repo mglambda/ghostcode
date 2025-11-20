@@ -1,6 +1,4 @@
 * work-in-progress (WIP, limit 5)
-redo ContextFiles.show_overview.
-Add temporarily ingored (or something) to context files.
 Create new PrepareContext task for worker, which will replace routing.
 get rid of routing.
 * todo
@@ -128,3 +126,5 @@ create ipc server return type that represents a completion.
 Nag reports.
 Make /new slash command to create new interaction.
 Refactor interaction and nag subcommands.
+redo ContextFiles.show_overview.
+Add temporarily ingored (or something) to context files.

@@ -127,14 +127,13 @@ class IPCServer:
                 # This is a bit tricky as we don't have direct access to the loop from here
                 # A simpler approach for a daemon thread is to just stop the server
                 # and let the thread die with the main process, but a clean shutdown is better.
-                # For now, we'll rely on the daemon thread exiting when the main process does,
-                # and if we need a more explicit shutdown, we'd need to pass the loop or a future.
-                # However, uvicorn.Server.shutdown() is designed to be called from the main thread
-                # and will manage its internal async shutdown.
-                asyncio.run(self._server.shutdown())
-                self._server_thread.join(timeout=5) # Wait for the thread to finish gracefully
-                if self._server_thread.is_alive():
-                    logger.warning("IPCServer thread did not terminate gracefully.")
+                # To gracefully shut down a uvicorn server running in a separate thread,
+                # we set its internal 'should_exit' flag and then join the thread.
+                # This signals the server's event loop (running in _server_thread) to begin shutdown.
+                self._server.should_exit = True
+            self._server_thread.join(timeout=5) # Wait for the thread to finish gracefully
+            if self._server_thread.is_alive():
+                logger.warning("IPCServer thread did not terminate gracefully.")
             self._server = None
             self._server_thread = None
             self._actual_host = ""
