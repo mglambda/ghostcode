@@ -288,7 +288,7 @@ class UserConfig(BaseModel):
     )
 
     token_threshold: Optional[int] = Field(
-        default = 200000,
+        default = 100000,
         description = "Threshold after which ghostcode will aggressively try to conserve tokens in coder requests. This is not a hard limit, and requests may still go above the threshold. Intended to be used with tiered pricing of cloud providers (e.g. gemini costs more at >200k tokens)."
     )
     

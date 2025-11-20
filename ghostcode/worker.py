@@ -1008,6 +1008,43 @@ def worker_generate_title(prog: Program, interaction: types.InteractionHistory, 
 def worker_prepare_request(
         prog: Program,
         prepare_request_action: types.ActionPrepareRequest
-        ) -> types.ActionResult:
+) -> types.ActionResult:
     """Prepares a prompt by e.g. adding or removing files from context."""
+    # by default, we just return a coder query
+    default_result = types.ActionResultMoreActions(
+        actions = [
+            types.ActionQueryCoder(**(prepare_request_action.model_dump()))
+        ]
+    )
+    
+    # we collect stuff here, we will prepend this to the queue at the end
+    prepare_actions: List[types.Action] = []
+    # go through things that we might do to prepare
+    with ProgressPrinter(
+        message=f"{prog.last_print_text} preparing request 🔧 ",
+        postfix_message=f"{prog.last_print_text}",
+        print_function=prog.make_tagged_printer("action_queue"),
+    ):
+        # 1. see if we might be over the token threshold
+        # this is not meant to be exact, so don't get scared that we're kind of hacking it
+        # also the order doesn't matter for tokens
+        preamble_str = prog.coder_box.get_var("preamble_injection")
+        history_str = "\n".join([msg.model_dump_json() for msg in prog.coder_box.get_history()])
+        tokens = prog.coder_box.token_estimate(preamble_str + history_str + prepare_request_action.prompt)
+        if tokens is not None:
+            logger.info(f"Request is estimated to cost ~{tokens} tokens.")
+        else:
+            logger.warning(f"Failed to estimate token cost of request.")
 
+        # if it's not above the threshold we can move on
+        if tokens >= prog.user_config.token_threshold:
+            prepare_actions.extend(worker_reduce_token_cost(prog, prepare_request_action))
+
+        # prepend the collected actions
+        default_result.actions = prepare_actions + default_result.actions
+        return default_result
+def worker_reduce_token_cost(
+        prog: Program, prepare_request_action: types.ActionPrepareRequest
+) -> List[types.Action]:
+    """Returns a list of actions to be taken in order to reduce the token cost of a given request."""
+    return []
