@@ -534,29 +534,103 @@ class ProjectConfig(BaseModel):
     )
 
 # --- Type Definitions ---
+class ContextFileVisibility(StrEnum):
+    """The degree to which context files are visible and thus included in prompts to the backend LLMs."""
+    # ignore means the file is not included in any prompts
+    ignore = "ignore"
+
+    # default means the file is included if the particular query is configured to include it, and may be excluded sometimes by setting temporarily_ignored to True
+    default = "default"
+
+    # summary means the file must be included, but only as a summary
+    summary = "summary"
+    
+    # force means the file is included in any prompt
+    force = "force"
+
+
+class ContextFileSourceUnknown(BaseModel):
+    """Represents a context file of unknown origin. This can happen if e.g. the user edits the context_files file by hand."""
+    type: Literal["ContextFileSourceUnknown"] = "ContextFileSourceUnknown"
+    def show(self) -> str: return "unknown"
+
+class ContextFileSourceCLI(BaseModel):
+    """A context file that was added from the command line via the 'context' subcommand."""
+    type: Literal["ContextFileSourceCLI"] = "ContextFileSourceCLI"
+    def show(self) -> str: return "context"
+
+class ContextFileSourceNag(BaseModel):
+    """A context file that was added by the nag command."""
+    type: Literal["ContextFileSourceNag"] = "ContextFileSourceNag"
+    def show(self) -> str: return "nag"
+
+
+class ContextFileSourceDiscover(BaseModel):
+    """A context fiel that was added by the discover subcommand."""
+    type: Literal["ContextFileSourceDiscover"] = "ContextFileSourceDiscover"
+    def show(self) -> str: return "discover"
+
+class ContextFileSourceIPC(BaseModel):
+    """A context file that was added by a generic client to the IPC endpoint."""
+    type: Literal["ContextFileSourceIPC"] = "ContextFileSourceIPC"
+    client: str = Field(
+        description = "The name of the client that initiated the IPC action to add the context file."
+    )
+
+    def show(self) -> str: return self.client
+
+type ContextFileSource = Annotated[
+    ContextFileSourceUnknown | ContextFileSourceNag | ContextFileSourceDiscover | ContextFileSourceCLI | ContextFileSourceIPC,
+    Field(discriminator = "type")
+    ]
+    
 class ContextFileConfig(BaseModel):
     """Specify options, metadata, and special behaviours for certain files in the context."""
-
-    rag: bool = Field(
-        default=False,
-        description="Whether to enable retrieval augmented generation for this file. Enabling RAG means the local LLM will retrieve only parts of the file if it deems it necessary with the given prompt. This is usually done for large text files or documentation, and helps to avoid huge token counts for the cloud LLM.",
-    )
 
     locked: bool = Field(
         default = False,
         description = "If true, the file cannot be removed from the context before it is unlocked."
     )
 
-    ignore: bool = Field(
-        default = False,
-        description = "Ignored context files will not have their contents be shown in any query."
+    coder_visibility: ContextFileVisibility = Field(
+        default = ContextFileVisibility.default,
+        description = "The degree to which this context file is included in prompts and thus made visible to the backend LLMs. Coder LLM only."
     )
 
+    worker_visibility: ContextFileVisibility = Field(
+        default = ContextFileVisibility.default,
+        description = "The degree to which this context file is included in prompts and thus made visible to the backend LLMs. Worker LLM only."
+    )    
+
+    temporarily_ignored: bool = Field(
+        default = False,
+        description = "Flag that may be set internally by the worker to reduce token count. Temporarily ignored files are not shown to the coder LLM. May only be set on files with coder_visibility of default or lower, and is ignored if visiblity to the coder is higher than those."
+    )
+
+    source: ContextFileSource = Field(
+        default_factory = ContextFileSourceUnknown,
+        description = "Describes who added the context file, e.g. a user at the command line, an emacs buffer, a network IPC request and so on. May include additional information about the source."
+    )
+    
     summary: str = Field(
         default = "",
         description = "A summary of the file. Summaries are intended to be generated in the background while the user is idle in an interact session. This has not been implemented yet."
     )
-    
+
+
+    def is_ignored_by(self, target: AIAgent) -> bool:
+        """Returns whether the file should be ignored by a given LLM backend target."""
+        match target:
+            case AIAgent.CODER:
+                return (self.coder_visibility == ContextFileVisibility.ignore) or self.temporarily_ignored
+            case AIAgent.WORKER:
+                return self.worker_visibility == ContextFileVisibility.ignore
+            case _ as unreachable:
+                assert_never(unreachable)
+
+    def is_ignored(self) -> bool:
+        return all(self.is_ignored_by(target) for target in AIAgent)
+                
 class ContextFile(BaseModel):
     """Abstract representation of a filepath along with metadata. Context files are sent to the cloud LLM for prompts."""
 
@@ -616,11 +690,11 @@ class ContextFiles(BaseModel):
         context_files = [ContextFile(filepath=fp, abs_filepath=os.path.join(root, fp)) for fp in filepaths]
         return ContextFiles(data=context_files, root = root)
 
-    def show(self, heading_level: int = 3, **kwargs: Any) -> str:
+    def show(self, heading_level: int = 3, target: AIAgent = AIAgent.CODER, **kwargs: Any) -> str:
         """Renders file contents of the context files to a string, in a format that is suitable for an LLM."""
         w = ""
         for context_file in self.data:
-            if context_file.config.ignore:
+            if context_file.config.is_ignored_by(target):
                 continue
             try:
                 with open(context_file.abs_filepath, "r") as f:
@@ -645,7 +719,7 @@ class ContextFiles(BaseModel):
 
     def show_cli(self, **kwargs: Any) -> str:
         """Shows the list of filepaths in a short, command line interface friendly manner."""
-        return "(" + " ".join([item.filepath for item in self.data if not item.config.ignore]) + ")"
+        return "(" + " ".join([item.filepath for item in self.data if not item.config.is_ignored()]) + ")"
 
     def show_overview(self) -> str:
         """Returns a tab separated display of context files with their configuration options."""
@@ -658,7 +732,7 @@ class ContextFiles(BaseModel):
             max_filepath_len = max(max_filepath_len, len(cf.filepath))
 
         # Build the header
-        header = f"{'Filepath'.ljust(max_filepath_len)}	{'RAG'}	{'Locked'}	{'Ignored'}	{'Summary'}"
+        header = f"{'Filepath'.ljust(max_filepath_len)}	{'Locked'}	{'Summary'}"
         separator = f"{'-' * max_filepath_len}	{'-'*3}	{'-'*6}	{'-'*7}	{'-'*7}"
         
         lines = [header, separator]
@@ -666,12 +740,10 @@ class ContextFiles(BaseModel):
         # Build data rows
         for cf in self.data:
             filepath_padded = cf.filepath.ljust(max_filepath_len)
-            rag_str = "Yes" if cf.config.rag else "No"
             locked_str = "Yes" if cf.config.locked else "No"
-            ignore_str = "Yes" if cf.config.ignore else "No"
             summary_str = "Yes" if cf.config.summary else "No"
 
-            lines.append(f"{filepath_padded}	{rag_str}	{locked_str}	{ignore_str}	{summary_str}")
+            lines.append(f"{filepath_padded}		{locked_str}		{summary_str}")
 
         return "\n".join(lines)
 
