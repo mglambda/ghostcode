@@ -4,7 +4,7 @@ from typing import *
 from pydantic import BaseModel, Field, model_validator, TypeAdapter
 from . import types
 from .nag_sources import NagSource, NagCheckResult, NagSourceFile
-from .utility import timestamp_now_iso8601, show_model_nt, quoted_if_nonempty
+from .utility import timestamp_now_iso8601, show_model_nt, quoted_if_nonempty, language_from_extension
 
 class IPCMessageBase(BaseModel):
     """Abstract base class for IPC messages."""
