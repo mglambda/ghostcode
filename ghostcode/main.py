@@ -868,6 +868,7 @@ class InteractCommand(BaseModel, CommandInterface):
                 style_file=True,
                 context_files="full",
                 recent_interaction_summaries="full",
+                problematic_source_reports = True
                 # could add shell here?
             ),
         )
