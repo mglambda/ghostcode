@@ -20,16 +20,26 @@ from . import git
 from . import shell
 from .soundmanager import SoundManager
 from .ansi_colors import Color256, colored
-from .utility import (
-    show_model_nt,
-    timestamp_now_iso8601
-)
+from .utility import show_model_nt, timestamp_now_iso8601
+
 if TYPE_CHECKING:
     from .idle_worker import IdleWorker, IdleTask
 from .ipc import IPCServer
-from .ipc_message import IPCMessage, IPCNag, IPCNotification, IPCActions, IPCResponse, IPCROk, IPCMessageAdapter, IPCResponseAdapter
+from .ipc_message import (
+    IPCMessage,
+    IPCNag,
+    IPCNotification,
+    IPCActions,
+    IPCResponse,
+    IPCROk,
+    IPCMessageAdapter,
+    IPCResponseAdapter,
+    ProblematicSourceReport,
+)
+
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
+
 
 @dataclass
 class Program:
@@ -45,27 +55,20 @@ class Program:
         default_factory=lambda: shell.VirtualTerminal(),
     )
 
-    sound_manager: SoundManager = field(
-        init = False
-    )
+    sound_manager: SoundManager = field(init=False)
 
     # executes background tasks during interactions
-    idle_worker: 'IdleWorker' = field(
-        init = False
-    )
+    idle_worker: "IdleWorker" = field(init=False)
 
     # starlette server for inter process communication
     # not every subcommand starts one so it's optional
-    ipc_server: Optional[IPCServer] = field(
-        default = None
-    )
+    ipc_server: Optional[IPCServer] = field(default=None)
 
     # holds the actions that are processes during single interactions. FIFO style
     action_queue: List[Action] = field(
         default_factory=lambda: [],
     )
 
-    
     # flag indicating wether the user wants all actions in the queue to be auto-confirmed during a single interaction.
     action_queue_yolo: bool = False
 
@@ -85,29 +88,26 @@ class Program:
 
     # Holds the most recent message received by a concurrent nag session, or none if none was received. This attribute is used in interaction sessions to become aware of errors in user code via the various nag sources.
     current_nag_message: Optional[IPCNag] = field(
-        default = None,
+        default=None,
     )
     _DEBUG_DIR: ClassVar[str] = ".ghostcode/debug"
     _LOCKFILE: ClassVar[str] = "interaction.lock"
     _IPC_SERVER_FILE: ClassVar[str] = "ipc_server"
-    
+
     def __post_init__(self) -> None:
-        from .idle_worker import IdleWorker, IdleTask        
+        from .idle_worker import IdleWorker, IdleTask
+
         sound_dir = ghostcode.get_ghostcode_data("sounds")
         self.sound_manager = SoundManager(
             sound_directory=sound_dir,
-            sound_enabled = self.user_config.sound_enabled,
-            volume_multiplier = self.user_config.sound_volume
+            sound_enabled=self.user_config.sound_enabled,
+            volume_multiplier=self.user_config.sound_volume,
         )
         # set up idle worker but don't start it yet
         # by default, it does all the tasks in the priority defined in IdleTask
         # FIXME: use user config options for duration etc.
-        self.idle_worker = IdleWorker(
-            prog_bp = self,
-            idle_timeout = 30.0
-        )
+        self.idle_worker = IdleWorker(prog_bp=self, idle_timeout=30.0)
 
-        
         # Register shutdown to ensure PyAudio resources are released on program exit
         atexit.register(self.sound_manager.shutdown)
 
@@ -122,21 +122,24 @@ class Program:
         lock_filepath = os.path.join(self.get_data(""), self._LOCKFILE)
 
         if os.path.exists(lock_filepath):
-            logger.warning(f"Lock file already exists at {lock_filepath}. Interaction already in progress?")
-            return True # Lock already held
+            logger.warning(
+                f"Lock file already exists at {lock_filepath}. Interaction already in progress?"
+            )
+            return True  # Lock already held
 
         try:
             with open(lock_filepath, "w") as f:
                 f.write(interaction_history_id)
-            logger.info(f"Lock acquired for interaction {interaction_history_id} at {lock_filepath}.")
-            return False # Lock acquired successfully
+            logger.info(
+                f"Lock acquired for interaction {interaction_history_id} at {lock_filepath}."
+            )
+            return False  # Lock acquired successfully
         except IOError as e:
             logger.error(f"Failed to create lock file {lock_filepath}: {e}")
-            return True # Failed to acquire lock
+            return True  # Failed to acquire lock
 
     def lock_release(self) -> None:
-        """Releases the lock on the .ghostcode directory.
-        """
+        """Releases the lock on the .ghostcode directory."""
         if self.project_root is None:
             logger.warning("Cannot release lock: Project root is not set.")
             return
@@ -171,9 +174,10 @@ class Program:
                 return None
         return None
 
-
     @contextmanager
-    def interaction_lock(self, interaction_history_id: str, should_lock: bool = True) -> Generator[None, None, None]:
+    def interaction_lock(
+        self, interaction_history_id: str, should_lock: bool = True
+    ) -> Generator[None, None, None]:
         """
         Context manager for managing interaction locks.
         Acquires a lock if `should_lock` is True and no other lock is held.
@@ -207,15 +211,16 @@ class Program:
             yield
         finally:
             self.lock_release()
-    
+
     def has_git_integration(self) -> bool:
         """Returns true if git integration is enabled for the current project.
-            You still have to check for availability yourself, this just allows the project to disable it."""
+        You still have to check for availability yourself, this just allows the project to disable it.
+        """
         if self.project is None:
             return False
 
         return self.project.config.git_integration
-            
+
     def _get_cli_prompt(self) -> str:
         """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
         git_str = ""
@@ -225,7 +230,7 @@ class Program:
             branch_gr = git.get_current_branch(root)
             if repo_gr.value or branch_gr.value:
                 git_str = f"[{repo_gr.value}:{branch_gr.value}] "
-        
+
         # some ghostbox internal magic to get the token count
         coder_tokens = self.coder_box._plumbing._get_last_result_tokens()
         worker_tokens = self.worker_box._plumbing._get_last_result_tokens()
@@ -348,7 +353,7 @@ class Program:
         abridge = 80  # type: Optional[int]
         try:
             while True:
-                self.idle_worker.update()                
+                self.idle_worker.update()
                 choice = input(
                     "Permit? yes (y), no (n), yes to all (a), cancel all (q), or show more info (?, default):"
                 )
@@ -489,14 +494,13 @@ class Program:
             logger.warning(f"Failed to read log file. Reason: {e}")
             return ""
 
-
-    @contextmanager        
+    @contextmanager
     def sound_clicks(self, mean: float = 0.7) -> Generator[None, None, None]:
         """Plays clicking sounds if sound_enabled is true on the sound manager."""
-        clicking_sounds = "clicks1.wav clicks2.wav clicks3.wav clicks_double.wav clicks_triple.wav".split(" ")
-        with self.sound_manager.continuous_playback(
-                clicking_sounds,
-                mean = mean):
+        clicking_sounds = "clicks1.wav clicks2.wav clicks3.wav clicks_double.wav clicks_triple.wav".split(
+            " "
+        )
+        with self.sound_manager.continuous_playback(clicking_sounds, mean=mean):
             yield
 
     def sound_error(self) -> None:
@@ -548,69 +552,93 @@ class Program:
 
     def get_current_backend_coder(self) -> LLMBackend:
         """Returns the current LLM backend for the coder.
-        The current backend is determined in the order of options in: command line > user config > project config > defaults"""
+        The current backend is determined in the order of options in: command line > user config > project config > defaults
+        """
         return self.coder_box.get("backend")
-    
+
     def get_current_backend_worker(self) -> LLMBackend:
         """Returns the current LLM backend for the worker.
-        The current backend is determined in the order of options in: command line > user config > project config > defaults"""
+        The current backend is determined in the order of options in: command line > user config > project config > defaults
+        """
         return self.worker_box.get("backend")
 
     def get_current_model_coder(self) -> str:
         """Returns the currently used LLM model for the coder (if any is set). This is not the same as the backend.
-        The model is determined in the order of: command line > user config > project config > default"""
+        The model is determined in the order of: command line > user config > project config > default
+        """
         return self.coder_box.get("model")
 
     def get_current_model_worker(self) -> str:
         """Returns the currently used LLM model used by the worker (if any is set). This is not the same as the backend.
-        The model is determined in the order of: command line > user config > project config > default"""
-        return self.worker_box.get("model")    
+        The model is determined in the order of: command line > user config > project config > default
+        """
+        return self.worker_box.get("model")
 
-    def get_branch_interactions(self, target_branch: Optional[str] = None) -> List[InteractionHistory]:
+    def get_branch_interactions(
+        self, target_branch: Optional[str] = None
+    ) -> List[InteractionHistory]:
         """Returns interactions for a given branch, excluding the current interaction by default if on is ongoing.
         If no branch name is provided, returns interactions for the current git branch by default.
-        If git is disabled or branch name cannot be determined, all interactions are returned."""
+        If git is disabled or branch name cannot be determined, all interactions are returned.
+        """
         # sanity
         if self.project is None:
             logger.error(f"Null project during interaction retrieval.")
             return []
 
         current_interaction_id = self.lock_read()
-        exclude_ids = [current_interaction_id] if current_interaction_id is not None else []
+        exclude_ids = (
+            [current_interaction_id] if current_interaction_id is not None else []
+        )
         if exclude_ids == []:
-            logger.debug(f"Unable to determine current interaction ID while retrieving branch interactions.")
+            logger.debug(
+                f"Unable to determine current interaction ID while retrieving branch interactions."
+            )
 
         # git stuff is handled by the project method
-        return self.project.get_branch_interactions(exclude_interaction_ids = exclude_ids)    
+        return self.project.get_branch_interactions(exclude_interaction_ids=exclude_ids)
 
     def get_speaker_box(self) -> Ghostbox:
         """Returns a clone of the worker box, configured for TTS.
-        This is useful as the speaker box will have various TTS options set, and is ideal for text streaming directly to TTS."""
+        This is useful as the speaker box will have various TTS options set, and is ideal for text streaming directly to TTS.
+        """
         logger.info(f"Constructing speaker box.")
-        
+
         if self.project is None:
             logger.error(f"Null project on trying to create speaker box.")
-            raise RuntimeError(f"No project root. Please initialize a ghostbox project with `ghostbox init`")
+            raise RuntimeError(
+                f"No project root. Please initialize a ghostbox project with `ghostbox init`"
+            )
 
         # assemble user overrides
         user_options = default_tts_options
         user_options["tts_model"] = self.user_config.tts_model
         user_options["tts_voice"] = self.user_config.tts_voice
         if not self.user_config.sound_enabled:
-            logger.warning(f"Disabling sound on speaker box because of user disabled sound option.")
+            logger.warning(
+                f"Disabling sound on speaker box because of user disabled sound option."
+            )
             user_options["tts"] = False
             user_options["quiet"] = True
-        
+
         worker_options = self.worker_box.get_options()
         # FIXME: bug inghostbox where it must be initialized with tts = True
         # FIXME: we should probably, wether ghostbox fixes the bug or not, initialize speaker from a dedicated speaker character folder
-        speaker_box = Ghostbox(**(worker_options | {"tts":True}))
+        speaker_box = Ghostbox(**(worker_options | {"tts": True}))
         # we do it this way because part of the worker options is 'character_folder' which will override options in the kwargs
         # this we we know 100% that the tts user options are in
         for k, v in user_options.items():
             speaker_box.set(k, v)
-        logger.debug(f"Initializing speaker_box with the following options:\n{json.dumps(speaker_box.get_options(), indent=4)}")
+        logger.debug(
+            f"Initializing speaker_box with the following options:\n{json.dumps(speaker_box.get_options(), indent=4)}"
+        )
         return speaker_box
+
+    def get_current_problematic_source_reports(self) -> List[ProblematicSourceReport]:
+        """Returns problematic soruces that may have been reported by the nag process via IPC."""
+        if self.current_nag_message is None:
+            return []
+        return self.current_nag_message.problematic_sources
 
     def _ipc_server_info_save(self, host: str, port: int) -> None:
         """Writes the connection information for a running IPC server to a file."""
@@ -644,13 +672,19 @@ class Program:
             host = data.get("host")
             port = data.get("port")
             if isinstance(host, str) and isinstance(port, int):
-                logger.debug(f"Retrieved IPC server info from {ipc_info_filepath}: {host}:{port}")
+                logger.debug(
+                    f"Retrieved IPC server info from {ipc_info_filepath}: {host}:{port}"
+                )
                 return host, port
             else:
-                logger.error(f"Invalid data in IPC server info file {ipc_info_filepath}.")
+                logger.error(
+                    f"Invalid data in IPC server info file {ipc_info_filepath}."
+                )
                 return None
         except (IOError, json.JSONDecodeError) as e:
-            logger.error(f"Failed to read or decode IPC server info from {ipc_info_filepath}: {e}")
+            logger.error(
+                f"Failed to read or decode IPC server info from {ipc_info_filepath}: {e}"
+            )
             return None
 
     def _ipc_server_info_clear(self) -> None:
@@ -666,48 +700,62 @@ class Program:
                 os.remove(ipc_info_filepath)
                 logger.info(f"IPC server info file {ipc_info_filepath} cleared.")
             except IOError as e:
-                logger.error(f"Failed to remove IPC server info file {ipc_info_filepath}: {e}")
+                logger.error(
+                    f"Failed to remove IPC server info file {ipc_info_filepath}: {e}"
+                )
         else:
-            logger.debug(f"No IPC server info file found at {ipc_info_filepath} to clear.")
+            logger.debug(
+                f"No IPC server info file found at {ipc_info_filepath} to clear."
+            )
 
     def _ipc_server_handle_message(self, message: IPCMessage) -> Optional[IPCResponse]:
         """Default message handler that can be passed to the IPC server as a callback."""
         from . import worker
+
         logger.debug(f"Handling IPC message: {message}")
 
         def client_str(client_name: str) -> str:
             return f"[{client_name}] " if client_name else ""
-        
+
         match message:
             case IPCNotification() as notification_msg:
-                self.print(f"\n{client_str(notification_msg.client)}{notification_msg.text}")
+                self.print(
+                    f"\n{client_str(notification_msg.client)}{notification_msg.text}"
+                )
                 return IPCROk()
             case IPCActions() as ipc_actions_msg:
                 if ipc_actions_msg.text:
-                    self.print(f"{client_str(ipc_actions_msg.client)}{ipc_actions_msg.text}")
+                    self.print(
+                        f"{client_str(ipc_actions_msg.client)}{ipc_actions_msg.text}"
+                    )
 
                 # All actions received via IPC are considered to be from the current interaction
                 # This ensures they are properly associated if an interaction is active
                 current_interaction_id = self.lock_read()
                 for action in ipc_actions_msg.actions:
                     # For Query actions, set the interaction_history_id if an interaction is active
-                    if isinstance(action, (ActionQueryCoder, ActionQueryWorker)) and current_interaction_id:
+                    if (
+                        isinstance(action, (ActionQueryCoder, ActionQueryWorker))
+                        and current_interaction_id
+                    ):
                         action.interaction_history_id = current_interaction_id
                     self.queue_action(action)
-                    
+
                 # Run the action queue in a separate thread to avoid blocking the IPC server's event loop
                 # This is crucial because run_action_queue can be long-running and interactive.
                 action_thread = Thread(target=worker.run_action_queue, args=(self,))
-                action_thread.daemon = True # Allow the main program to exit even if this thread is still running
+                action_thread.daemon = True  # Allow the main program to exit even if this thread is still running
                 action_thread.start()
                 return IPCROk()
             case IPCNag() as nag_message:
-                logger.info(f"Replacing most recent nag message with new message from nag process with {len(nag_message.problematic_sources)} problematic sources.")
+                logger.info(
+                    f"Replacing most recent nag message with new message from nag process with {len(nag_message.problematic_sources)} problematic sources."
+                )
                 self.current_nag_message = nag_message
                 return IPCROk()
             case _ as unreachable:
                 assert_never(unreachable)
-                
+
     def start_ipc_server(self) -> None:
         """Initializes the IPC server with a default message handler and writes host/port to the IPC server info file."""
         if self.ipc_server is not None:
@@ -718,30 +766,42 @@ class Program:
         existing_ipc_info = self._ipc_server_info_get()
         if existing_ipc_info:
             host, port = existing_ipc_info
-            logger.info(f"Found existing IPC server info: {host}:{port}. Checking if server is active...")
+            logger.info(
+                f"Found existing IPC server info: {host}:{port}. Checking if server is active..."
+            )
             try:
                 # Attempt a quick GET request to see if the server is alive
                 # Use a very short timeout to quickly determine if it's responsive
                 response = requests.get(f"http://{host}:{port}/message", timeout=1)
-                if response.status_code == 200: # Or any success status
-                    logger.warning(f"An IPC server appears to be already running at {host}:{port}. Not starting a new one.")
+                if response.status_code == 200:  # Or any success status
+                    logger.warning(
+                        f"An IPC server appears to be already running at {host}:{port}. Not starting a new one."
+                    )
                     # If a server is already running, we should probably just use it or inform the user.
                     # For now, we assume we shouldn't start a duplicate and return.
                     return
                 else:
-                    logger.info(f"Existing IPC server at {host}:{port} returned status {response.status_code}. Assuming it's not fully functional or stale.")
-                    self._ipc_server_info_clear() # Clear stale info
+                    logger.info(
+                        f"Existing IPC server at {host}:{port} returned status {response.status_code}. Assuming it's not fully functional or stale."
+                    )
+                    self._ipc_server_info_clear()  # Clear stale info
             except requests.exceptions.ConnectionError:
-                logger.info(f"No active IPC server found at {host}:{port}. Clearing stale info and proceeding to start a new one.")
-                self._ipc_server_info_clear() # Clear stale info
+                logger.info(
+                    f"No active IPC server found at {host}:{port}. Clearing stale info and proceeding to start a new one."
+                )
+                self._ipc_server_info_clear()  # Clear stale info
             except requests.exceptions.Timeout:
-                logger.info(f"Connection to existing IPC server at {host}:{port} timed out. Clearing stale info and proceeding to start a new one.")
-                self._ipc_server_info_clear() # Clear stale info
+                logger.info(
+                    f"Connection to existing IPC server at {host}:{port} timed out. Clearing stale info and proceeding to start a new one."
+                )
+                self._ipc_server_info_clear()  # Clear stale info
             except Exception as e:
-                logger.error(f"Unexpected error while checking existing IPC server at {host}:{port}: {e}. Clearing stale info and proceeding.", exc_info=True)
-                self._ipc_server_info_clear() # Clear stale info
+                logger.error(
+                    f"Unexpected error while checking existing IPC server at {host}:{port}: {e}. Clearing stale info and proceeding.",
+                    exc_info=True,
+                )
+                self._ipc_server_info_clear()  # Clear stale info
 
-        
         self.ipc_server = IPCServer()
         try:
             host, port = self.ipc_server.start(self._ipc_server_handle_message)
@@ -749,13 +809,14 @@ class Program:
             logger.info(f"IPC server started successfully on {host}:{port}")
         except Exception as e:
             logger.error(f"Failed to start IPC server: {e}", exc_info=True)
-            self.ipc_server = None # Clear server if startup failed
-            self._ipc_server_info_clear() # Ensure no stale info is left
+            self.ipc_server = None  # Clear server if startup failed
+            self._ipc_server_info_clear()  # Ensure no stale info is left
 
     def send_ipc_message(self, ipc_message: IPCMessage) -> Optional[IPCResponse]:
         """Send an IPC message to another ghostcode process and return the result if successful.
                 The receiving process will be determined by finding the ipc_server file and making an HTTP request. If this doesn't work for whatever reason, none is returned and no exception will be raised.
-        This method will block until either the response is obtained, a timeout is reached, or another error occurs."""
+        This method will block until either the response is obtained, a timeout is reached, or another error occurs.
+        """
         ipc_info = self._ipc_server_info_get()
         if ipc_info is None:
             logger.debug("Cannot send IPC message: No IPC server info found.")
@@ -770,8 +831,10 @@ class Program:
             headers = {"Content-Type": "application/json"}
 
             logger.debug(f"Sending IPC message to {url} (type: {ipc_message.type})")
-            response = requests.post(url, data=json_payload, headers=headers, timeout=5) # 5 second timeout
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            response = requests.post(
+                url, data=json_payload, headers=headers, timeout=5
+            )  # 5 second timeout
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
 
             # Parse and validate the response
             response_data = response.json()
@@ -786,11 +849,18 @@ class Program:
             logger.warning(f"IPC message request to {url} timed out.")
             return None
         except requests.exceptions.HTTPError as e:
-            logger.warning(f"HTTP error from IPC server at {url}: {e}. Response: {e.response.text if e.response else 'N/A'}")
+            logger.warning(
+                f"HTTP error from IPC server at {url}: {e}. Response: {e.response.text if e.response else 'N/A'}"
+            )
             return None
         except json.JSONDecodeError as e:
-            logger.warning(f"Failed to decode JSON response from IPC server at {url}: {e}. Response text: {response.text if 'response' in locals() else 'N/A'}")
+            logger.warning(
+                f"Failed to decode JSON response from IPC server at {url}: {e}. Response text: {response.text if 'response' in locals() else 'N/A'}"
+            )
             return None
         except Exception as e:
-            logger.error(f"An unexpected error occurred while sending IPC message to {url}: {e}", exc_info=True)
+            logger.error(
+                f"An unexpected error occurred while sending IPC message to {url}: {e}",
+                exc_info=True,
+            )
             return None
