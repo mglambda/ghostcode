@@ -1,21 +1,17 @@
 * work-in-progress (WIP, limit 5)
-Workshop active buffer source feedback lol.
-Fix idle worker showing progress printer output.
-Let nag communicate with interact sessions.
-Create inter process communication for  ghostcode processes (ugh).
-Make nag command send message to current itneract session on certain user requests.
-Maybe give nag command more context.
-Create current emacs buffer nag source.
-Fix nag htt psource not being very sensitive to content (needs testing).
+Make IPC server return message type.
+Change ipc message handler to return the return type.
+Create ipc get current interaction return type.
+create ipc server return type that represents a completion.
+Emacs code to query for code completion at point.
+Make /new slash command to create new interaction.
+* todo
+** general
 Add take_a_break IdleTask to idle worker.
 Think about implementing a lock around dumping history.
 Yeah, refactor history saving (_dump_interaction_history)
 find out why sometimes titles aren't being assigned
-RAG on past itneractions.
 
-Make audio input be able to shup up (as in, take a break) nag command.
-* todo
-** general
 Narrow the type of Action in actions_from_response_part (since it's a response it must be a query action)
 Remove branching code in make_prompt_worker_coder_request after original_action type has been narrowed
 Make recovery an action.
@@ -36,6 +32,11 @@ Status command (not sure what it should even do yet).
 git integration.
 More useful CLI commands.
 Keep main command executiong from crashing catastrophically (wrap in try and exit gracefully).
+** nag
+Workshop active buffer source feedback lol.
+Maybe give nag command more context.
+Create current emacs buffer nag source.
+Fix nag htt psource not being very sensitive to content (needs testing).
 * emacs integration
 Investigate autocomplete
 get list of buffers that are also in context
@@ -118,3 +119,6 @@ Read current interaction content with nag and (possibley) put it into context.
 Add (maybe?) ghostcode interaction as a nagsource.
 Put current emacs buffer with +/- 20 lines around point into nag context.
 Add previous_hash as optional parameter to check method in nag sources (so we can short circuit the check and save tokens)
+Fix idle worker showing progress printer output.
+Create inter process communication for  ghostcode processes (ugh).
+Make audio input be able to shup up (as in, take a break) nag command.

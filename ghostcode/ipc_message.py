@@ -3,10 +3,17 @@
 from typing import *
 from pydantic import BaseModel, Field, model_validator, TypeAdapter
 from . import types
+from .utility import timestamp_now_iso8601
 
 class IPCMessageBase(BaseModel):
     """Abstract base class for IPC messages."""
     type: str
+
+    timestamp: str = Field(
+        default_factory = timestamp_now_iso8601,
+        description = "The date the mesage was constructed."
+    )
+
 
     # this doesn't have any methods yet, but we are leaving it open for the future
 class IPCNotification(IPCMessageBase):
@@ -40,9 +47,34 @@ class IPCActions(IPCMessageBase):
     )
 
 # sum type
-IPCMessage = Annotated[
+type IPCMessage = Annotated[
     IPCNotification | IPCActions,
     Field(discriminator="type")
 ]
 
 IPCMessageAdapter: TypeAdapter[IPCMessage] = TypeAdapter(IPCMessage) 
+
+
+class IPCResponseBase(BaseModel):
+    """ABC for results that are returned by the IPC server as a response to IPCMessages."""
+    type: str
+    timestamp: str = Field(
+        default_factory = timestamp_now_iso8601,
+        description = "The date the mesage was constructed."
+    )
+
+class IPCROk(IPCResponseBase):
+    """Represents a result that signals that the request was received and successfully processed."""
+    type: Literal["IPCROk"] = "IPCROk"
+    
+class IPCRContextFiles(IPCResponseBase):
+    """Returns the files that are currently in context."""
+    type: Literal["IPCRContextFiles"] = "IPCRContextFiles"
+    context_files: types.ContextFiles
+
+type IPCResponse = Annotated[
+    IPCROk | IPCRContextFiles,
+    Field(discriminator = "type")
+]
+
+IPCResponseAdapter: TypeAdapter[IPCResponse] = TypeAdapter(IPCResponse)

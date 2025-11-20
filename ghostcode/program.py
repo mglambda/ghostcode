@@ -27,7 +27,7 @@ from .utility import (
 if TYPE_CHECKING:
     from .idle_worker import IdleWorker, IdleTask
 from .ipc import IPCServer
-from .ipc_message import IPCMessage, IPCNotification, IPCActions
+from .ipc_message import IPCMessage, IPCNotification, IPCActions, IPCResponse, IPCROk
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
 
@@ -665,7 +665,7 @@ class Program:
         else:
             logger.debug(f"No IPC server info file found at {ipc_info_filepath} to clear.")
 
-    def _ipc_server_handle_message(self, message: IPCMessage) -> None:
+    def _ipc_server_handle_message(self, message: IPCMessage) -> Optional[IPCResponse]:
         """Default message handler that can be passed to the IPC server as a callback."""
         from . import worker
         logger.debug(f"Handling IPC message: {message}")
@@ -676,6 +676,7 @@ class Program:
         match message:
             case IPCNotification() as notification_msg:
                 self.print(f"\n{client_str(notification_msg.client)}{notification_msg.text}")
+                return IPCROk()
             case IPCActions() as ipc_actions_msg:
                 if ipc_actions_msg.text:
                     self.print(f"{client_str(ipc_actions_msg.client)}{ipc_actions_msg.text}")
@@ -694,6 +695,9 @@ class Program:
                 action_thread = Thread(target=worker.run_action_queue, args=(self,))
                 action_thread.daemon = True # Allow the main program to exit even if this thread is still running
                 action_thread.start()
+                return IPCROk()
+            case _ as unreachable:
+                assert_never(unreachable)
                 
     def start_ipc_server(self) -> None:
         """Initializes the IPC server with a default message handler and writes host/port to the IPC server info file."""
@@ -738,3 +742,9 @@ class Program:
             logger.error(f"Failed to start IPC server: {e}", exc_info=True)
             self.ipc_server = None # Clear server if startup failed
             self._ipc_server_info_clear() # Ensure no stale info is left
+
+    def send_ipc_message(self, ipc_message: IPCMessage) -> Optional[IPCResponse]:
+        """Send an IPC message to another ghostcode process and return the result if successful.
+                The receiving process will be determined by finding the ipc_server file and making an HTTP request. If this doesn't work for whatever reason, none is returned and no exception will be raised.
+        This method will block until either the response is obtained, a timeout is reached, or another error occurs."""
+        pass

@@ -11,10 +11,12 @@ import logging
 import asyncio
 import os # Added for os.devnull
 
-from .ipc_message import IPCMessage, IPCMessageAdapter
+from .ipc_message import IPCMessage, IPCMessageAdapter, IPCResponse, IPCResponseAdapter
 
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.ipc")
+
+type IPCMessageCallback = Callable[[IPCMessage], Optional[IPCResponse]]
 
 @dataclass
 class IPCServer:
@@ -30,7 +32,7 @@ class IPCServer:
     _actual_host: str = field(default="", init=False)
     _actual_port: int = field(default=0, init=False)
 
-    async def _message_endpoint(self, request: Request, handle_message: Callable[[IPCMessage], None]) -> JSONResponse:
+    async def _message_endpoint(self, request: Request, handle_message: IPCMessageCallback) -> JSONResponse:
         try:
             body = await request.json()
             ipc_message = IPCMessageAdapter.validate_python(body)
@@ -41,7 +43,7 @@ class IPCServer:
             logger.error(f"Error processing IPC message: {e}", exc_info=True)
             return JSONResponse({"status": "error", "detail": str(e)}, status_code=400)
 
-    def start(self, handle_message: Callable[[IPCMessage], None]) -> Tuple[str, int]:
+    def start(self, handle_message: IPCMessageCallback) -> Tuple[str, int]:
         """Starts the IPC server.
         Returns a pair of < hostname, port >.
         Raises exception if spawning of http server was unsuccesful.
@@ -52,6 +54,7 @@ class IPCServer:
 
         async def route_handler(request: Request) -> JSONResponse:
             return await self._message_endpoint(request, handle_message)
+
 
         app = Starlette(routes=[
             Route("/message", route_handler, methods=["POST"])
