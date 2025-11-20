@@ -27,7 +27,7 @@ from .utility import (
 if TYPE_CHECKING:
     from .idle_worker import IdleWorker, IdleTask
 from .ipc import IPCServer
-from .ipc_message import IPCMessage, IPCNotification, IPCActions, IPCResponse, IPCROk, IPCMessageAdapter, IPCResponseAdapter
+from .ipc_message import IPCMessage, IPCNag, IPCNotification, IPCActions, IPCResponse, IPCROk, IPCMessageAdapter, IPCResponseAdapter
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
 
@@ -83,9 +83,14 @@ class Program:
         default_factory=lambda: CosmeticProgramState.IDLE
     )
 
+    # Holds the most recent message received by a concurrent nag session, or none if none was received. This attribute is used in interaction sessions to become aware of errors in user code via the various nag sources.
+    current_nag_message: Optional[IPCNag] = field(
+        default = None,
+    )
     _DEBUG_DIR: ClassVar[str] = ".ghostcode/debug"
     _LOCKFILE: ClassVar[str] = "interaction.lock"
     _IPC_SERVER_FILE: ClassVar[str] = "ipc_server"
+    
     def __post_init__(self) -> None:
         from .idle_worker import IdleWorker, IdleTask        
         sound_dir = ghostcode.get_ghostcode_data("sounds")
@@ -695,6 +700,10 @@ class Program:
                 action_thread = Thread(target=worker.run_action_queue, args=(self,))
                 action_thread.daemon = True # Allow the main program to exit even if this thread is still running
                 action_thread.start()
+                return IPCROk()
+            case IPCNag() as nag_message:
+                logger.info(f"Replacing most recent nag message with new message from nag process with {len(nag_message.problematic_sources)} problematic sources.")
+                self.current_nag_message = nag_message
                 return IPCROk()
             case _ as unreachable:
                 assert_never(unreachable)

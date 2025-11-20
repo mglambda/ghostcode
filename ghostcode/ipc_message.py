@@ -3,6 +3,7 @@
 from typing import *
 from pydantic import BaseModel, Field, model_validator, TypeAdapter
 from . import types
+from .nag_sources import NagSource, NagCheckResult
 from .utility import timestamp_now_iso8601
 
 class IPCMessageBase(BaseModel):
@@ -45,10 +46,22 @@ class IPCActions(IPCMessageBase):
     actions: List[types.Action] = Field(
         description = "The actions that will be put on the action queue."
     )
+class ProblematicSourceReport(BaseModel):
+    source: NagSource
+    result: NagCheckResult
+    
+class IPCNag(IPCMessageBase):
+    """Represents a status report by the nag subcommand, containing recent errors from various nag sources."""
+    type: Literal["IPCNag"] = "IPCNag"
 
+    problematic_sources: List[ProblematicSourceReport] = Field(
+        default_factory = list,
+        description = "List containing nag sources and their respective check results."
+    )
+    
 # sum type
 type IPCMessage = Annotated[
-    IPCNotification | IPCActions,
+    IPCNotification | IPCActions | IPCNag,
     Field(discriminator="type")
 ]
 
