@@ -27,7 +27,7 @@ from .utility import (
 if TYPE_CHECKING:
     from .idle_worker import IdleWorker, IdleTask
 from .ipc import IPCServer
-from .ipc_message import IPCMessage, IPCNotification, IPCActions, IPCResponse, IPCROk
+from .ipc_message import IPCMessage, IPCNotification, IPCActions, IPCResponse, IPCROk, IPCMessageAdapter, IPCResponseAdapter
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
 
@@ -747,4 +747,41 @@ class Program:
         """Send an IPC message to another ghostcode process and return the result if successful.
                 The receiving process will be determined by finding the ipc_server file and making an HTTP request. If this doesn't work for whatever reason, none is returned and no exception will be raised.
         This method will block until either the response is obtained, a timeout is reached, or another error occurs."""
-        pass
+        ipc_info = self._ipc_server_info_get()
+        if ipc_info is None:
+            logger.debug("Cannot send IPC message: No IPC server info found.")
+            return None
+
+        host, port = ipc_info
+        url = f"http://{host}:{port}/message"
+
+        try:
+            # Serialize the IPCMessage to JSON
+            json_payload = IPCMessageAdapter.dump_json(ipc_message)
+            headers = {"Content-Type": "application/json"}
+
+            logger.debug(f"Sending IPC message to {url} (type: {ipc_message.type})")
+            response = requests.post(url, data=json_payload, headers=headers, timeout=5) # 5 second timeout
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+
+            # Parse and validate the response
+            response_data = response.json()
+            ipc_response = IPCResponseAdapter.validate_python(response_data)
+            logger.debug(f"Received IPC response: {ipc_response.type}")
+            return ipc_response
+
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"Failed to connect to IPC server at {url}: {e}")
+            return None
+        except requests.exceptions.Timeout:
+            logger.warning(f"IPC message request to {url} timed out.")
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"HTTP error from IPC server at {url}: {e}. Response: {e.response.text if e.response else 'N/A'}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to decode JSON response from IPC server at {url}: {e}. Response text: {response.text if 'response' in locals() else 'N/A'}")
+            return None
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while sending IPC message to {url}: {e}", exc_info=True)
+            return None
