@@ -1,6 +1,8 @@
 # ghostcode.program
 from typing import *
+from pydantic import BaseModel, Field
 from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 import atexit
 import traceback
 from contextlib import contextmanager
@@ -40,6 +42,14 @@ from .ipc_message import (
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
 
+
+class CommandInterface(ABC, BaseModel):
+    """Abstract base class for all ghostcode commands."""
+
+    @abstractmethod
+    def run(self, prog: 'Program') -> CommandOutput:
+        pass
+    
 
 @dataclass
 class Program:

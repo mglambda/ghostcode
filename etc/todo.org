@@ -1,6 +1,8 @@
 * work-in-progress (WIP, limit 5)
-Emacs code to query for code completion at point.
-Make /new slash command to create new interaction.
+Refactor interaction and nag subcommands.
+Add temporarily ingored (or something) to context files.
+Create new PrepareContext task for worker, which will replace routing.
+get rid of routing.
 * todo
 ** general
 Add take_a_break IdleTask to idle worker.
@@ -33,7 +35,7 @@ Workshop active buffer source feedback lol.
 Maybe give nag command more context.
 Fix nag htt psource not being very sensitive to content (needs testing).
 * emacs integration
-Investigate autocomplete
+Emacs code to query for code completion at point.
 get list of buffers that are also in context
 get list of buffers that are under current project root
 Add opened emacs buffers that are under project root automatically to context (with config option to disable)
@@ -124,3 +126,4 @@ Change ipc message handler to return the return type.
 Create ipc get current interaction return type.
 create ipc server return type that represents a completion.
 Nag reports.
+Make /new slash command to create new interaction.

@@ -2481,3 +2481,16 @@ class CosmeticProgramState(Enum):
                 return Color256.RED
             case _:
                 return Color256.GRAY_MEDIUM
+
+class CommandOutput(BaseModel):
+    """Helper class to package output from commands.
+    Mostly will just contain text, but this exists so we can add JSON etc. in the future.
+    """
+
+    text: str = ""
+    data: Dict[str, Any] = Field(default_factory=lambda: {})
+
+    def print(self, w: str, end: str = "\n") -> None:
+        """Mimics print function by concatinating text."""
+        self.text += w + end
+
