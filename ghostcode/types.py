@@ -726,14 +726,35 @@ class ContextFiles(BaseModel):
         if not self.data:
             return "No context files tracked."
 
-        # Calculate maximum filepath length for padding
+        # Calculate maximum lengths for padding
         max_filepath_len = 0
+        max_source_len = 0 # New: for source display
         for cf in self.data:
             max_filepath_len = max(max_filepath_len, len(cf.filepath))
+            max_source_len = max(max_source_len, len(cf.config.source.show())) # Calculate max length for source
+
+        # Ensure minimum lengths for headers
+        max_filepath_len = max(max_filepath_len, len("Filepath"))
+        min_locked_len = len("Locked")
+        min_summary_len = len("Summary")
+        min_visibility_len = len("Visibility")
+        max_source_len = max(max_source_len, len("Source")) # Ensure source header fits
 
         # Build the header
-        header = f"{'Filepath'.ljust(max_filepath_len)}	{'Locked'}	{'Summary'}"
-        separator = f"{'-' * max_filepath_len}	{'-'*3}	{'-'*6}	{'-'*7}	{'-'*7}"
+        header = (
+            f"{'Filepath'.ljust(max_filepath_len)}\t"
+            f"{'Locked'.ljust(min_locked_len)}\t"
+            f"{'Summary'.ljust(min_summary_len)}\t"
+            f"{'Visibility'.ljust(min_visibility_len)}\t"
+            f"{'Source'.ljust(max_source_len)}" # Add Source header
+        )
+        separator = (
+            f"{'-' * max_filepath_len}\t"
+            f"{'-' * min_locked_len}\t"
+            f"{'-' * min_summary_len}\t"
+            f"{'-' * min_visibility_len}\t"
+            f"{'-' * max_source_len}" # Add Source separator
+        )
         
         lines = [header, separator]
 
@@ -743,10 +764,28 @@ class ContextFiles(BaseModel):
             locked_str = "Yes" if cf.config.locked else "No"
             summary_str = "Yes" if cf.config.summary else "No"
 
-            lines.append(f"{filepath_padded}		{locked_str}		{summary_str}")
+            visibility_emojis = []
+            if not cf.config.is_ignored_by(AIAgent.CODER):
+                visibility_emojis.append("👻")
+            if not cf.config.is_ignored_by(AIAgent.WORKER):
+                visibility_emojis.append("🔧")
+            
+            if not visibility_emojis:
+                visibility_display = "ignore"
+            else:
+                visibility_display = "".join(visibility_emojis)
+
+            source_display = cf.config.source.show() # Get source display string
+
+            lines.append(
+                f"{filepath_padded}\t"
+                f"{locked_str.ljust(min_locked_len)}\t"
+                f"{summary_str.ljust(min_summary_len)}\t"
+                f"{visibility_display.ljust(min_visibility_len)}\t" # Pad visibility display
+                f"{source_display.ljust(max_source_len)}" # Add padded source display
+            )
 
         return "\n".join(lines)
-
         
     def set_config(self, filepath: str, config: ContextFileConfig) -> None:
         for cf in self.data:
