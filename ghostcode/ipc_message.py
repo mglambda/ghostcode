@@ -4,7 +4,7 @@ from typing import *
 from pydantic import BaseModel, Field, model_validator, TypeAdapter
 from . import types
 from .nag_sources import NagSource, NagCheckResult, NagSourceFile
-from .utility import timestamp_now_iso8601, show_model_nt
+from .utility import timestamp_now_iso8601, show_model_nt, quoted_if_nonempty
 
 class IPCMessageBase(BaseModel):
     """Abstract base class for IPC messages."""
@@ -46,7 +46,7 @@ class IPCActions(IPCMessageBase):
     actions: List[types.Action] = Field(
         description = "The actions that will be put on the action queue."
     )
-from ..utility import quoted_if_nonempty, show_model, language_from_extension
+
 
 class ProblematicSourceReport(BaseModel):
     source: NagSource
