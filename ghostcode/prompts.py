@@ -44,6 +44,7 @@ class PromptConfig(BaseModel):
         default="none",
         description="Include summaries of the most recent interactions. The summarization gets more aggressive for older interactions. Defaults to only showing branch-local interactions.",
     )
+    
     # ghostcode program context
     interaction_history_id: str = Field(
         default="",
@@ -55,6 +56,7 @@ class PromptConfig(BaseModel):
         description="How to display the history. Requires interaction_history_id to be provided. full means entire history is sent. split means the entire history except the last message is sent, and the last message is appended to the user prompt. none means no history is sent.",
     )
 
+    problematic_source_reports: bool = True
     shell: bool = True
     logs: bool = True
 
@@ -159,6 +161,14 @@ def make_prompt(
         prog, mode=prompt_config.recent_interaction_summaries
     )
 
+    if prompt_config.problematic_source_reports:
+        problematic_source_reports_str = f"""## Problematic Source Reports
+{make_blocks_problematic_source_reports(prog, subheading_level=3)}
+"""
+        
+    else:
+        problematic_source_reports_str = ""
+        
     if prompt_config.logs:
         log_excerpt_str = quoted_if_nonempty(
             text=prog.show_log(tail=config.prompt_log_lines),
@@ -180,7 +190,7 @@ def make_prompt(
 {project_metadata_str}{style_file_str}{context_files_str}{recent_interaction_summaries_str}    
 # Ghostcode Context
 
-{history_str}    {shell_str}{log_excerpt_str}
+{history_str}    {problematic_source_reports_str}{shell_str}{log_excerpt_str}
 {user_prompt_str}    
 
 """
@@ -656,6 +666,27 @@ def make_blocks_recent_interaction_summaries(
         output_blocks.append("---\n")  # Separator for readability
 
     return "\n".join(output_blocks)
+
+def make_blocks_problematic_source_reports(prog: Program, subheading_level: int) -> str:
+    """Returns a text block describing various sources and problems that were reported about them, such as a type checking script with type errors."""
+    if not (reports := prog.get_problematic_source_reports()):
+        return ""
+
+    # blocks do not include their own heading, however we have subheading for the various sources, so we construct it based on parameter 
+    subheading = "#" * subheading_level
+    subsubheading = subheading + "#"
+    intro_str = f"""Various information sources, such as log files, test scripts, type-checkers, compilers, or emacs buffers were used to monitor the project. Below are various reports from sources that have been deemed to be problematic in some way."""
+    report_blocks: List[str] = [] 
+    for report in reports:
+        report_blocks.append(f"""{subheading} {report.source.display_name}
+{report.show(subheading_level = subheading_level + 1)}
+""")
+        
+    return f"""{intro_str}
+        
+{"\n\n".join(report_blocks)}
+"""
+    
 
 def make_prompt_nag_emacs_active_buffer(prog: Program, *, active_buffer_info: emacs.ActiveBufferContent, buffer_content: str, region_size: Optional[int] = None) -> str:
     buffer_metadata_json = active_buffer_info.model_dump_json(indent=2)

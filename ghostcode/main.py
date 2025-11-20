@@ -45,7 +45,7 @@ from .nag_sources import (
     NagSourceEmacsActiveBuffer,
     NagCheckResult,
 )
-from .ipc_messages import IPCNag, ProblematicSourceReport
+from .ipc_message import IPCNag, ProblematicSourceReport
 
 # logger will be configured after argument parsing
 logger: logging.Logger  # Declare logger globally, will be assigned later

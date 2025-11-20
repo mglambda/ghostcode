@@ -634,7 +634,7 @@ class Program:
         )
         return speaker_box
 
-    def get_current_problematic_source_reports(self) -> List[ProblematicSourceReport]:
+    def get_problematic_source_reports(self) -> List[ProblematicSourceReport]:
         """Returns problematic soruces that may have been reported by the nag process via IPC."""
         if self.current_nag_message is None:
             return []
