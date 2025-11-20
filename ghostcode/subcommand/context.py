@@ -5,6 +5,7 @@ import sys
 import os
 import glob
 from ..types import CommandOutput
+from .. import types
 from ..program import CommandInterface, Program
 import logging
 logger = logging.getLogger("ghostcode.subcommand.context")
@@ -64,7 +65,8 @@ class ContextCommand(CommandInterface):
             if self.subcommand == "add":
                 for fp in resolved_paths:
                     if fp not in current_context_files:
-                        project.context_files.add(fp)
+                        # Set the source to ContextFileSourceCLI when adding via the 'context add' command
+                        project.context_files.add_or_alter(fp, types.ContextFileConfig(source=types.ContextFileSourceCLI()))
                         result.print(f"Added '{fp}' to context (RAG={self.rag}).")
             elif self.subcommand in ["rm", "remove"]:
                 initial_count = len(project.context_files.data)

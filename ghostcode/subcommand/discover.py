@@ -174,7 +174,7 @@ class DiscoverCommand(CommandInterface):
             # Use add_or_alter to handle existing files gracefully
             # For discover, we don't set RAG by default, but it could be an option later
             if not project.context_files.has_filepath(fp):
-                project.context_files.add_or_alter(fp)
+                project.context_files.add_or_alter(fp, types.ContextFileConfig(source=types.ContextFileSourceDiscover()))
                 added_count += 1
             else:
                 result.print(f"'{fp}' already in context. Skipping.")
