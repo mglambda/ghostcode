@@ -1,4 +1,6 @@
 * work-in-progress (WIP, limit 5)
+add --coder-model and --worker-model as CLI parameters
+fix bad string for context wipe
 Create new PrepareContext task for worker, which will replace routing.
 get rid of routing.
 * todo

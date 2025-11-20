@@ -131,9 +131,10 @@ class IPCServer:
                 # we set its internal 'should_exit' flag and then join the thread.
                 # This signals the server's event loop (running in _server_thread) to begin shutdown.
                 self._server.should_exit = True
-            self._server_thread.join(timeout=5) # Wait for the thread to finish gracefully
-            if self._server_thread.is_alive():
-                logger.warning("IPCServer thread did not terminate gracefully.")
+            if self._server_thread is not None:
+                self._server_thread.join(timeout=5) # Wait for the thread to finish gracefully
+                if self._server_thread.is_alive():
+                    logger.warning("IPCServer thread did not terminate gracefully.")
             self._server = None
             self._server_thread = None
             self._actual_host = ""

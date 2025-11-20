@@ -286,6 +286,11 @@ class UserConfig(BaseModel):
         default = "deepseek-reasoner",
         description = "The deepseek model to user for the worker backend."
     )
+
+    token_threshold: Optional[int] = Field(
+        default = 200000,
+        description = "Threshold after which ghostcode will aggressively try to conserve tokens in coder requests. This is not a hard limit, and requests may still go above the threshold. Intended to be used with tiered pricing of cloud providers (e.g. gemini costs more at >200k tokens)."
+    )
     
     newbie: bool = Field(
         default=True,
@@ -1700,6 +1705,28 @@ class ActionRouteRequest(BaseModel):
         description="ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history.",
     )
 
+class ActionPrepareRequest(BaseModel):
+    """Prepare a query to the backend by configuring the appropriate context."""
+
+    clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.AUTOMATIC
+
+    prompt: str = Field(description="The user prompt to prepare.")
+
+    llm_response_profile: LLMResponseProfile = Field(
+        default_factory=LLMResponseProfile,
+        description="The response profile that will be passed through to the receiving LLM.",
+    )
+
+    hidden: bool = Field(
+        default=False,
+        description="Hidden queries are not shown to the user. Unhidden queries will have their response parts displayed with the various show_cli methods.",
+    )
+
+    interaction_history_id: Optional[str] = Field(
+        default=None,
+        description="ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history.",
+    )
+    
 
 type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest
 type QueryAction = ActionQueryCoder | ActionQueryWorker

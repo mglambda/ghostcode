@@ -271,6 +271,9 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                             types.ActionQueryCoder(**route_request_action.model_dump())
                         ]
                 return types.ActionResultMoreActions(actions=route)
+            case types.ActionPrepareRequest() as prepare_request_action:
+                logger.info(f"Preparing request.")
+                return worker_prepare_request(prog, prepare_request_action)
             case types.ActionHandleCodeResponsePart() as code_action:
                 logger.info(f"Handling code response part.")
                 logger.debug(
@@ -1000,3 +1003,11 @@ def worker_generate_title(prog: Program, interaction: types.InteractionHistory, 
         )
     # we are prepared to deal with empty string titles
     return ""
+
+
+def worker_prepare_request(
+        prog: Program,
+        prepare_request_action: types.ActionPrepareRequest
+        ) -> types.ActionResult:
+    """Prepares a prompt by e.g. adding or removing files from context."""
+
