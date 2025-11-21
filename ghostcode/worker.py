@@ -1049,7 +1049,7 @@ def prepare_request(
         # 1. see if we might be over the token threshold
         # this is not meant to be exact, so don't get scared that we're kind of hacking it
         # also the order doesn't matter for tokens
-        preamble_str = prog.coder_box.get_var("preamble_injection")
+        preamble_str = prompts.make_prompt(prog, prepare_request_action.preamble_config)
         history_str = "\n".join([msg.model_dump_json() for msg in prog.coder_box.get_history()])
         tokens = prog.coder_box.token_estimate(preamble_str + history_str + prepare_request_action.prompt)
         if tokens is not None:

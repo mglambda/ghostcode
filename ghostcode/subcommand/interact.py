@@ -279,10 +279,9 @@ class InteractCommand(CommandInterface):
                 f"Project seems to be null during interaction. This shouldn't happen, but just in case, you may want to do `ghostcode init` in your project's directory."
             )
 
-        #preamble = self._make_preamble(prog)
-        preamble_config = self._make_preamble_config
+
+        preamble_config = self._make_preamble_config(prog)
         prompt_to_send = self._make_user_prompt(prog, user_input)
-        #prog.coder_box.set_vars({"preamble_injection": preamble})
 
         if self.interaction_history is not None:
             self.interaction_history.contents.append(
