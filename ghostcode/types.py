@@ -636,10 +636,12 @@ class ContextFileConfig(BaseModel):
         description = "The degree to which this context file is included in prompts and thus made visible to the backend LLMs. Worker LLM only."
     )    
 
-    temporarily_ignored: bool = Field(
-        default = False,
-        description = "Flag that may be set internally by the worker to reduce token count. Temporarily ignored files are not shown to the coder LLM. May only be set on files with coder_visibility of default or lower, and is ignored if visiblity to the coder is higher than those."
+    temporary_visibility: Optional[ContextFileVisibility] = Field(
+        default = None,
+        exclude = True,
+        description = "Visibility that will override the coder's visibility during an interaction. This is not stored to the project file, and adjusted and recalculated frequently during program execution (e.g. while trimming fat)."
     )
+
 
     source: ContextFileSource = Field(
         default_factory = ContextFileSourceUnknown,
@@ -651,11 +653,16 @@ class ContextFileConfig(BaseModel):
         description = "A summary of the file. Summaries are intended to be generated in the background while the user is idle in an interact session. This has not been implemented yet."
     )
 
+    content_hash: str = Field(
+        default = "",
+        description = "A hash of the content. This may or may not be accurate at any given moment. Hashes are typically updated when the file is summarized, and a non-matching hash indicates that the file has changed since last summarization."
+    )
+    
     def is_ignored_by(self, target: AIAgent) -> bool:
         """Returns whether the file should be ignored by a given LLM backend target."""
         match target:
             case AIAgent.CODER:
-                return (self.coder_visibility == ContextFileVisibility.ignore) or self.temporarily_ignored
+                return (self.coder_visibility == ContextFileVisibility.ignore) or (self.temporary_visibility == ContextFileVisibility.ignore)
             case AIAgent.WORKER:
                 return self.worker_visibility == ContextFileVisibility.ignore
             case _ as unreachable:
@@ -675,12 +682,6 @@ class ContextFile(BaseModel):
         description = "The absolute filepath to this file. This is used to actually get the file contents with e.g. show()."
     )
 
-
-    content_hash: str = Field(
-        default = "",
-        description = "A hash of the content. This may or may not be accurate at any given moment. Hashes are typically updated when the file is summarized, and a non-matching hash indicates that the file has changed since last summarization."
-    )
-    
     config: ContextFileConfig = Field(
         default_factory = ContextFileConfig,
         description = "Additional information, metadata, options, and kspecial behaviour for this context file."
@@ -835,7 +836,13 @@ class ContextFiles(BaseModel):
             )
 
         return "\n".join(lines)
-        
+    def get(self, filepath: str) -> Optional[ContextFile]:
+        # it being a list is a bit awkward and we might change in the future so users of the type should use this function
+        for cf in self.data:
+            if cf.filepath == filepath:
+                return cf
+        return None
+    
     def set_config(self, filepath: str, config: ContextFileConfig) -> None:
         for cf in self.data:
             if cf.filepath == filepath:
@@ -1641,14 +1648,20 @@ class ContextAlterationLoadFile(BaseModel):
 
 class ContextAlterationUnloadFile(BaseModel):
     filepath: str
+class ContextAlterationTemporaryVisibility(BaseModel):
+    """Change the remporary visibility of a context file."""
+    new_temporary_visibility: ContextFileVisibility = Field(
+        description = "The new temporary visibility value the context file will be set to."
+    )
 
+    filepath: str 
 
 class ContextAlterationFlagFile(BaseModel):
     # this is a placeholder and not used yet.
     flag: bool
 
 
-type ContextAlteration = ContextAlterationLoadFile | ContextAlterationUnloadFile | ContextAlterationFlagFile
+type ContextAlteration = ContextAlterationLoadFile | ContextAlterationUnloadFile | ContextAlterationFlagFile | ContextAlterationTemporaryVisibility
 
 
 class ActionAlterContext(BaseModel):
@@ -2413,6 +2426,7 @@ class Project(BaseModel):
                 f.write(self.context_files.to_plaintext())
             logger.debug(f"Saved context files to {context_files_path}")
             config_dict = { cf.filepath: cf.config.model_dump() for cf in self.context_files.data}
+
             with open(context_files_configs_path, "w") as f:
                 json.dump(config_dict, f)
             logger.info(f"Saved context file configs to {context_files_configs_path}.")

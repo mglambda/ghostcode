@@ -368,6 +368,13 @@ def apply_alter_context(
             return types.ActionResultOk(
                 success_message=f"Removed {unload_file.filepath} from context."
             )
+        case types.ContextAlterationTemporaryVisibility() as temporary_visibility:
+            if (context_file := prog.project.context_files.get(temporary_visibility.filepath)) is None:
+                logger.warning(msg := f"Attempted to change visibility of {temporary_visibility.filepath} to {temporary_visibility.new_temporary_visibility}, but file is not in context.")
+                return types.ActionResultOk(success_message = "Nothing to do. " + msg)
+            logger.debug(msg := f"Changing temporary visibility of {context_file.filepath} from {context_file.config.temporary_visibility} to {temporary_visibility.new_temporary_visibility}.")
+            context_file.config.temporary_visibility = temporary_visibility.new_temporary_visibility
+            return types.ActionResultOk(success_message = msg)
         case types.ContextAlterationFlagFile() as flag_file:
             return types.ActionResultFailure(
                 failure_reason="Not implemented yet.",
@@ -1009,7 +1016,7 @@ def worker_generate_title(prog: Program, interaction: types.InteractionHistory, 
 
 def prepare_request(
         prog: Program,
-        prepare_request_action: types.ActionPrepareRequest
+        prepare_request_action: types.ActionPrepareRequest, headless: bool = False 
 ) -> types.ActionResult:
     """Prepares a prompt by e.g. adding or removing files from context."""
     # by default, we just return a coder query
@@ -1026,6 +1033,7 @@ def prepare_request(
         message=f"{prog.last_print_text} preparing request 🔧 ",
         postfix_message=f"{prog.last_print_text}",
         print_function=prog.make_tagged_printer("action_queue"),
+        disabled = headless
     ):
         # 1. see if we might be over the token threshold
         # this is not meant to be exact, so don't get scared that we're kind of hacking it
@@ -1085,8 +1093,8 @@ def reduce_token_cost(
             class CodeFileRelevanceEvaluation(BaseModel):
                 """Represents the degree to which a code file is relevant to a given user prompt."""
                 relevance_rating: float = Field(
-                    gte = 0.0,
-                    lte = 10.0,
+                    ge = 0.0,
+                    le = 10.0,
                     description = "A relevance rating from 0 (not relevant) to 10 (highly relevant)."
                 )
 
@@ -1106,8 +1114,9 @@ def reduce_token_cost(
             if rating >= 9.0:
                 continue
             
-            # if we have no estimate this calculation is moot - just use a heuristic
-            if estimated_token_cost is None:
+            # if we have no estimate or threshold this calculation is moot - just use a heuristic
+            if (estimated_token_cost is None) or (threshold is None):
+                # just use a flat cutoff heuristic
                 if rating >= 7.0:
                     # keep the file included
                     continue
@@ -1122,8 +1131,16 @@ def reduce_token_cost(
                     # keep it in
                     continue
 
-
-                
+            # we looked for any reason to keep the file, if we've reached here it must go
+            # FIXME: in the future, try graduated reudctions of file inclusion, e.g. if it clears threshold by 1.5, set to summary instead of ignore
+            actions.append(
+                types.ActionAlterContext(
+                    context_alteration = types.ContextAlterationTemporaryVisibility(
+                        filepath = context_file.filepath,
+                        new_temporary_visibility = types.ContextFileVisibility.ignore
+                    )
+                )
+            )
                 
         return actions
 

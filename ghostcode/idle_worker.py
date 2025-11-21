@@ -230,7 +230,7 @@ class IdleWorker:
                 self._skip_context_file_filepaths.add(context_file.filepath)
                 continue
 
-            if context_file.content_hash != new_hash:
+            if context_file.config.content_hash != new_hash:
                 # file has changed
                 logger.debug(f"Detected hash change in context file {context_file.filepath}")
                 if (new_summary := worker.generate_context_file_summary(self.prog_bp, context_file, headless=True)) is None:
@@ -240,7 +240,7 @@ class IdleWorker:
 
                 # ok, update the file
                 context_file.config.summary = new_summary
-                context_file.content_hash = new_hash
+                context_file.config.content_hash = new_hash
                 return "not_done"
 
         # end of all files
