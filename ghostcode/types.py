@@ -2,6 +2,7 @@
 from typing import *
 from enum import Enum, StrEnum
 from contextlib import contextmanager
+import hashlib
 from pydantic import BaseModel, Field, model_validator
 import os
 from uuid import uuid4, UUID
@@ -650,7 +651,6 @@ class ContextFileConfig(BaseModel):
         description = "A summary of the file. Summaries are intended to be generated in the background while the user is idle in an interact session. This has not been implemented yet."
     )
 
-
     def is_ignored_by(self, target: AIAgent) -> bool:
         """Returns whether the file should be ignored by a given LLM backend target."""
         match target:
@@ -675,6 +675,12 @@ class ContextFile(BaseModel):
         description = "The absolute filepath to this file. This is used to actually get the file contents with e.g. show()."
     )
 
+
+    content_hash: str = Field(
+        default = "",
+        description = "A hash of the content. This may or may not be accurate at any given moment. Hashes are typically updated when the file is summarized, and a non-matching hash indicates that the file has changed since last summarization."
+    )
+    
     config: ContextFileConfig = Field(
         default_factory = ContextFileConfig,
         description = "Additional information, metadata, options, and kspecial behaviour for this context file."
@@ -683,6 +689,16 @@ class ContextFile(BaseModel):
     def get_abs_filepath(self) -> str:
         """Get the abs path. Helps narrow the type."""
         return self.abs_filepath
+
+    def try_hash(self) -> Optional[str]:
+        """Try to load the file and return a hash of its content, or None if loading fails."""
+        try:
+            with open(self.get_abs_filepath(), "r") as f:
+                content = f.read()
+        except Exception as e:
+            logger.exception(f"Couldn't get contents of file {self.filepath} to hash. Reason: {e}")
+            return None
+        return hashlib.sha256(content.encode('utf-8')).hexdigest()
     
 class ContextFiles(BaseModel):
     """Encapsulates the files (both code and otherwise) that are tracked by the project. Tracked files are sent to the cloud LLM with the prompt.

@@ -3,10 +3,12 @@ from typing import *
 from pydantic import BaseModel, Field
 from dataclasses import dataclass, field
 from threading import Thread, Event
+import hashlib
 from . import types
 from .program import Program
 from . import worker
 from . import prompts
+from .utility import timestamp_now_iso8601
 from time import time, sleep
 import logging
 from enum import StrEnum
@@ -16,7 +18,7 @@ logger = logging.getLogger("ghostcode.idle_worker")
 
 IdleTask = StrEnum(
     "IdleTask",
-    "summarize_interactions update_directory_file"
+    "summarize_interactions summarize_context_files update_directory_file"
 )
 
 @dataclass
@@ -115,6 +117,12 @@ class IdleWorker:
                         else:
                             # not done
                             break
+                    case IdleTask.summarize_context_files:
+                        if self._summarize_context_files() == "done":
+                            continue
+                        else:
+                            # not done
+                            break                        
                     case IdleTask.update_directory_file:
                         if self._update_directory_file() == "done":
                             continue
@@ -195,6 +203,39 @@ class IdleWorker:
         logger.debug("No more interactions found needing titles or summaries.")
         return "done"
 
+
+    def _summarize_context_files(self) -> Literal["done","not_done"]:
+        logger.debug(f"Summarizing context files.")
+        if self.prog_bp.project is None:
+            logger.error(f"Null project while trying to summarize context files.")
+            self.stop()
+            return "done"
+
+        for context_file in self.prog_bp.project.context_files.data:
+            if context_file.config.is_ignored_by(types.AIAgent.WORKER):
+                # not intended for worker, so we skip it
+                continue
+
+            if (new_hash := context_file.try_hash()) is None:
+                # couldnt read or smth, skip it
+                logger.debug(f"Skipping context file {context_file.filepath} because it couldn't be hashed.")
+                continue
+
+            if context_file.content_hash != new_hash:
+                # file has changed
+                logger.debug(f"Detected hash change in context file {context_file.filepath}")
+                if (new_summary := worker.generate_context_file_summary(self.prog_bp, context_file)) is None:
+                    logger.debug(f"Skipping context file {context_file.filepath} because summary generation failed.")
+                    continue
+
+                # ok, update the file
+                context_file.config.summary = new_summary
+                context_file.content_hash = new_hash
+                return "not_done"
+
+        # end of all files
+        return "done"
+                
     def _update_directory_file(self) -> Literal["done", "not_done"]:
         """Tries to see if the directory file needs updating, and does so if necessary."""
         # this isn't implemented yet
