@@ -1,8 +1,7 @@
 * work-in-progress (WIP, limit 5)
 add --coder-model and --worker-model as CLI parameters
 fix bad string for context wipe
-Create new PrepareContext task for worker, which will replace routing.
-get rid of routing.
+Implement logic of reduce token action
 * todo
 ** generalparanoia: Are the LLMs hallucinating timestamps? (investigate and solve with a model_validator)
 Add take_a_break IdleTask to idle worker.
@@ -130,3 +129,5 @@ Make /new slash command to create new interaction.
 Refactor interaction and nag subcommands.
 redo ContextFiles.show_overview.
 Add temporarily ingored (or something) to context files.
+Create new PrepareContext task for worker, which will replace routing.
+get rid of routing.

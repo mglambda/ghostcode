@@ -1065,6 +1065,7 @@ def generate_context_file_summary(
             if (prompt :=                 prompts.make_prompt_context_file_summary(prog, context_file)) is None:
                 # couldn't readfile or smth
                 return None
+            prog.worker_box.clear_history()
             return prog.worker_box.new(
                 types.ContextFileSummary,
                 prompt,

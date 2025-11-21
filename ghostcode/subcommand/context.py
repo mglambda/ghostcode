@@ -148,5 +148,5 @@ class ContextCommand(CommandInterface):
                 n = len(project.context_files.data)
                 project.context_files.data = []
                 project.save_to_root(prog.project_root)
-                result.print("{n} file(s) removed from context.")
+                result.print(f"{n} file(s) removed from context.")
         return result
