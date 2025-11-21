@@ -159,6 +159,13 @@ def _main() -> None:
     )
     context_ls_parser.set_defaults(func=lambda args: ContextCommand(subcommand="ls"))
 
+    context_list_summaries_parser = context_subparsers.add_parser(
+        "list-summaries", help="List summaries of all context files."
+    )
+    context_list_summaries_parser.set_defaults(
+        func=lambda args: ContextCommand(subcommand="list-summaries")
+    )
+    
     context_clean_parser = context_subparsers.add_parser(
         "clean", aliases=[], help="Remove bogus or non-existing files from context."
     )

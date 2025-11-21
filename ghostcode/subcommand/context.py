@@ -7,6 +7,7 @@ import glob
 from ..types import CommandOutput
 from .. import types
 from ..program import CommandInterface, Program
+from ..utility import show_model_nt
 import logging
 logger = logging.getLogger("ghostcode.subcommand.context")
 
@@ -14,7 +15,7 @@ logger = logging.getLogger("ghostcode.subcommand.context")
 class ContextCommand(CommandInterface):
     """Manages files included in the project context."""
 
-    subcommand: Literal["add", "rm", "remove", "ls", "clean", "lock", "unlock", "wipe"]
+    subcommand: Literal["add", "rm", "remove", "ls", "clean", "lock", "unlock", "wipe", "list-summaries"]
     filepaths: List[str] = Field(
         default_factory=list,
         description="File paths to add or remove, can include wildcards.",
@@ -39,6 +40,15 @@ class ContextCommand(CommandInterface):
             else:
                 result.print("Tracked Context Files (relative to project root):")
                 result.print(project.context_files.show_overview())
+        elif self.subcommand == "list-summaries":
+            if not project.context_files.data:
+                result.print("No context files with summaries tracked.")
+            else:
+                result.print("Context File Summaries:")
+                for cf in project.context_files.data:
+                    if cf.config.summary:
+                        result.print(f"# {cf.filepath}")
+                        result.print(show_model_nt(cf.config.summary))
         elif self.subcommand in ["add", "rm", "remove"]:
             if not self.filepaths:
                 logger.error(f"File paths required for 'context {self.subcommand}'.")

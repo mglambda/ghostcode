@@ -1,4 +1,7 @@
 * work-in-progress (WIP, limit 5)
+Investigate coder horribly messing up code parts - i never know if it's me or google
+investigate summaries never filling in depends_on field.
+Make ti so that last request in interact session is automatically put into emacs kill ring.
 add --coder-model and --worker-model as CLI parameters
 fix bad string for context wipe
 Implement logic of reduce token action
