@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from . import types
 from .types import LLMPersonality
 import random
-from .utility import quoted_if_nonempty, show_model, timestamp_now_iso8601, language_from_extension
+from .utility import quoted_if_nonempty, show_model_nt, timestamp_now_iso8601, language_from_extension
 from .program import Program
 import logging
 from . import emacs
@@ -222,7 +222,7 @@ def make_prompt_worker_recover(
     # FIXME: where to get this from: possibilities are 1. file (requires I/O), 2. prog (requires us to add a new attribute like _current_interaction_history), 3. use ghostbox history, which is automatically saved
     # Currently we pick (3), since its easiest.
     history_strs = [
-        show_model(msg) for msg in prog.coder_box.get_history() if msg.role != "system"
+        show_model_nt(msg) for msg in prog.coder_box.get_history() if msg.role != "system"
     ]
     prompt += f"""## Interaction History
 
@@ -252,7 +252,7 @@ def make_prompt_worker_recover(
 The system has failed to execute an action, with the following failure result data:
 
 ```yaml
-{show_model(failure)}
+{show_model_nt(failure)}
 ```    
 
 The program logs above may contain additional information about the failure.
@@ -496,7 +496,7 @@ def make_blocks_project_metadata(prog: Program) -> str:
     if prog.project.project_metadata is None:
         return fail
 
-    return show_model(prog.project.project_metadata)
+    return show_model_nt(prog.project.project_metadata)
 
 
 def make_blocks_style_file(prog: Program) -> str:
@@ -894,4 +894,43 @@ def make_prompt_context_file_summary(prog: Program, context_file: types.ContextF
 {content_str}
 
 The information you generate will be used in the future to decide whether the file should be included as part of a prompt that may be sent to a coding LLM backend, so generate your summar yaccordingly. The summary is intended to help with reducing token-count, so keep that in mind and try to be reasonably brief.
+"""    
+
+def make_prompt_code_file_relevance_evaluation(
+        prog: Program, context_file: types.ContextFile, prompt: str, file_verbosity: Literal["full", "summary"] = "summary"
+        ) -> str:
+    """Returns a string prompting an LLM to evaluate a given code file for relevance to a given user prompt.
+    The relevance rating is supposed to be between 0 and 10."""
+   
+    if file_verbosity == "summary":
+        heading_str = f"# {context_file.filepath} (metadata and summary only)"
+        if context_file.config.summary is None:
+            file_str = "((Content missing. Please evaluate based on filename only))"
+        else:
+            file_str = show_model_nt(context_file.config.summary)
+    else:
+        heading_str = "# {context_file.filepath}"
+        try:
+            with open(context_file.get_abs_filepath(), "r") as f:
+                file_str = quoted_if_nonempty(text = f.read()) 
+        except Exception as e:
+            logger.warning(f"Could not read file {context_file.filepath} while making an relevance evaluation prompt. Reason: {e}")
+            file_str = "error: Could not read file. Please default to a rating of 0.0"
+            
+    return f"""# Initial Instructions
+Here is a prompt given by the user:
+
+```
+{prompt}
+```
+
+Your task is not to fulfill this prompt. Instead, you must evaluate the following file for its relevance to the above user request.
+
+{heading_str}
+    
+{file_str}
+
+# Final Instructions
+    
+Based on your assesment, the above file will either be included in the context for another LLM who will actually fulfill the user's request, or it will not be included. You must rate the files relevance to the user prompt from 0.0 (not relevant at all) to 10.0 (absolutely relevant to the prompt).
 """    

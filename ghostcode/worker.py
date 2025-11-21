@@ -1,5 +1,6 @@
 # ghostcode/worker.py
 from typing import *
+from pydantic import BaseModel, Field
 from ghostbox.commands import showTime
 import traceback
 import os
@@ -1039,14 +1040,14 @@ def prepare_request(
 
         # if it's not above the threshold we can move on
         if tokens and tokens >= prog.user_config.token_threshold:
-            prepare_actions.extend(reduce_token_cost(prog, prepare_request_action))
+            prepare_actions.extend(reduce_token_cost(prog, prepare_request_action, estimated_token_cost = tokens))
 
         # prepend the collected actions
         default_result.actions = prepare_actions + default_result.actions
         return default_result
     
 def reduce_token_cost(
-        prog: Program, prepare_request_action: types.ActionPrepareRequest, headless: bool = False
+        prog: Program, prepare_request_action: types.ActionPrepareRequest, estimated_token_cost: Optional[int] = None, headless: bool = False
 ) -> List[types.Action]:
     """Returns a list of actions to be taken in order to reduce the token cost of a given request."""
     with ProgressPrinter(
@@ -1081,7 +1082,49 @@ def reduce_token_cost(
                     assert_never(unreachable)
 
             # ok, file is default or summary visibility
+            class CodeFileRelevanceEvaluation(BaseModel):
+                """Represents the degree to which a code file is relevant to a given user prompt."""
+                relevance_rating: float = Field(
+                    gte = 0.0,
+                    lte = 10.0,
+                    description = "A relevance rating from 0 (not relevant) to 10 (highly relevant)."
+                )
+
+            try:
+                relevance_evaluation = prog.worker_box.new(
+                    CodeFileRelevanceEvaluation,
+                        prompts.make_prompt_code_file_relevance_evaluation(prog, context_file, prepare_request_action.prompt, file_verbosity="summary")
+                )
+            except Exception as e:
+                logger.exception(f"Couldn't evaluate the relevance of code file {context_file.filepath}. Reason: {e}.")
+                continue
+
+            # ok we have a relevance rating, now we must decide
+            rating = relevance_evaluation.relevance_rating
+            threshold = prog.user_config.token_threshold
+            # files with extremely high ratings should always be included
+            if rating >= 9.0:
+                continue
             
+            # if we have no estimate this calculation is moot - just use a heuristic
+            if estimated_token_cost is None:
+                if rating >= 7.0:
+                    # keep the file included
+                    continue
+            else:
+                # we have estimate
+                # calculate an effective threshold (p) as a ratio of total threshold vs estimated cost
+                p = (threshold / estimated_token_cost) * 10.0
+                # rating (between 0 and 10) and p are now directly comparable. Example: If your token threshold is 100k and you've filled it up half (50k token estimate), the relevance rating needs to be above ~5 for the file to be included.
+                # If the prompt gets longer and you push 70k tokens now it needs to clear 7.0
+                # eventually (at 90k tokens) it doesn't matter anymore because ratings with 9 or above are included by default.
+                if rating >= p:
+                    # keep it in
+                    continue
+
+
+                
+                
         return actions
 
 def generate_context_file_summary(
