@@ -79,10 +79,35 @@ def slash_new(
     # This function just signals the main loop to perform the reset logic.
     return SlashCommandResult.RESET_SESSION
 
+def slash_context(
+    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
+) -> SlashCommandResult:
+    if prog.project is None:
+        prog.print(f"Null project. Please do `ghostcode init` and restart the interaction.")
+        return SlashCommandResult.HALT
+        
+    prog.print(prog.project.context_files.show_visible_filepaths_cli())
+    return SlashCommandResult.OK
 
 ### list of slash commands ###
 
+def slash_help(
+    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
+) -> SlashCommandResult:
+    global slash_command_list
+    for cmd in slash_command_list:
+        args_str = "" if not cmd.args else f"{cmd.args}"
+        prog.print(f"/{cmd.name}" + args_str)
+        prog.print(f"    {cmd.help}")
+    return SlashCommandResult.OK
+
 slash_command_list = [
+    SlashCommand(
+        name="help",
+        args=[],
+        help="Show this help.",
+        function=slash_help
+    ),                    
     SlashCommand(
         name="quit",
         args=[],
@@ -130,7 +155,13 @@ slash_command_list = [
         args=[],
         help="Start a new interact session without exiting the program. Your previous interaction will be saved.",
         function=slash_new,
-    ),            
+    ),
+    SlashCommand(
+        name="context",
+        args=[],
+        help="List all files that are currently being shown to 👻 coder LLM. The output will be different from `ghostcode context list` as the files included/excluded are specific to this interaction.",
+        function=slash_context
+    ),                
 ]
 
 

@@ -870,7 +870,7 @@ Here is a list of files that are also present in the project, but that are not i
         """Shows the list of filepaths in a short, command line interface friendly manner."""
         return "(" + " ".join([item.filepath for item in self.data if not item.config.is_ignored()]) + ")"
 
-    def show_overview(self) -> str:
+    def show_overview(self, **kwargs: Any) -> str:
         """Returns a tab separated display of context files with their configuration options."""
         if not self.data:
             return "No context files tracked."
@@ -898,11 +898,11 @@ Here is a list of files that are also present in the project, but that are not i
             f"{'Source'.ljust(max_source_len)}" # Add Source header
         )
         separator = (
-            f"{'-' * max_filepath_len}\t"
-            f"{'-' * min_locked_len}\t"
-            f"{'-' * min_summary_len}\t"
-            f"{'-' * min_visibility_len}\t"
-            f"{'-' * max_source_len}" # Add Source separator
+            f"{'--' * max_filepath_len}\t"
+            f"{'--' * min_locked_len}\t"
+            f"{'--' * min_summary_len}\t"
+            f"{'--' * min_visibility_len}\t"
+            f"{'--' * max_source_len}" # Add Source separator
         )
         
         lines = [header, separator]
@@ -935,6 +935,24 @@ Here is a list of files that are also present in the project, but that are not i
             )
 
         return "\n".join(lines)
+
+    def show_visible_filepaths_cli(self, target: AIAgent = AIAgent.CODER) -> str:
+        """
+        Shows a list of filepaths that are currently visible to the specified AI agent,
+        one filepath per line, suitable for CLI display (intended for the /context slash command).
+        """
+        visible_files = [
+            cf.filepath
+            for cf in self.data
+            if not cf.config.is_ignored_by(target)
+        ]
+
+        if not visible_files:
+            return f"No files currently visible to the {target.value.capitalize()} LLM."
+        n = len(visible_files)
+        count_str = f"{n} files shown, {len(self.data) - n} files hidden."
+        return count_str + "\n".join(visible_files)
+
     def get(self, filepath: str) -> Optional[ContextFile]:
         # it being a list is a bit awkward and we might change in the future so users of the type should use this function
         for cf in self.data:
