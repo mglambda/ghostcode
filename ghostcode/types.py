@@ -821,7 +821,11 @@ class ContextFiles(BaseModel):
 
     def show(self, heading_level: int = 3, target: AIAgent = AIAgent.CODER, **kwargs: Any) -> str:
         """Renders file contents of the context files to a string, in a format that is suitable for an LLM."""
+        heading = "#" * heading_level
         w = ""
+        # we do two sections because, while some files are ignored and not shown to the LLM, the LLM should still get to see the filenames of temporarily ignored files
+        # section 1 fully included files
+      
         for context_file in self.data:
             if context_file.config.is_ignored_by(target):
                 continue
@@ -835,7 +839,7 @@ class ContextFiles(BaseModel):
                 continue
 
             w += (
-                (heading_level * "#")
+                heading
                 + f""" {context_file.filepath}
 
 ```{language_from_extension(context_file.filepath)}
@@ -844,6 +848,22 @@ class ContextFiles(BaseModel):
 
 """
             )
+
+        # section 2 temporarily ignored files
+        temporarily_ignored_files = [cf.filepath
+                                     for cf in self.data
+                                     if cf.config.is_ignored_by(target) and cf.config.temporary_visibility == ContextFileVisibility.ignore]
+        if temporarily_ignored_files:
+            w += f"""{heading} Other Project Files
+
+Here is a list of files that are also present in the project, but that are not included in this request.
+
+```
+{"\n".join(temporarily_ignored_files)}
+``            `
+"""            
+        
+            
         return w
 
     def show_cli(self, **kwargs: Any) -> str:
