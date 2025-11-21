@@ -263,7 +263,7 @@ class InteractCommand(CommandInterface):
 
     def _make_initial_action(self, **kwargs: Any) -> types.Action:
         """Create the initial action to place on the action queue.
-        Arguments are passed directly through to query constructors, like ActionQueryCoder, ActionQueryWorker, or ActionRouteRequest.
+        Arguments are passed directly through to query constructors, like ActionQueryCoder, ActionQueryWorker, ActionRouteRequest, or ActionPrepareRequest.
         """
         if self.skip_to == types.AIAgent.CODER:
             return types.ActionQueryCoder(**kwargs)
@@ -271,8 +271,8 @@ class InteractCommand(CommandInterface):
         if self.skip_to == types.AIAgent.WORKER:
             return types.ActionQueryWorker(**kwargs)
 
-        # routing
-        return types.ActionRouteRequest(**kwargs)
+        # preparing request
+        return types.ActionPrepareRequest(**kwargs)
 
     def _process_user_input(self, prog: Program, user_input: str) -> None:
         """Helper method to encapsulate the logic for sending user input to the LLM."""

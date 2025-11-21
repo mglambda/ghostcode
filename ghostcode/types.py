@@ -1772,7 +1772,7 @@ class ActionPrepareRequest(BaseModel):
     )
     
 
-type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest
+type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest | ActionPrepareRequest
 type QueryAction = ActionQueryCoder | ActionQueryWorker
 
 
