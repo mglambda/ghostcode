@@ -161,10 +161,10 @@ def run_action_queue(prog: Program) -> None:
                         case types.ActionResultOk() as result_ok:
                             prog.cosmetic_state = types.CosmeticProgramState.WORKING
                             logger.info(
-                                f"Action execution successful."
-                                + f"Message: {result_ok.success_message}"
+                                f"Ok."
+                                + f" {result_ok.success_message}"
                                 if result_ok.success_message
-                                else ""
+                                else " Done {action_result.original_action.__name__}."
                             )
                         case types.ActionResultFailure() as ar_failure:
                             prog.cosmetic_state = types.CosmeticProgramState.PROBLEM
@@ -182,8 +182,10 @@ def run_action_queue(prog: Program) -> None:
                             logger.info(
                                 f"Got MoreAction result for {len(ar_more.actions)} actions. Action queue has finished {finished_actions}, remaining {len(prog.action_queue)}."
                             )
+                            for priority_action in ar_more.priority_actions:
+                                prog.push_front_action(priority_action)
                             for new_action in ar_more.actions:
-                                prog.push_front_action(new_action)
+                                prog.queue_action(new_action)
                         case _:
                             prog.cosmetic_state = types.CosmeticProgramState.WORKING
                             logger.info(f"Got unknown action result. Weird, but ok.")
@@ -372,7 +374,11 @@ def apply_alter_context(
             if (context_file := prog.project.context_files.get(temporary_visibility.filepath)) is None:
                 logger.warning(msg := f"Attempted to change visibility of {temporary_visibility.filepath} to {temporary_visibility.new_temporary_visibility}, but file is not in context.")
                 return types.ActionResultOk(success_message = "Nothing to do. " + msg)
-            logger.debug(msg := f"Changing temporary visibility of {context_file.filepath} from {context_file.config.temporary_visibility} to {temporary_visibility.new_temporary_visibility}.")
+
+            if context_file.config.temporary_visibility is None:
+                msg = f"Setting temporary visibility of {context_file.filepath} to {temporary_visibility.new_temporary_visibility}."
+            else:
+                msg = f"Changing temporary visibility of {context_file.filepath} from {context_file.config.temporary_visibility} to {temporary_visibility.new_temporary_visibility}."
             context_file.config.temporary_visibility = temporary_visibility.new_temporary_visibility
             return types.ActionResultOk(success_message = msg)
         case types.ContextAlterationFlagFile() as flag_file:
@@ -1123,7 +1129,7 @@ def reduce_token_cost(
             else:
                 # we have estimate
                 # calculate an effective threshold (p) as a ratio of total threshold vs estimated cost
-                p = (threshold / estimated_token_cost) * 10.0
+                p = (estimated_token_cost / threshold) * 10.0
                 # rating (between 0 and 10) and p are now directly comparable. Example: If your token threshold is 100k and you've filled it up half (50k token estimate), the relevance rating needs to be above ~5 for the file to be included.
                 # If the prompt gets longer and you push 70k tokens now it needs to clear 7.0
                 # eventually (at 90k tokens) it doesn't matter anymore because ratings with 9 or above are included by default.

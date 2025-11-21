@@ -1907,10 +1907,14 @@ class ActionResultMoreActions(BaseModel):
     """Result that represents that more actions need to be executed, along with action objects representing the required actions. Crucially, actions in the MoreActions result are pushed to the front of the action queue."""
 
     actions: List[Action] = Field(
-        default_factory=lambda: [],
-        description="The queue of actions that will need to be executed.",
+        default_factory = list,
+        description="List of additional actions that should be executed. These will be appended to the action queue."
     )
 
+    priority_actions: List[Action] = Field(
+        default_factory = list,
+        description = "List of high priority actions that will be pushed to the front of the action queue."
+    )
 
 type ActionResult = ActionResultOk | ActionResultFailure | ActionResultMoreActions
 
