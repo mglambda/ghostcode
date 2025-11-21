@@ -45,9 +45,8 @@ class IdleWorker:
         default_factory = set
     )
 
-    skip_context_file_filepaths: Set[str] = Field(
+    _skip_context_file_filepaths: Set[str] = field(
         default_factory = set,
-        description = "Problematic context files are added here so we don't get stuck on summarizing them."
     )
     
     _running: bool = False
@@ -218,7 +217,7 @@ class IdleWorker:
 
         for context_file in self.prog_bp.project.context_files.data:
             #previously problematic context files are skipped
-            if context_file.filepath in self.skip_context_file_filepaths:
+            if context_file.filepath in self._skip_context_file_filepaths:
                 continue
             
             if context_file.config.is_ignored_by(types.AIAgent.WORKER):
@@ -228,7 +227,7 @@ class IdleWorker:
             if (new_hash := context_file.try_hash()) is None:
                 # couldnt read or smth, skip it
                 logger.debug(f"Skipping context file {context_file.filepath} because it couldn't be hashed.")
-                self.skip_context_file_filepaths.add(context_file.filepath)
+                self._skip_context_file_filepaths.add(context_file.filepath)
                 continue
 
             if context_file.content_hash != new_hash:
@@ -236,7 +235,7 @@ class IdleWorker:
                 logger.debug(f"Detected hash change in context file {context_file.filepath}")
                 if (new_summary := worker.generate_context_file_summary(self.prog_bp, context_file, headless=True)) is None:
                     logger.debug(f"Skipping context file {context_file.filepath} because summary generation failed.")
-                    self.skip_context_file_filepaths.add(context_file.filepath)                    
+                    self._skip_context_file_filepaths.add(context_file.filepath)                    
                     continue
 
                 # ok, update the file
