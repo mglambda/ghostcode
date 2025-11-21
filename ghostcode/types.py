@@ -950,7 +950,7 @@ Here is a list of files that are also present in the project, but that are not i
         if not visible_files:
             return f"No files currently visible to the {target.value.capitalize()} LLM."
         n = len(visible_files)
-        count_str = f"{n} files shown, {len(self.data) - n} files hidden."
+        count_str = f"{n} files shown, {len(self.data) - n} files hidden.\n"
         return count_str + "\n".join(visible_files)
 
     def get(self, filepath: str) -> Optional[ContextFile]:
