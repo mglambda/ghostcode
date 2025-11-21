@@ -146,19 +146,17 @@ class InteractCommand(CommandInterface):
         # This code is unreachable but in the future error handling/control flow of this method might become more complicated and we may need it
         return result
 
-    def _make_preamble(self, prog: Program) -> str:
+    def _make_preamble_config(self, prog: Program) -> prompts.PromptConfig:
         """Plaintext context that is inserted before the user prompt - though only once."""
-        return prompts.make_prompt(
-            prog,
-            prompt_config=prompts.PromptConfig.minimal(
-                project_metadata=True,
-                style_file=True,
-                context_files="full",
-                recent_interaction_summaries="full",
-                problematic_source_reports = True
-                # could add shell here?
-            ),
+        return prompts.PromptConfig.minimal(
+            project_metadata=True,
+            style_file=True,
+            context_files="full",
+            recent_interaction_summaries="full",
+            problematic_source_reports = True
+            # could add shell here?
         )
+
 
     def _prefix_preamble_string(self, prompt: str) -> str:
         """
@@ -281,14 +279,14 @@ class InteractCommand(CommandInterface):
                 f"Project seems to be null during interaction. This shouldn't happen, but just in case, you may want to do `ghostcode init` in your project's directory."
             )
 
-        preamble = self._make_preamble(prog)
+        #preamble = self._make_preamble(prog)
+        preamble_config = self._make_preamble_config
         prompt_to_send = self._make_user_prompt(prog, user_input)
-        prog.coder_box.set_vars({"preamble_injection": preamble})
+        #prog.coder_box.set_vars({"preamble_injection": preamble})
 
         if self.interaction_history is not None:
             self.interaction_history.contents.append(
                 types.UserInteractionHistoryItem(
-                    preamble=preamble,
                     prompt=user_input,
                     context=prog.project.context_files,
                 )
@@ -307,6 +305,7 @@ class InteractCommand(CommandInterface):
                     else "000-000-000-000"
                 ),
                 hidden=False,
+                preamble_config = preamble_config,
                 llm_response_profile=self._make_llm_response_profile(),
             )
         )

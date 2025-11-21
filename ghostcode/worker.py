@@ -501,6 +501,10 @@ def coder_query(
             print_function=prog.make_tagged_printer("action_queue"),
         ), prog.sound_clicks():
             profile = query_coder_action.llm_response_profile
+            # setting the preamble like this will inject the current context at the very front of the user query, assuming that the special preamble underscore injection string was included
+            prog.coder_box.set_vars({
+                "preamble_injection": prompts.make_prompt(prog, query_coder_action.preamble_config)
+            })
             if profile.actions and profile.text:
                 # this is the default, offer the coder the full menu of parts to generate
                 response = prog.coder_box.new(
@@ -838,6 +842,7 @@ def worker_query(
         ):
             profile = query_worker_action.llm_response_profile
             # FIXME: right now we are ignoring the profile and always generating actions.
+            #fIXME: we are also ignoring the config
             prog.worker_box.clear_history()
             worker_response = prog.worker_box.new(
                 types.WorkerResponse,

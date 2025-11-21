@@ -1,11 +1,10 @@
 * work-in-progress (WIP, limit 5)
+Make preamble be set in query coder action not in interact subcommand.
 Investigate coder horribly messing up code parts - i never know if it's me or google
 investigate summaries never filling in depends_on field.
 Make ti so that last request in interact session is automatically put into emacs kill ring.
 cached_token_cost on contextfileconfig.
 add --coder-model and --worker-model as CLI parameters
-fix bad string for context wipe
-Implement logic of reduce token action
 * todo
 ** generalparanoia: Are the LLMs hallucinating timestamps? (investigate and solve with a model_validator)
 Add take_a_break IdleTask to idle worker.
@@ -135,3 +134,5 @@ redo ContextFiles.show_overview.
 Add temporarily ingored (or something) to context files.
 Create new PrepareContext task for worker, which will replace routing.
 get rid of routing.
+fix bad string for context wipe
+Implement logic of reduce token action
