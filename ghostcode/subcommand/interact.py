@@ -146,9 +146,9 @@ class InteractCommand(CommandInterface):
         # This code is unreachable but in the future error handling/control flow of this method might become more complicated and we may need it
         return result
 
-    def _make_preamble_config(self, prog: Program) -> prompts.PromptConfig:
+    def _make_preamble_config(self, prog: Program) -> types.PromptConfig:
         """Plaintext context that is inserted before the user prompt - though only once."""
-        return prompts.PromptConfig.minimal(
+        return types.PromptConfig.minimal(
             project_metadata=True,
             style_file=True,
             context_files="full",

@@ -1,7 +1,7 @@
 from typing import *
 from pydantic import BaseModel, Field
 from . import types
-from .types import LLMPersonality
+from .types import LLMPersonality, PromptConfig
 import random
 from .utility import quoted_if_nonempty, show_model_nt, timestamp_now_iso8601, language_from_extension
 from .program import Program
@@ -12,78 +12,6 @@ from . import emacs
 logger = logging.getLogger("ghostcode.prompts")
 
 
-class PromptConfig(BaseModel):
-    """Small helper type to package prompt selection parameters together.
-    Essentially you can set flags in this type to customize a prompt. Some attributes require a choice (e.g. history), in which case you must provide a literal.
-    By default, the most verbose options are chosen, e.g. all flags enabled and full history shown.
-    """
-
-    system_text: str = Field(
-        default="",
-        description="Text that is printed at the top of the prompt under a '# System' heading. If empty, no system heading is printed. This is not the same as the system prompt, which can't be modified with this config.",
-    )
-
-    user_prompt_text: str = Field(
-        default="",
-        description="If nonempty, will be shown at the very bottom of the prompt with a 'User Prompt' heading. This will give it special emphasis for the LLM. May be overwritten or adjusted by other PromptConfig options.",
-    )
-
-    # project context
-    project_metadata: bool = True
-    style_file: bool = Field(
-        default=True,
-        description="Include contents of .ghostcode/style.md. This is intended to influence coding style, and generally only included in code generation requests.",
-    )
-
-    context_files: Literal["full", "filenames", "none"] = Field(
-        default="full",
-        description="How to display files that are in the ghostcode context. Full means full contents of the files are displayed. filenames means only a list of filenames is shown. none omits context files entirely.",
-    )
-
-    recent_interaction_summaries: Literal["full", "titles_only", "none"] = Field(
-        default="none",
-        description="Include summaries of the most recent interactions. The summarization gets more aggressive for older interactions. Defaults to only showing branch-local interactions.",
-    )
-    
-    # ghostcode program context
-    interaction_history_id: str = Field(
-        default="",
-        description="The unique ID of the interaction history you want to display in the prompt. This must be provided if you set interaction_history to anything other than 'none'.",
-    )
-
-    interaction_history: Literal["full", "split", "none"] = Field(
-        default="full",
-        description="How to display the history. Requires interaction_history_id to be provided. full means entire history is sent. split means the entire history except the last message is sent, and the last message is appended to the user prompt. none means no history is sent.",
-    )
-
-    problematic_source_reports: bool = True
-    shell: bool = True
-    logs: bool = True
-
-    @staticmethod
-    def maximal(**kwargs: Any) -> "PromptConfig":
-        """Create a default PromptConfig with maximum erbosity."""
-        return PromptConfig(**kwargs)
-
-    @staticmethod
-    def minimal(**kwargs: Any) -> "PromptConfig":
-        """Create a PromptConfig with minimum verbosity."""
-        default_config_data = PromptConfig().model_dump()
-        min_config_data: Dict[str, Any] = {}
-        for k, v in default_config_data.items():
-            # we can rely on certain conventions, e.g. literal fields will be "none" for minimum verbosity
-            match v:
-                case str(w):
-                    if get_origin(PromptConfig.model_fields[k].annotation) is Literal:
-                        min_config_data[k] = "none"
-                    else:
-                        # regular string like system_text
-                        min_config_data[k] = ""
-                case bool(b):
-                    min_config_data[k] = False
-
-        # the above is safe thanks to pydantic having our backs
-        return PromptConfig(**(min_config_data | kwargs))
 
 
 def make_prompt(
