@@ -7,6 +7,7 @@ import shutil
 import json
 import logging
 from . import types
+from .types import ContextFileVisibility
 from .progress_printer import ProgressPrinter
 from .ansi_colors import Color256
 from .program import Program
@@ -1037,7 +1038,7 @@ def prepare_request(
             logger.warning(f"Failed to estimate token cost of request.")
 
         # if it's not above the threshold we can move on
-        if tokens >= prog.user_config.token_threshold:
+        if tokens and tokens >= prog.user_config.token_threshold:
             prepare_actions.extend(reduce_token_cost(prog, prepare_request_action))
 
         # prepend the collected actions
@@ -1045,10 +1046,43 @@ def prepare_request(
         return default_result
     
 def reduce_token_cost(
-        prog: Program, prepare_request_action: types.ActionPrepareRequest
+        prog: Program, prepare_request_action: types.ActionPrepareRequest, headless: bool = False
 ) -> List[types.Action]:
     """Returns a list of actions to be taken in order to reduce the token cost of a given request."""
-    return []
+    with ProgressPrinter(
+        message=f"{prog.last_print_text} Trimming fat 🐄 ",
+        postfix_message=f"{prog.last_print_text}",
+        print_function=prog.make_tagged_printer("action_queue"),
+        disabled = headless,
+    ):
+        # sanity
+        if prog.project is None:
+            logger.error(f"null project while trimming fat!")
+            return [types.ActionHaltExecution(reason="null project")]
+        
+        # go through all the context files and temporarily disable them based on certain conditions
+        actions: List[types.Action] = []
+        for context_file in prog.project.context_files.data:
+            # we don't need to deal with context files of certain visibilities
+            match context_file.config.coder_visibility:
+                case ContextFileVisibility.ignore:
+                    logger.debug(f"Skipping trimming of {context_file.filepath} because of coder_visibility {context_file.config.coder_visibility}.")                    
+                    continue
+                case ContextFileVisibility.force:
+                    logger.debug(f"Skipping trimming of {context_file.filepath} because of coder_visibility {context_file.config.coder_visibility}.")                    
+                    continue
+                case ContextFileVisibility.default:
+                    # ok keep processing
+                    pass
+                case ContextFileVisibility.summary:
+                    pass
+                case _ as unreachable:
+                    # this is the entire reason for this match case block -> force us to make explicit choice here in the future
+                    assert_never(unreachable)
+
+            # ok, file is default or summary visibility
+            
+        return actions
 
 def generate_context_file_summary(
         prog: Program, context_file: types.ContextFile, headless: bool = False
