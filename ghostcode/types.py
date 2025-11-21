@@ -588,6 +588,34 @@ type ContextFileSource = Annotated[
     ContextFileSourceUnknown | ContextFileSourceNag | ContextFileSourceDiscover | ContextFileSourceCLI | ContextFileSourceIPC,
     Field(discriminator = "type")
     ]
+
+
+class ContextFileSummary(BaseModel):
+    """Summarized and bundled information about a source file."""
+
+    timestamp: str = Field(
+        default_factory = timestamp_now_iso8601,
+        description = "The timestamp of when this summary was created."
+    )
+
+    title: str = Field(
+        description = "One line phrase that describes the files contents."
+    )
+
+    overview: str = Field(
+        description = "A broad summary of the file's contents."
+    )
+
+    depends_on: List[str] = Field(
+        default_factory = list,
+        description = "Filepaths, modules, or other signifiers this file depends on."
+    )
+
+    main_exports: List[str] = Field(
+        default_factory = list,
+        description = "Symbols, modules, functions, or types exported, provided or exposed by the file. Includes only the main or important exports."
+    )
+        
     
 class ContextFileConfig(BaseModel):
     """Specify options, metadata, and special behaviours for certain files in the context."""
@@ -617,8 +645,8 @@ class ContextFileConfig(BaseModel):
         description = "Describes who added the context file, e.g. a user at the command line, an emacs buffer, a network IPC request and so on. May include additional information about the source."
     )
     
-    summary: str = Field(
-        default = "",
+    summary: Optional[ContextFileSummary] = Field(
+        default = None,
         description = "A summary of the file. Summaries are intended to be generated in the background while the user is idle in an interact session. This has not been implemented yet."
     )
 

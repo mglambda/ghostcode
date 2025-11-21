@@ -273,7 +273,7 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
                 return types.ActionResultMoreActions(actions=route)
             case types.ActionPrepareRequest() as prepare_request_action:
                 logger.info(f"Preparing request.")
-                return worker_prepare_request(prog, prepare_request_action)
+                return prepare_request(prog, prepare_request_action)
             case types.ActionHandleCodeResponsePart() as code_action:
                 logger.info(f"Handling code response part.")
                 logger.debug(
@@ -1005,7 +1005,7 @@ def worker_generate_title(prog: Program, interaction: types.InteractionHistory, 
     return ""
 
 
-def worker_prepare_request(
+def prepare_request(
         prog: Program,
         prepare_request_action: types.ActionPrepareRequest
 ) -> types.ActionResult:
@@ -1038,13 +1038,37 @@ def worker_prepare_request(
 
         # if it's not above the threshold we can move on
         if tokens >= prog.user_config.token_threshold:
-            prepare_actions.extend(worker_reduce_token_cost(prog, prepare_request_action))
+            prepare_actions.extend(reduce_token_cost(prog, prepare_request_action))
 
         # prepend the collected actions
         default_result.actions = prepare_actions + default_result.actions
         return default_result
-def worker_reduce_token_cost(
+    
+def reduce_token_cost(
         prog: Program, prepare_request_action: types.ActionPrepareRequest
 ) -> List[types.Action]:
     """Returns a list of actions to be taken in order to reduce the token cost of a given request."""
     return []
+
+def generate_context_file_summary(
+        prog: Program, context_file: types.ContextFile, headless: bool = False
+        ) -> Optional[types.ContextFileSummary]:
+    """Generates the summary for a given context file."""
+    with ProgressPrinter(
+        message=f"{prog.last_print_text} Summarizing file ",
+        postfix_message=f"{prog.last_print_text}",
+        print_function=prog.make_tagged_printer("action_queue"),
+        disabled=headless
+    ):
+        try:
+            logger.debug(f"Attempting to summarize context file {context_file.filepath}.")
+            if (prompt :=                 prompts.make_prompt_context_file_summary(prog, context_file)) is None:
+                # couldn't readfile or smth
+                return None
+            return prog.worker_box.new(
+                types.ContextFileSummary,
+                prompt,
+                )
+        except Exception as e:
+            logger.exception(f"Couldn't generate summary for context file {context_file.filepath}. Reason: {e}")
+            return None

@@ -4,7 +4,7 @@ fix bad string for context wipe
 Create new PrepareContext task for worker, which will replace routing.
 get rid of routing.
 * todo
-** general
+** generalparanoia: Are the LLMs hallucinating timestamps? (investigate and solve with a model_validator)
 Add take_a_break IdleTask to idle worker.
 Think about implementing a lock around dumping history.
 Yeah, refactor history saving (_dump_interaction_history)

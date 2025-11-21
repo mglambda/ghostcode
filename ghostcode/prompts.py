@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from . import types
 from .types import LLMPersonality
 import random
-from .utility import quoted_if_nonempty, show_model, timestamp_now_iso8601
+from .utility import quoted_if_nonempty, show_model, timestamp_now_iso8601, language_from_extension
 from .program import Program
 import logging
 from . import emacs
@@ -872,3 +872,26 @@ Below is an interaction between a User and a coding assistant LLM.
 Please generate a concise, one-paragraph summary for the above interaction. It should capture the main goal, problem, or topic discussed. Focus on the outcome or the core task.
 Generate only the summary. Do not generate additional output except for the summary that has been requested.
 """
+
+def make_prompt_context_file_summary(prog: Program, context_file: types.ContextFile) -> Optional[str]:
+    try:
+        filepath = context_file.get_abs_filepath()
+        with open(filepath, "r") as f:
+            content = f.read()
+    except Exception as e:
+        logger.exception(f"Couldn't read file {context_file.filepath} while trying to create summary prompt. Reason: {e}")
+        return None
+
+    content_str = quoted_if_nonempty(
+        text = content,
+        heading=context_file.filepath,
+        type_tag = language_from_extension(context_file.filepath),
+        heading_level = 1
+    )
+    
+    return f"""Please generate summarizing information for the following file.
+
+{content_str}
+
+The information you generate will be used in the future to decide whether the file should be included as part of a prompt that may be sent to a coding LLM backend, so generate your summar yaccordingly. The summary is intended to help with reducing token-count, so keep that in mind and try to be reasonably brief.
+"""    
