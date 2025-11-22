@@ -829,7 +829,13 @@ def make_prompt_code_file_relevance_evaluation(
         ) -> str:
     """Returns a string prompting an LLM to evaluate a given code file for relevance to a given user prompt.
     The relevance rating is supposed to be between 0 and 10."""
-   
+    # include some context
+    preamble_str = PromptConfig.minimal(
+        project_metadata = True,
+        recent_interaction_summaries = "full",
+        problematic_source_reports = True,
+    )
+    
     if file_verbosity == "summary":
         heading_str = f"# {context_file.filepath} (metadata and summary only)"
         if context_file.config.summary is None:
@@ -845,7 +851,9 @@ def make_prompt_code_file_relevance_evaluation(
             logger.warning(f"Could not read file {context_file.filepath} while making an relevance evaluation prompt. Reason: {e}")
             file_str = "error: Could not read file. Please default to a rating of 0.0"
             
-    return f"""# Initial Instructions
+    return f"""{preamble_str}
+    
+# Instructions
 Here is a prompt given by the user:
 
 ```

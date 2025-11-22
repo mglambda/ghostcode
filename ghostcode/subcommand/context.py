@@ -25,6 +25,13 @@ class ContextCommand(CommandInterface):
         description="Enable Retrieval Augmented Generation for added files.",
     )
 
+    @staticmethod
+    def _maybe_visibility(subcommand: str) -> Optional[types.ContextFileVisibility]:
+        try:
+            return types.ContextFileVisibility[subcommand]
+        except KeyError:
+            return None
+        
     def run(self, prog: Program) -> CommandOutput:
         result = CommandOutput()
         if not prog.project_root or not prog.project:
@@ -33,7 +40,8 @@ class ContextCommand(CommandInterface):
 
         project = prog.project
         current_context_files = {cf.filepath: cf for cf in project.context_files.data}
-
+        visibility = self._maybe_visibility(self.subcommand)
+        
         if self.subcommand == "ls":
             if not project.context_files.data:
                 result.print("No context files tracked.")
@@ -49,7 +57,7 @@ class ContextCommand(CommandInterface):
                     if cf.config.summary:
                         result.print(f"# {cf.filepath}")
                         result.print(show_model_nt(cf.config.summary))
-        elif self.subcommand in ["add", "rm", "remove"]:
+        elif self.subcommand in ["add", "rm", "remove"] or (visibility is not None):
             if not self.filepaths:
                 logger.error(f"File paths required for 'context {self.subcommand}'.")
                 sys.exit(1)
@@ -72,12 +80,28 @@ class ContextCommand(CommandInterface):
                             f"Skipping '{matched_path}': Not a file or does not exist."
                         )
 
-            if self.subcommand == "add":
+            if (self.subcommand == "add") or (visibility is not None):
+                visibility_str = "" if visibility is None else f" with visibility: {visibility}"                                    
                 for fp in resolved_paths:
                     if fp not in current_context_files:
-                        # Set the source to ContextFileSourceCLI when adding via the 'context add' command
-                        project.context_files.add_or_alter(fp, types.ContextFileConfig(source=types.ContextFileSourceCLI()))
-                        result.print(f"Added '{fp}' to context (RAG={self.rag}).")
+                        project.context_files.add_or_alter(
+                            fp,
+                            types.ContextFileConfig(
+                                source=types.ContextFileSourceCLI(),
+                                coder_visibility=visibility if visibility is not None else types.ContextFileVisibility.default
+                            )
+                        )                    
+                        result.print(f"Added '{fp}' to context{visibility_str}.")
+                    else:
+                        # file already exists
+                        project.context_files.add_or_alter(
+                            fp,
+                            types.ContextFileConfig(
+                                source=types.ContextFileSourceCLI(),
+                                coder_visibility=visibility if visibility is not None else types.ContextFileVisibility.default
+                            )
+                        )
+                        result.print(f"Set visibility of {fp} to {visibility}")
             elif self.subcommand in ["rm", "remove"]:
                 initial_count = len(project.context_files.data)
                 project.context_files.data = [

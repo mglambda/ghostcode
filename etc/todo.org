@@ -1,17 +1,18 @@
 * work-in-progress (WIP, limit 5)
-Make preamble be set in query coder action not in interact subcommand.
+give more context to token cost evaluation in worker.
+Make queueing actions in bulk possible.
 Investigate coder horribly messing up code parts - i never know if it's me or google
 investigate summaries never filling in depends_on field.
 Make ti so that last request in interact session is automatically put into emacs kill ring.
 cached_token_cost on contextfileconfig.
 add --coder-model and --worker-model as CLI parameters
 * todo
-** generalparanoia: Are the LLMs hallucinating timestamps? (investigate and solve with a model_validator)
+** general
+paranoia: Are the LLMs hallucinating timestamps? (investigate and solve with a model_validator)
 Add take_a_break IdleTask to idle worker.
 Think about implementing a lock around dumping history.
 Yeah, refactor history saving (_dump_interaction_history)
 find out why sometimes titles aren't being assigned
-
 Narrow the type of Action in actions_from_response_part (since it's a response it must be a query action)
 Remove branching code in make_prompt_worker_coder_request after original_action type has been narrowed
 Make recovery an action.
@@ -136,3 +137,4 @@ Create new PrepareContext task for worker, which will replace routing.
 get rid of routing.
 fix bad string for context wipe
 Implement logic of reduce token action
+Make preamble be set in query coder action not in interact subcommand.
