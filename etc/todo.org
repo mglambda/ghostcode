@@ -1,8 +1,9 @@
 * work-in-progress (WIP, limit 5)
+Remove depends_on field
 Addd FileRequestParts or something (ghost is starting to request files on its own).
 Emacs context file overview buffer
-Make queueing actions in bulk possible.
-investigate summaries never filling in depends_on field.
+Emacs bootstrap (ghostcode.el which is loaded via emacsclient).
+
 Make it so that last request in interact session is automatically put into emacs kill ring.
 cached_token_cost on contextfileconfig.
 add --coder-model and --worker-model as CLI parameters
@@ -140,3 +141,5 @@ Implement logic of reduce token action
 Make preamble be set in query coder action not in interact subcommand.
 give more context to token cost evaluation in worker.
 Investigate coder horribly messing up code parts - i never know if it's me or google
+Make queueing actions in bulk possible.
+investigate summaries never filling in depends_on field.
