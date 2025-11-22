@@ -740,7 +740,7 @@ class ContextFileSummary(BaseModel):
     
     defined_symbols: Dict[str, SymbolType] = Field(
         default_factory = dict,
-        description = "A mapping from symbols that are defined in the file to their general type, e.g. class, function, method, etc."
+        description = 'A mapping from symbols that are defined in the file to their general type. Example: {"get_point_coordinates": "function", "PointCoordinates": "class'
     )
 
     @model_validator(mode='before')

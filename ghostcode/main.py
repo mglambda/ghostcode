@@ -67,6 +67,20 @@ def _main() -> None:
         help="Set the choice of backend for the worker LLM. This will override both project and user configuration options for the coder backend.",
     )
 
+    parser.add_argument(
+        "--coder-model",
+        type=str,
+        default="",
+        help="Set the model for the coder LLM. This will override user configuration.",
+    )
+
+    parser.add_argument(
+        "--worker-model",
+        type=str,
+        default="",
+        help="Set the model for the worker LLM. This will override user configuration.",
+    )
+
     # Add --logging argument
     parser.add_argument(
         "--logging",
@@ -647,6 +661,11 @@ def _main() -> None:
             if args.worker_backend == ""
             else args.worker_backend
         )
+        worker_model = (
+            args.worker_model
+            if args.worker_model
+            else user_config.get_model(types.AIAgent.WORKER, worker_backend)
+        )
         worker_box = Ghostbox(
             endpoint=project.config.worker_endpoint,
             backend=worker_backend,
@@ -657,7 +676,7 @@ def _main() -> None:
             google_api_key=user_config.google_api_key,
             openai_api_key=user_config.openai_api_key,
             deepseek_api_key=user_config.deepseek_api_key,
-            model=user_config.get_model(types.AIAgent.CODER, worker_backend),
+            model=worker_model,
             **quiet_options,
         )
     except Exception as e:
@@ -670,6 +689,11 @@ def _main() -> None:
             if args.coder_backend == ""
             else args.coder_backend
         )
+        coder_model = (
+            args.coder_model
+            if args.coder_model
+            else user_config.get_model(types.AIAgent.CODER, coder_backend)
+        )
         coder_box = Ghostbox(
             endpoint=project.config.coder_endpoint,
             backend=coder_backend,
@@ -680,7 +704,7 @@ def _main() -> None:
             google_api_key=user_config.google_api_key,
             openai_api_key=user_config.openai_api_key,
             deepseek_api_key=user_config.deepseek_api_key,
-            model=user_config.get_model(types.AIAgent.CODER, coder_backend),
+            model=coder_model,
             **quiet_options,
         )
     except Exception as e:
