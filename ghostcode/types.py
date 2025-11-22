@@ -692,8 +692,27 @@ type ContextFileSource = Annotated[
     ContextFileSourceUnknown | ContextFileSourceNag | ContextFileSourceDiscover | ContextFileSourceCLI | ContextFileSourceIPC,
     Field(discriminator = "type")
     ]
-
-
+class SymbolType(StrEnum):
+    """General types of symbols found in programming code files."""
+    cls = "class"
+    type = "type"
+    function = "function"
+    method = "method"
+    variable = "variable"
+    constant = "constant"
+    module = "module"
+    interface = "interface"
+    enum = "enum"
+    struct = "struct"
+    trait = "trait"
+    macro = "macro"
+    namespace = "namespace"
+    component = "component" # e.g. React, Vue, Svelte
+    test_case = "test_case"
+    decorator = "decorator"
+    alias = "alias" # type alias
+    protocol = "protocol"
+    
 class ContextFileSummary(BaseModel):
     """Summarized and bundled information about a source file."""
 
@@ -706,19 +725,31 @@ class ContextFileSummary(BaseModel):
         description = "One line phrase that describes the files contents."
     )
 
+    file_role: str = Field(
+        description = "The general role of the file in the project, e.g. source code, build script, config, documentation, etc. Should be short (1 or 2 words)."
+    )
+    
     overview: str = Field(
         description = "A broad summary of the file's contents."
     )
 
-    depends_on: List[str] = Field(
+    imports: List[str] = Field(
         default_factory = list,
-        description = "Filepaths, modules, or other signifiers this file depends on."
+        description = "A list of imports found in the file."
+    )
+    
+    defined_symbols: Dict[str, SymbolType] = Field(
+        default_factory = dict,
+        description = "A mapping from symbols that are defined in the file to their general type, e.g. class, function, method, etc."
     )
 
-    main_exports: List[str] = Field(
-        default_factory = list,
-        description = "Symbols, modules, functions, or types exported, provided or exposed by the file. Includes only the main or important exports."
-    )
+    @model_validator(mode='before')
+    @classmethod
+    def drop_deprecated_main_exports(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """For backwards compatibility, drop the old 'main_exports' field if it exists."""
+        if 'main_exports' in values:
+            del values['main_exports']
+        return values
         
     
 class ContextFileConfig(BaseModel):

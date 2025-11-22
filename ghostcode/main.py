@@ -165,6 +165,13 @@ def _main() -> None:
     context_list_summaries_parser.set_defaults(
         func=lambda args: ContextCommand(subcommand="list-summaries")
     )
+
+    context_invalidate_summaries_parser = context_subparsers.add_parser(
+        "invalidate-summaries", help="Invalidate all context file summaries, forcing them to be rebuilt."
+    )
+    context_invalidate_summaries_parser.set_defaults(
+        func=lambda args: ContextCommand(subcommand="invalidate-summaries")
+    )
     
     context_clean_parser = context_subparsers.add_parser(
         "clean", aliases=[], help="Remove bogus or non-existing files from context."

@@ -16,7 +16,7 @@ class ContextCommand(CommandInterface):
     """Manages files included in the project context."""
 
     subcommand: Literal[
-        "add", "rm", "remove", "ls", "clean", "lock", "unlock", "wipe", "list-summaries", "ignore", "force","default","summary"]
+        "add", "rm", "remove", "ls", "clean", "lock", "unlock", "wipe", "list-summaries", "invalidate-summaries", "ignore", "force","default","summary"]
 
     filepaths: List[str] = Field(
         default_factory=list,
@@ -59,6 +59,17 @@ class ContextCommand(CommandInterface):
                     if cf.config.summary:
                         result.print(f"# {cf.filepath}")
                         result.print(show_model_nt(cf.config.summary))
+        elif self.subcommand == "invalidate-summaries":
+            if not project.context_files.data:
+                result.print("No context files to invalidate.")
+            else:
+                count = 0
+                for cf in project.context_files.data:
+                    if cf.config.content_hash != "":
+                        cf.config.content_hash = ""
+                        count += 1
+                project.save_to_root(prog.project_root)
+                result.print(f"Invalidated summaries for {count} file(s). They will be rebuilt as needed.")
         elif self.subcommand in ["add", "rm", "remove"] or (visibility is not None):
             if not self.filepaths:
                 logger.error(f"File paths required for 'context {self.subcommand}'.")

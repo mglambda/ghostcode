@@ -3,12 +3,12 @@ Remove depends_on field
 Addd FileRequestParts or something (ghost is starting to request files on its own).
 Emacs context file overview buffer
 Emacs bootstrap (ghostcode.el which is loaded via emacsclient).
-
 Make it so that last request in interact session is automatically put into emacs kill ring.
 cached_token_cost on contextfileconfig.
 add --coder-model and --worker-model as CLI parameters
 * todo
 ** general
+investigate how to use treesitter to build code graphs which we can use to more efficiently build prompt context
 paranoia: Are the LLMs hallucinating timestamps? (investigate and solve with a model_validator)
 Add take_a_break IdleTask to idle worker.
 Think about implementing a lock around dumping history.
