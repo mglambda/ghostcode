@@ -335,19 +335,81 @@ class Program:
         )
         self.action_queue = []
 
-    def queue_action(self, action: Action) -> None:
-        """Queues an action at the end of the action queue."""
-        logger.info(f"Queueing action {type(action)}.")
-        self.idle_worker.update()
-        self.action_queue.append(action)
+    def queue_action(self, action: Action | Sequence[Action]) -> None:
+        """Queues one or more actions at the end of the action queue."""
+        from itertools import groupby
 
-    def push_front_action(self, action: Action) -> None:
-        """Pushes an action to the front of the queue. An action at the front will be executed before the remaining ones."""
-        logger.info(
-            f"Pushing action {action_show_short(action)} to the front of the action queue."
-        )
-        self.idle_worker.update()
-        self.action_queue = [action] + self.action_queue
+        # Handle sequence of actions
+        if isinstance(action, (list, tuple)):
+            actions_to_queue = list(action)
+            if not actions_to_queue:
+                return
+
+            # Simplified logging for multiple actions
+            if len(actions_to_queue) > 1:
+                groups = groupby(actions_to_queue, key=type)
+                grouped_strs = []
+                for _, group_iter in groups:
+                    group = list(group_iter)
+                    count = len(group)
+                    action_instance = group[0]
+                    short_name = action_show_short(action_instance)
+                    if count > 1:
+                        grouped_strs.append(f"{count}x {short_name}")
+                    else:
+                        grouped_strs.append(short_name)
+                logger.info(f"Queueing {len(actions_to_queue)} actions: {', '.join(grouped_strs)}.")
+            elif len(actions_to_queue) == 1:
+                # Log single action from list
+                single_action = actions_to_queue[0]
+                logger.info(f"Queueing action {action_show_short(single_action)}.")
+
+            self.idle_worker.update()
+            self.action_queue.extend(actions_to_queue)
+        else:
+            # Handle single action
+            single_action = cast(Action, action)
+            logger.info(f"Queueing action {action_show_short(single_action)}.")
+            self.idle_worker.update()
+            self.action_queue.append(single_action)
+
+    def push_front_action(self, action: Action | Sequence[Action]) -> None:
+        """Pushes one or more actions to the front of the queue. Actions at the front will be executed before the remaining ones."""
+        from itertools import groupby
+
+        # Handle sequence of actions
+        if isinstance(action, (list, tuple)):
+            actions_to_push = list(action)
+            if not actions_to_push:
+                return
+
+            # Simplified logging for multiple actions
+            if len(actions_to_push) > 1:
+                groups = groupby(actions_to_push, key=type)
+                grouped_strs = []
+                for _, group_iter in groups:
+                    group = list(group_iter)
+                    count = len(group)
+                    action_instance = group[0]
+                    short_name = action_show_short(action_instance)
+                    if count > 1:
+                        grouped_strs.append(f"{count}x {short_name}")
+                    else:
+                        grouped_strs.append(short_name)
+                logger.info(f"Pushing {len(actions_to_push)} actions to front: {', '.join(grouped_strs)}.")
+            elif len(actions_to_push) == 1:
+                # Log single action from list
+                single_action = actions_to_push[0]
+                logger.info(f"Pushing action {action_show_short(single_action)} to the front of the action queue.")
+
+            self.idle_worker.update()
+            self.action_queue = actions_to_push + self.action_queue
+        else:
+            # Handle single action
+            single_action = cast(Action, action)
+            logger.info(f"Pushing action {action_show_short(single_action)} to the front of the action queue.")
+            self.idle_worker.update()
+            self.action_queue = [single_action] + self.action_queue
 
     def confirm_action(
         self,

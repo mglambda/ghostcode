@@ -175,17 +175,18 @@ def run_action_queue(prog: Program) -> None:
                             logger.debug(
                                 f"Original action dump:\n{json.dumps(ar_failure.original_action.model_dump(), indent=4)}\n\nFailure result dump:\n{json.dumps(ar_failure.model_dump(), indent=4)}"
                             )
-                            for action in worker_recover(prog, ar_failure).actions:
-                                prog.push_front_action(action)
+                            # FIXME: this hsould be its own action
+                            more_actions = worker_recover(prog, ar_failure)
+                            prog.push_front_action(more_actions.priority_actions)
+                            prog.queue_action(more_actions.actions)
+
                         case types.ActionResultMoreActions() as ar_more:
                             prog.cosmetic_state = types.CosmeticProgramState.WORKING
                             logger.info(
                                 f"Got MoreAction result for {len(ar_more.actions)} actions. Action queue has finished {finished_actions}, remaining {len(prog.action_queue)}."
                             )
-                            for priority_action in ar_more.priority_actions:
-                                prog.push_front_action(priority_action)
-                            for new_action in ar_more.actions:
-                                prog.queue_action(new_action)
+                            prog.push_front_action(ar_more.priority_actions)
+                            prog.queue_action(ar_more.actions)
                         case _:
                             prog.cosmetic_state = types.CosmeticProgramState.WORKING
                             logger.info(f"Got unknown action result. Weird, but ok.")
