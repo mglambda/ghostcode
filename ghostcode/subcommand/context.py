@@ -107,6 +107,10 @@ class ContextCommand(CommandInterface):
                         result.print(f"Added '{fp}' to context{visibility_str}.")
                     else:
                         # file already exists
+                        # if visibility is none user didn't specify it explicitly and we bail
+                        if visibility is None:
+                            result.print(f"File {fp} already in context.")
+                            continue
                         project.context_files.add_or_alter(
                             fp,
                             types.ContextFileConfig(
