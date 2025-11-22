@@ -111,14 +111,18 @@ def make_prompt(
         )
     else:
         shell_str = ""
-
+    if prompt_config.text_only_nudge:
+        text_only_nudge_str = f"# Text-Only Notice\nThe user wants to keep the interaction conversational and has requested that you generate only 'TextResponseParts'. If you need to generate code, please inline it into your textual response.\n"
+    else:
+        text_only_nudge_str = ""
+        
     return f"""{system_str}
     # Project Context
 
 {project_metadata_str}{style_file_str}{context_files_str}{recent_interaction_summaries_str}    
 # Ghostcode Context
 
-{history_str}    {problematic_source_reports_str}{shell_str}{log_excerpt_str}
+{history_str}    {problematic_source_reports_str}{shell_str}{log_excerpt_str}{text_only_nudge_str}
 {user_prompt_str}    
 
 """

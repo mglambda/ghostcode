@@ -153,7 +153,8 @@ class InteractCommand(CommandInterface):
             style_file=True,
             context_files="full",
             recent_interaction_summaries="full",
-            problematic_source_reports = True
+            problematic_source_reports = True,
+            text_only_nudge = not(self.actions)
             # could add shell here?
         )
 
