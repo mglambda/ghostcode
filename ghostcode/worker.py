@@ -18,7 +18,6 @@ from .utility import (
     levenshtein,
     time_function_with_logging,
     show_model,
-    timestamp_now_iso8601,
     foldl,
     mock_print,
 )

@@ -3,11 +3,7 @@ from typing import *
 from pydantic import BaseModel, Field
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
-import atexit
-import traceback
 from contextlib import contextmanager
-import requests
-from threading import Thread
 import os
 import json
 import appdirs
@@ -16,28 +12,13 @@ import logging
 import ghostbox.definitions
 from ghostbox.definitions import LLMBackend
 from ghostbox import Ghostbox
-import ghostcode
 from .types import *
-from . import git
 from . import shell
 from .soundmanager import SoundManager
-from .ansi_colors import Color256, colored
-from .utility import show_model_nt, timestamp_now_iso8601
-
 if TYPE_CHECKING:
     from .idle_worker import IdleWorker, IdleTask
-from .ipc import IPCServer
-from .ipc_message import (
-    IPCMessage,
-    IPCNag,
-    IPCNotification,
-    IPCActions,
-    IPCResponse,
-    IPCROk,
-    IPCMessageAdapter,
-    IPCResponseAdapter,
-    ProblematicSourceReport,
-)
+    from .ipc import IPCServer
+    from .ipc_message import IPCMessage, IPCNag, IPCResponse, ProblematicSourceReport
 
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.program")
@@ -72,7 +53,7 @@ class Program:
 
     # starlette server for inter process communication
     # not every subcommand starts one so it's optional
-    ipc_server: Optional[IPCServer] = field(default=None)
+    ipc_server: Optional["IPCServer"] = field(default=None)
 
     # holds the actions that are processes during single interactions. FIFO style
     action_queue: List[Action] = field(
@@ -97,7 +78,7 @@ class Program:
     )
 
     # Holds the most recent message received by a concurrent nag session, or none if none was received. This attribute is used in interaction sessions to become aware of errors in user code via the various nag sources.
-    current_nag_message: Optional[IPCNag] = field(
+    current_nag_message: Optional["IPCNag"] = field(
         default=None,
     )
     _DEBUG_DIR: ClassVar[str] = ".ghostcode/debug"
@@ -105,6 +86,8 @@ class Program:
     _IPC_SERVER_FILE: ClassVar[str] = "ipc_server"
 
     def __post_init__(self) -> None:
+        import atexit
+        import ghostcode
         from .idle_worker import IdleWorker, IdleTask
 
         sound_dir = ghostcode.get_ghostcode_data("sounds")
@@ -233,6 +216,8 @@ class Program:
 
     def _get_cli_prompt(self) -> str:
         """Returns the CLI prompt used in the interact command and any other REPL like interactions with the LLMs."""
+        from . import git
+
         git_str = ""
         if self.has_git_integration():
             root = self.project_root if self.project_root else ""
@@ -420,6 +405,9 @@ class Program:
         """Interactively acquire user confirmation for a given action.
         When an action needs to be confirmed, there is usually some agent who wants to perform the action (e.g. ghostcoder or ghostworker). The agent's current clearance level is provided for context.
         """
+        import traceback
+        from .utility import show_model_nt
+
         self.sound_notify()
         self.print(f"{agent_name} wants to perform {action_show_short(action)}.")
         abridge = 80  # type: Optional[int]
@@ -508,6 +496,8 @@ class Program:
         """Alternative to print that announces some kind of system event to the user from the perspective of an AI agent.
         This method is intended to be used by deeply nested processing in the action queue to keep the user informed when unusual things happen. Announcements should therefore use simple language, and be used in addition to logging, not instead of it.
         """
+        from .ansi_colors import colored
+
         delimiter = colored(">>=", self.cosmetic_state.to_color())
         match agent:
             case AIAgent.WORKER:
@@ -594,6 +584,8 @@ class Program:
 
     def debug_dump(self) -> None:
         """Save some debugging output into .ghostcode/debug/"""
+        from .utility import show_model_nt, timestamp_now_iso8601
+
         # FIXME: make this conditional on self.debug which should be set with --debug
         if self.project_root is None:
             logger.error(f"Cannot dump debug information: Project root is null.")
@@ -706,7 +698,7 @@ class Program:
         )
         return speaker_box
 
-    def get_problematic_source_reports(self) -> List[ProblematicSourceReport]:
+    def get_problematic_source_reports(self) -> List['ProblematicSourceReport']:
         """Returns problematic soruces that may have been reported by the nag process via IPC."""
         if self.current_nag_message is None:
             return []
@@ -780,9 +772,16 @@ class Program:
                 f"No IPC server info file found at {ipc_info_filepath} to clear."
             )
 
-    def _ipc_server_handle_message(self, message: IPCMessage) -> Optional[IPCResponse]:
+    def _ipc_server_handle_message(self, message: "IPCMessage") -> Optional["IPCResponse"]:
         """Default message handler that can be passed to the IPC server as a callback."""
+        from threading import Thread
         from . import worker
+        from .ipc_message import (
+            IPCNag,
+            IPCNotification,
+            IPCActions,
+            IPCROk,
+        )
 
         logger.debug(f"Handling IPC message: {message}")
 
@@ -830,6 +829,9 @@ class Program:
 
     def start_ipc_server(self) -> None:
         """Initializes the IPC server with a default message handler and writes host/port to the IPC server info file."""
+        import requests
+        from .ipc import IPCServer
+
         if self.ipc_server is not None:
             logger.warning("IPC server already running.")
             return
@@ -884,11 +886,14 @@ class Program:
             self.ipc_server = None  # Clear server if startup failed
             self._ipc_server_info_clear()  # Ensure no stale info is left
 
-    def send_ipc_message(self, ipc_message: IPCMessage) -> Optional[IPCResponse]:
+    def send_ipc_message(self, ipc_message: "IPCMessage") -> Optional["IPCResponse"]:
         """Send an IPC message to another ghostcode process and return the result if successful.
                 The receiving process will be determined by finding the ipc_server file and making an HTTP request. If this doesn't work for whatever reason, none is returned and no exception will be raised.
         This method will block until either the response is obtained, a timeout is reached, or another error occurs.
         """
+        import requests
+        from .ipc_message import IPCMessageAdapter, IPCResponseAdapter
+
         ipc_info = self._ipc_server_info_get()
         if ipc_info is None:
             logger.debug("Cannot send IPC message: No IPC server info found.")
