@@ -647,7 +647,15 @@ class ContextFileVisibility(StrEnum):
     # force means the file is included in any prompt
     force = "force"
 
-
+    @staticmethod
+    def glyph(value: 'ContextFileVisibility') -> str:
+        """Returns a one-letter string representation of the enum value, and empty string for default."""
+        match value:
+            case ContextFileVisibility.default:
+                return ""
+            case _:
+                return value.name[0]
+        
 class ContextFileSourceUnknown(BaseModel):
     """Represents a context file of unknown origin. This can happen if e.g. the user edits the context_files file by hand."""
     type: Literal["ContextFileSourceUnknown"] = "ContextFileSourceUnknown"
@@ -929,7 +937,7 @@ Here is a list of files that are also present in the project, but that are not i
 
             visibility_emojis = []
             if not cf.config.is_ignored_by(AIAgent.CODER):
-                visibility_emojis.append("👻")
+                visibility_emojis.append(ContextFileVisibility.glyph(cf.config.coder_visibility) + "👻")
             if not cf.config.is_ignored_by(AIAgent.WORKER):
                 visibility_emojis.append("🔧")
             

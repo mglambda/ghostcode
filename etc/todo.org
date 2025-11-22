@@ -1,9 +1,9 @@
 * work-in-progress (WIP, limit 5)
-give more context to token cost evaluation in worker.
+Emacs context file overview buffer
 Make queueing actions in bulk possible.
 Investigate coder horribly messing up code parts - i never know if it's me or google
 investigate summaries never filling in depends_on field.
-Make ti so that last request in interact session is automatically put into emacs kill ring.
+Make it so that last request in interact session is automatically put into emacs kill ring.
 cached_token_cost on contextfileconfig.
 add --coder-model and --worker-model as CLI parameters
 * todo
@@ -138,3 +138,4 @@ get rid of routing.
 fix bad string for context wipe
 Implement logic of reduce token action
 Make preamble be set in query coder action not in interact subcommand.
+give more context to token cost evaluation in worker.
