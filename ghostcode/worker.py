@@ -1046,7 +1046,7 @@ def prepare_request(
         print_function=prog.make_tagged_printer("action_queue"),
         disabled = headless
     ):
-        # 1. see if we might be over the token threshold
+        # 1. see if we might be over the token threshold grace window
         # this is not meant to be exact, so don't get scared that we're kind of hacking it
         # also the order doesn't matter for tokens
         preamble_str = prompts.make_prompt(prog, prepare_request_action.preamble_config)
@@ -1057,8 +1057,8 @@ def prepare_request(
         else:
             logger.warning(f"Failed to estimate token cost of request.")
 
-        # if it's not above the threshold we can move on
-        if tokens and tokens >= prog.user_config.token_threshold:
+        # if it's not above the effective threshold we can move on
+        if tokens and prog.user_config.token_threshold and tokens >= (prog.user_config.token_threshold * prog.user_config.token_threshold_grace_percentage):
             prepare_actions.extend(reduce_token_cost(prog, prepare_request_action, estimated_token_cost = tokens))
 
         # prepend the collected actions
@@ -1122,7 +1122,8 @@ def reduce_token_cost(
             rating = relevance_evaluation.relevance_rating
             threshold = prog.user_config.token_threshold
             # files with extremely high ratings should always be included
-            if rating >= 9.0:
+            # default cutoff is 9.0
+            if rating >= prog.user_config.token_threshold_relevance_cutoff:
                 continue
             
             # if we have no estimate or threshold this calculation is moot - just use a heuristic

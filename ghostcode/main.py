@@ -235,6 +235,24 @@ def _main() -> None:
         func=lambda args: ContextCommand(subcommand="rm", filepaths=args.filepaths)
     )
 
+    # Dynamically add visibility subcommands based on ContextFileVisibility enum
+    for visibility_option in types.ContextFileVisibility:
+        visibility_name = visibility_option.value
+        visibility_parser = context_subparsers.add_parser(
+            visibility_name,
+            help=f"Set '{visibility_name}' visibility for file(s) in the project context. Supports wildcards.",
+        )
+        visibility_parser.add_argument(
+            "filepaths",
+            nargs="+",
+            help="One or more file paths (can include wildcards like '*.py', 'src/**.js').",
+        )
+        visibility_parser.set_defaults(
+            func=lambda args, vis=visibility_name: ContextCommand(
+                subcommand=vis, filepaths=args.filepaths
+            )
+        )
+
     # Discover command
     discover_parser = subparsers.add_parser(
         "discover",

@@ -110,7 +110,7 @@ class PromptConfig(BaseModel):
     )
 
     recent_interaction_summaries: Literal["full", "titles_only", "none"] = Field(
-        default="none",
+        default="full",
         description="Include summaries of the most recent interactions. The summarization gets more aggressive for older interactions. Defaults to only showing branch-local interactions.",
     )
     
@@ -371,7 +371,21 @@ class UserConfig(BaseModel):
         default = 100000,
         description = "Threshold after which ghostcode will aggressively try to conserve tokens in coder requests. This is not a hard limit, and requests may still go above the threshold. Intended to be used with tiered pricing of cloud providers (e.g. gemini costs more at >200k tokens)."
     )
-    
+
+    token_threshold_grace_percentage: float = Field(
+        default = 0.35,
+        le=1.0,
+        ge=0.0,
+        description = "Percentage of the token threshold under which no token reduction at all is performed. So with a threshold of 100k tokens, and a grace percentage of .35, ghostcode will start to perform proportional token reduction measures once you above 35k tokens, and do nothing below that. Setting this to 0.0 means we always perform relevance analysis and token reduction."
+    )
+
+    token_threshold_relevance_cutoff: float = Field(
+        default = 9.0,
+        le = 10.0,
+        ge = 0.0,
+        description = "When trying to reduce the token cost, files in the context are graded by relevance to the current prompt on a scale from 0.0 (not relevant) to 10.0 (highly relevant). Even at the most aggressive measures of token reduction, files that have a relevance higher than or equal to this cutoff value will still be included in the prompt. Setting the cutoff to 0.0 includes all files, setting it to 10.0 means no file is safe from exclusion."
+    )
+        
     newbie: bool = Field(
         default=True,
         description="If true, ghostcode will occasionally print out helpful tips and be generally more verbose and nanny-like. Finding this setting and successfully setting it to False is your trial-by-fire to transcend the newbie stage.",

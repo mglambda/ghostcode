@@ -15,7 +15,9 @@ logger = logging.getLogger("ghostcode.subcommand.context")
 class ContextCommand(CommandInterface):
     """Manages files included in the project context."""
 
-    subcommand: Literal["add", "rm", "remove", "ls", "clean", "lock", "unlock", "wipe", "list-summaries"]
+    subcommand: Literal[
+        "add", "rm", "remove", "ls", "clean", "lock", "unlock", "wipe", "list-summaries", "ignore", "force","default","summary"]
+
     filepaths: List[str] = Field(
         default_factory=list,
         description="File paths to add or remove, can include wildcards.",
