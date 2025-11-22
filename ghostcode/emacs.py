@@ -208,5 +208,22 @@ def get_active_buffer(
         return None
 
 
+def set_register_content(register_key: str, content: str) -> None:
+    """Sets the content of an Emacs register."""
+    if len(register_key) != 1:
+        print(f"Error: register_key must be a single character, but got '{register_key}'")
+        return
+
+    # Use JSON to safely encode the content string
+    json_encoded_content = json.dumps(content)
+
+    elisp = f"""
+    (progn
+      (require 'json)
+      (set-register ?{register_key} (json-read-from-string {json.dumps(json_encoded_content)})))
+    """
+    send_code(elisp)
+
+
 class EmacsState(BaseModel):
     pass
