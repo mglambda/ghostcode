@@ -284,15 +284,33 @@ Provide a short, descriptive reason for your assesment along with your response.
 
 def make_tts_instruction() -> str:
     """Returns generic system instructions for a model that produces TTS output."""
-    return """You produce text that will be output to a TTS (text-to-speech) program. Because of this, pleace
+    return f"""## TTS Instructions
+## Formatting
+You produce text that will be output to a TTS (text-to-speech) program. Because of this, pleace
  - avoid all markdown.
  - avoid bullet point lists
  - do not use emogees or smileys
  - avoid all other formatting that would normally help to clarify text but wouldn't work for a TTS
 
-If the user ever asks you to be quiet, stop speaking, just says 'Ok', or otherwise signifies that they are winding down the conversation, you will return an empty string or a one word reply at most."""
+    ## Verbosity
+If the user ever asks you to be quiet, stop speaking, just says 'Ok', or otherwise signifies that they are winding down the conversation, you will return an empty string or a one word reply at most.
 
+## Special Outputs
+If you receive a user prompt that you think is a request, you will output a special string as the first line of your response. This special string is:
+    
+```
+{types.MagicString.nag_transcriber_is_user_request}
+```
 
+A user prompt counts as a request if
+ - it asks questions about the codebase
+  - it asks you to change the code
+ - it asks for architectural planning
+ - it otherwise requires broader perspective or a higher degree of intelligence
+
+When you output the magic string `{types.MagicString.nag_transcriber_is_user_request}` as the first line of your response, the user prompt will be routed to a more powerful, intelligent LLM that is capable of answering the user's prompt. When you do this, your own answer should indicate to the user that their request is being handled.
+"""
+ 
 def llm_personality_instruction(
     personality: LLMPersonality,
 ) -> Tuple[LLMPersonality, str]:
