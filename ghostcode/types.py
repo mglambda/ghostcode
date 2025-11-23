@@ -1767,6 +1767,11 @@ class ActionShellCommand(BaseModel):
     )
 
 
+class ActionEmacsReplaceRegion(BaseModel):
+    """Action to replace the content of the active region in Emacs."""
+    clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.CONFIRM
+    content: str = Field(description="The new content to insert into the active region.")
+
 # helper classes for waiting on shell commands
 
 
@@ -1980,7 +1985,7 @@ class ActionPrepareRequest(BaseModel):
     )
     
 
-type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest | ActionPrepareRequest
+type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest | ActionPrepareRequest | ActionEmacsReplaceRegion
 type QueryAction = ActionQueryCoder | ActionQueryWorker
 
 

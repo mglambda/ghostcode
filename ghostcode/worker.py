@@ -201,6 +201,29 @@ def run_action_queue(prog: Program) -> None:
         return
 
 
+def apply_emacs_replace_region(prog: Program, action: types.ActionEmacsReplaceRegion) -> types.ActionResult:
+    """Replaces the content of the active region in Emacs."""
+    logger.info("Replacing Emacs active region.")
+    if not prog.user_config.emacs_integration:
+        msg = "Cannot replace Emacs region because Emacs integration is disabled in user config."
+        logger.warning(msg)
+        prog.print(f"Warning: {msg}")
+        # Consider this a success because there's nothing to do, avoiding recovery for a config issue.
+        return types.ActionResultOk(success_message=msg)
+
+    from . import emacs
+    try:
+        emacs.replace_region_content(action.content)
+        return types.ActionResultOk(success_message="Replaced content of active Emacs region.")
+    except Exception as e:
+        msg = f"Failed to replace Emacs region content: {e}"
+        logger.error(msg, exc_info=True)
+        return types.ActionResultFailure(
+            original_action = action,
+            failure_reason=msg
+        )
+
+
 def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
     # small helper for this context
     def fail(
@@ -288,6 +311,8 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
             case types.ActionFileEdit() as edit_action:
                 logger.info(f"File Edit Action")
                 return apply_edit_file(prog, edit_action)
+            case types.ActionEmacsReplaceRegion() as region_action:
+                return apply_emacs_replace_region(prog, region_action)
             case types.ActionFileCreate() as create_action:
                 logger.info("Create File Action")
                 return apply_create_file(prog, create_action)
@@ -588,6 +613,15 @@ def handle_code_part(
         )
 
     filepath = code_action.content.filepath
+
+    # special case: emacs magic string
+    if prog.user_config.emacs_integration and filepath == "<emacs-active-region>":
+        logger.info("Handling code part for emacs active region.")
+        return types.ActionResultMoreActions(
+            actions=[
+                types.ActionEmacsReplaceRegion(content=code_action.content.new_code)
+            ]
+        )
 
     # Case 1: File does not exist -> Create file
     if not os.path.exists(filepath):
