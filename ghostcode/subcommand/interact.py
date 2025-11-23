@@ -7,6 +7,7 @@ import os
 from .. import types
 from ..types import CommandOutput
 from ..program import CommandInterface, Program
+from .. import emacs
 from ..utility import (
     show_model_nt,
     EXTENSION_TO_LANGUAGE_MAP,
@@ -252,7 +253,21 @@ class InteractCommand(CommandInterface):
         self.interaction_history.title = (
             new_title if new_title else self.interaction_history.title
         )
+    def _emacs_handle_prompt(self, prog: Program, user_prompt: str) -> None:
+        """Do potential prompt processing with emacs integration.
+        This may e.g. save the last entered prompt to the kill ring."""
+        if not prog.user_config.emacs_integration:
+            return
 
+        if (register := prog.user_config.emacs_save_prompt_register) != "":
+            if (len(register) > 1) or not (register.isalnum()):
+                logger.warning(f"User choice of '{register}' for emacs register to save prompt to is bogus. Skipping register save.")
+            else:
+                emacs.set_register_content(register, user_prompt)
+
+        if prog.user_config.emacs_save_prompt_kill_ring:
+            emacs.push_kill_ring(user_prompt)
+        
     def _make_llm_response_profile(self) -> types.LLMResponseProfile:
         if not (self.actions):
             return types.LLMResponseProfile.text_only()
@@ -279,8 +294,9 @@ class InteractCommand(CommandInterface):
             raise RuntimeError(
                 f"Project seems to be null during interaction. This shouldn't happen, but just in case, you may want to do `ghostcode init` in your project's directory."
             )
-
-
+        # this is for user convenience and should use the unaltered prompt
+        self._emacs_handle_prompt(prog, user_input)
+        
         preamble_config = self._make_preamble_config(prog)
         prompt_to_send = self._make_user_prompt(prog, user_input)
 

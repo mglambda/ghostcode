@@ -408,10 +408,16 @@ class UserConfig(BaseModel):
         description = "Enable various emacs integration features. Most of these use the emacsclient program and require you to have the emacs server running (do M-x server-mode to enable it). If you don't use emacs at all you can turn integration off to disable some warning messages."
     )
 
-    emacs_save_prompt_ragister: str = Field(
+    emacs_save_prompt_register: str = Field(
         default = "p",
         description = "Set it to a letter to automatically have the last prompt that was input during an interaction be copied to the emacs register corresponding to the letter. For example, the default of 'p' allows you to always paste your last prompt by doing C-x r i. Set it to an empty string to disable register saving."
     )
+
+    emacs_save_prompt_kill_ring: bool = Field(
+        default = True,
+        description = "Automatically save the last prompt you input during an interaction to the emacs kill ring, allowing you to yank it with C-y."
+    )
+    
     nag_personality: LLMPersonality = Field(
         default = LLMPersonality.random,
         description = """Choose a personality for the responses in the `ghostcode nag` subcommand. Special values are "none" which disables personality instructions, and "random" which uses a random personality each time."""

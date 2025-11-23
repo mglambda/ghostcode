@@ -225,5 +225,82 @@ def set_register_content(register_key: str, content: str) -> None:
     send_code(elisp)
 
 
+def push_kill_ring(content: str) -> None:
+    """Pushes the given content onto the Emacs kill ring."""
+    json_encoded_content = json.dumps(content)
+    elisp = f"""
+    (progn
+      (require 'json)
+      (kill-new (json-read-from-string {json.dumps(json_encoded_content)})))
+    """
+    send_code(elisp)
+
+
+def get_kill_ring() -> List[str]:
+    """Retrieves the contents of the Emacs kill ring."""
+    elisp = """
+    (progn
+      (require 'json)
+      (json-encode kill-ring))
+    """
+    if (r := send_code(elisp)) is None:
+        return []
+
+    try:
+        data = json_loads_fixed(r.strip())
+        if isinstance(data, list) and all(isinstance(item, str) for item in data):
+            return data
+        else:
+            print(f"Error: Unexpected data structure from get_kill_ring: {type(data)}")
+            return []
+    except Exception as e:
+        print(f"Error parsing kill ring content: {e}")
+        return []
+
+
+def get_region_content() -> Optional[str]:
+    """Retrieves the content of the active region in the current Emacs buffer."""
+    elisp = """
+    (progn
+      (require 'json)
+      (if (region-active-p)
+          (json-encode (buffer-substring-no-properties (region-beginning) (region-end)))
+        (json-encode nil)))
+    """
+    if (r := send_code(elisp)) is None:
+        return None
+
+    data = json_loads_fixed(r.strip())
+    # The elisp returns json null if region is not active, which becomes python None
+    if isinstance(data, str):
+        return data
+    return None
+
+
+def replace_region_content(content: str) -> None:
+    """Replaces the active region in the current Emacs buffer with the given content."""
+    json_encoded_content = json.dumps(content)
+    elisp = f"""
+    (progn
+      (require 'json)
+      (when (region-active-p)
+        (delete-region (region-beginning) (region-end))
+        (insert (json-read-from-string {json.dumps(json_encoded_content)}))))
+    """
+    send_code(elisp)
+
+
+def map_region_content(replace_region_function: Callable[[str], str]) -> None:
+    """
+    Applies a function to the content of the active region and replaces it with the result.
+
+    The callable should accept one string argument (the region content) and return a string.
+    """
+    region_content = get_region_content()
+    if region_content is not None:
+        new_content = replace_region_function(region_content)
+        replace_region_content(new_content)
+
+
 class EmacsState(BaseModel):
     pass
