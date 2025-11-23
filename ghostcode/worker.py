@@ -543,7 +543,10 @@ def user_voice_query(
                 context = prog.project.context_files
             )
         )
-                
+
+    # one more problem
+    # what if this is the very first turn in the interaction?
+        
     # FIXME: we do not respect --skip-to-coder here
     return types.ActionResultMoreActions(
         actions=[
@@ -571,21 +574,31 @@ def coder_query(
             postfix_message=f"{prog.last_print_text}",
             print_function=prog.make_tagged_printer("action_queue"),
         ), prog.sound_clicks():
+            # the final prompt to send. we don't modify this except for the preamble injection
+            if len(prog.coder_box.get_history()) == 0:
+                # the very first prompt needs the preamble injection
+                prompt = prompts.prefix_preamble_string(query_coder_action.prompt)
+            else:
+                prompt = query_coder_action.prompt
+            
+            # the profile determines what the LLM will send back to us
             profile = query_coder_action.llm_response_profile
+            
             # setting the preamble like this will inject the current context at the very front of the user query, assuming that the special preamble underscore injection string was included
             prog.coder_box.set_vars({
                 "preamble_injection": prompts.make_prompt(prog, query_coder_action.preamble_config)
             })
+            
             if profile.actions and profile.text:
                 # this is the default, offer the coder the full menu of parts to generate
                 response = prog.coder_box.new(
                     types.CoderResponse,
-                    query_coder_action.prompt,
+                    prompt
                 )
             elif profile.text:
                 # we only want a text response
                 text_response = prog.coder_box.new(
-                    types.TextResponsePart, query_coder_action.prompt
+                    types.TextResponsePart, prompt
                 )
                 response = types.CoderResponse(contents=[text_response])
         logger.timing(f"ghostcoder performance statistics:\n{showTime(prog.coder_box._plumbing, [])}")  # type: ignore

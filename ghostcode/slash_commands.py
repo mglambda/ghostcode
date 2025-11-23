@@ -40,14 +40,14 @@ class SlashCommand:
 
     # the function that will be invoked in the program and interaction context. args will be the string the user put behind the slash command, parsed by shlex.tokenize
     function: Callable[
-        [Program, types.InteractionHistory, Sequence[str]], SlashCommandResult
+        [Program, Sequence[str]], SlashCommandResult
     ]
 
     ### implementations ###
 
 
 def slash_traceback(
-    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
+    prog: Program, args: Sequence[str]
 ) -> SlashCommandResult:
     # this is a bit icky but ok
     from .logconfig import EXCEPTION_HANDLER
@@ -62,9 +62,18 @@ def slash_traceback(
 
 
 def slash_save(
-    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
+    prog: Program, args: Sequence[str]
 ) -> SlashCommandResult:
     # FIXME: handle args for optional filepath
+    if prog.project is None:
+        logger.error(f"Null project on trying to save interaction in /save command.")
+        return SlashCommandResult.HALT
+    
+    interaction_id = prog.lock_read()
+    if (interaction := prog.project.get_interaction_history(interaction_id)) is None:
+        logger.warning(f"Current lock yielded bad interaction. Could not save to text file.")
+        return SlashCommandResult.BAD_ARGUMENTS
+    
     filepath = "out.txt"
     with open(filepath, "w") as f:
         f.write(interaction.show())
@@ -74,13 +83,13 @@ def slash_save(
 
 
 def slash_new(
-    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
+    prog: Program, args: Sequence[str]
 ) -> SlashCommandResult:
     # This function just signals the main loop to perform the reset logic.
     return SlashCommandResult.RESET_SESSION
 
 def slash_context(
-    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
+    prog: Program, args: Sequence[str]
 ) -> SlashCommandResult:
     if prog.project is None:
         prog.print(f"Null project. Please do `ghostcode init` and restart the interaction.")
@@ -92,7 +101,7 @@ def slash_context(
 ### list of slash commands ###
 
 def slash_help(
-    prog: Program, interaction: types.InteractionHistory, args: Sequence[str]
+    prog: Program, args: Sequence[str]
 ) -> SlashCommandResult:
     global slash_command_list
     for cmd in slash_command_list:
@@ -112,7 +121,7 @@ slash_command_list = [
         name="quit",
         args=[],
         help="Quit the program. The interaction will be saved.",
-        function=lambda prog, interaction, args: SlashCommandResult.HALT,
+        function=lambda prog, args: SlashCommandResult.HALT,
     ),
     SlashCommand(
         name="traceback",
@@ -124,13 +133,13 @@ slash_command_list = [
         name="lastrequest",
         args=[],
         help="Used for debugging. Display the last request sent to the LLM backend.",
-        function=lambda prog, interaction, args: (prog.print(json.dumps(prog.coder_box.get_last_request(), indent=4)), SlashCommandResult.OK)[1],  # type: ignore
+        function=lambda prog, args: (prog.print(json.dumps(prog.coder_box.get_last_request(), indent=4)), SlashCommandResult.OK)[1],  # type: ignore
     ),
     SlashCommand(
         name="show",
         args=[],
         help="Display the interaction history.",
-        function=lambda prog, interaction, args: (prog.print(interaction.show()), SlashCommandResult.OK)[1],  # type: ignore
+        function=lambda prog, args: (prog.print(interaction.show()), SlashCommandResult.OK)[1],  # type: ignore
     ),
     SlashCommand(
         name="save",
@@ -142,13 +151,13 @@ slash_command_list = [
         name="talk",
         args=[],
         help="Turn talk mode on. This causes the coder backend to no longer generate code (except as parts of conversation), and no longer do file edits. Good for brainstorming or purely informative queries.",
-        function=lambda prog, interaction_history, args: SlashCommandResult.ACTIONS_OFF
+        function=lambda prog, args: SlashCommandResult.ACTIONS_OFF
     ),
     SlashCommand(
         name="interact",
         args=[],
         help="Turn interact mode on. This causes the coder backend to generate code and attempt to do file edits.",
-        function=lambda prog, interaction_history , args: SlashCommandResult.ACTIONS_ON
+        function=lambda prog, args: SlashCommandResult.ACTIONS_ON
     ),
     SlashCommand(
         name="new",
@@ -169,7 +178,7 @@ slash_command_list = [
 
 
 def try_command(
-    prog: Program, interaction: types.InteractionHistory, input_line: str
+    prog: Program, input_line: str
 ) -> SlashCommandResult:
     """Given a program and interaction context, tries to find a command and arguments in input_line and run it.
     If the given input line does not appear to be a command, the return value is NOT_A_COMMAND.
@@ -192,5 +201,5 @@ def try_command(
     rest = args[1:]
     for slash_command in slash_command_list:
         if ("/" + slash_command.name) == command_candidate:
-            return slash_command.function(prog, interaction, rest)
+            return slash_command.function(prog, rest)
     return SlashCommandResult.COMMAND_NOT_FOUND

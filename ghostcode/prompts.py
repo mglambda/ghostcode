@@ -24,8 +24,8 @@ def make_default_coder_config() -> types.PromptConfig:
         style_file=True,
         context_files="full",
         recent_interaction_summaries="full",
-        problematic_source_reports = True,
-        emacs_active_region = True
+        problematic_source_reports=True,
+        emacs_active_region=True,
     )
 
 
@@ -161,6 +161,18 @@ Please take this into account in your response, as the user's prompt will likely
 {user_prompt_str}    
 
 """
+
+
+def prefix_preamble_string(prompt: str) -> str:
+    """
+    Prefixes the user's prompt with the magic `{_{_preamble_injection_}_}` placeholder (without the outer underscores).
+    This method *only* adds the placeholder string. The actual content for the
+    preamble is dynamically set and updated via `prog.coder_box.set_vars()`
+    before each LLM call. This ensures the preamble is always current without
+    being hardcoded into the interaction history or prompt template.
+    """
+    # note the song-and-dance with string concatenation below is so that we can use ghostcode on itself without an unwanted expansion of the preamble magic string
+    return "{{" + "preamble_injection" + "}}" + f"# User Prompt\n\n{prompt}"
 
 
 def make_prompt_worker_recover(
