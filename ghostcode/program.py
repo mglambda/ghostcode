@@ -907,6 +907,7 @@ class Program:
         This method will block until either the response is obtained, a timeout is reached, or another error occurs.
         """
         import requests
+        import ipaddress
         from .ipc_message import IPCMessageAdapter, IPCResponseAdapter
 
         ipc_info = self._ipc_server_info_get()
@@ -915,7 +916,15 @@ class Program:
             return None
 
         host, port = ipc_info
-        url = f"http://{host}:{port}/message"
+        try:
+            # Check if the host is an IPv6 address and wrap it in brackets if so
+            if ipaddress.ip_address(host).version == 6:
+                url = f"http://[{host}]:{port}/message"
+            else:
+                url = f"http://{host}:{port}/message"
+        except ValueError:
+            # If it's not a valid IP address (e.g., a hostname), assume it's fine as is
+            url = f"http://{host}:{port}/message"
 
         try:
             # Serialize the IPCMessage to JSON
@@ -930,6 +939,7 @@ class Program:
 
             # Parse and validate the response
             response_data = response.json()
+            print(f"debug: {response_data}")
             ipc_response = IPCResponseAdapter.validate_python(response_data)
             logger.debug(f"Received IPC response: {ipc_response.type}")
             return ipc_response
