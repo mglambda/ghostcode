@@ -18,6 +18,7 @@ from .utility import (
     levenshtein,
     time_function_with_logging,
     show_model,
+    timestamp_now_iso8601,
     foldl,
     mock_print,
 )
@@ -1110,6 +1111,7 @@ def reduce_token_cost(
                 )
 
             try:
+                prog.worker_box.clear_history()
                 relevance_evaluation = prog.worker_box.new(
                     CodeFileRelevanceEvaluation,
                         prompts.make_prompt_code_file_relevance_evaluation(prog, context_file, prepare_request_action.prompt, file_verbosity="summary")
@@ -1179,3 +1181,4 @@ def generate_context_file_summary(
         except Exception as e:
             logger.exception(f"Couldn't generate summary for context file {context_file.filepath}. Reason: {e}")
             return None
+
