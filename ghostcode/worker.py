@@ -1065,6 +1065,10 @@ def prepare_request(
         prepare_request_action: types.ActionPrepareRequest, headless: bool = False 
 ) -> types.ActionResult:
     """Prepares a prompt by e.g. adding or removing files from context."""
+    # sanity
+    if prog.project is None:
+        return types.ActionResultFailure(original_action = prepare_request_action, failure_reason= f"Null project.")
+    
     # by default, we just return a coder query
     default_result = types.ActionResultMoreActions(
         actions = [
@@ -1081,7 +1085,17 @@ def prepare_request(
         print_function=prog.make_tagged_printer("action_queue"),
         disabled = headless
     ):
-        # 1. see if we might be over the token threshold grace window
+        # 1 we see if we should add things to the context
+        # 1.1 direct naming of files
+        for context_file in prog.project.context_files.data:
+            if is_file_mentioned_in_prompt(context_file.filepath, prepare_request_action.prompt):
+                # mark it as temporarily forced to prevent removal due to token limit
+                # this will also erase previous temporary exclusion
+                context_file.config.temporary_visibility = types.ContextFileVisibility.force
+                
+        # 2 we see what we can remove from context
+        # 2.1 token threshold
+        # see if we might be over the token threshold grace window        
         # this is not meant to be exact, so don't get scared that we're kind of hacking it
         # also the order doesn't matter for tokens
         preamble_str = prompts.make_prompt(prog, prepare_request_action.preamble_config)
@@ -1099,6 +1113,11 @@ def prepare_request(
         # prepend the collected actions
         default_result.actions = prepare_actions + default_result.actions
         return default_result
+
+def is_file_mentioned_in_prompt(filepath: str, prompt: str) -> bool:
+    """Returns true if a base filename is mentioned directly in a user prompt string, false otherwise.
+    This really does work with filenames as it will split the filepath etc."""
+    return os.path.basename(filepath) in prompt
     
 def reduce_token_cost(
         prog: Program, prepare_request_action: types.ActionPrepareRequest, estimated_token_cost: Optional[int] = None, headless: bool = False
@@ -1135,7 +1154,16 @@ def reduce_token_cost(
                     # this is the entire reason for this match case block -> force us to make explicit choice here in the future
                     assert_never(unreachable)
 
+            # also check temporary visibility
+            if context_file.config.temporary_visibility == types.ContextFileVisibility.force:
+                continue
+                    
             # ok, file is default or summary visibility
+
+            if is_file_mentioned_in_prompt(context_file.filepath, prepare_request_action.prompt):
+                # if the user says e.g. "ipc_server.py" directly in the prompt, we assume that a context file of that name is relevant.
+                continue
+                
             class CodeFileRelevanceEvaluation(BaseModel):
                 """Represents the degree to which a code file is relevant to a given user prompt."""
                 relevance_rating: float = Field(
