@@ -27,6 +27,14 @@ def emacs_bool_validator(x: Any) -> Any:
 
 emacs_bool = Annotated[bool, BeforeValidator(emacs_bool_validator)]
 
+class Position(BaseModel):
+    """Represents a snapshot of a cursor position in an emacs buffer.
+    line and column are derived values and are not considered authoritative."""
+    buffer_name: str
+    point: int
+    line: Optional[int] = None
+    column: Optional[int] = None
+    
 
 class Buffer(BaseModel):
     """
@@ -300,6 +308,46 @@ def map_region_content(replace_region_function: Callable[[str], str]) -> None:
     if region_content is not None:
         new_content = replace_region_function(region_content)
         replace_region_content(new_content)
+
+
+def get_current_position() -> Optional[Position]:
+    """Retrieves the current position (point, line, column) in the active buffer."""
+    elisp = """
+    (progn
+      (require 'json)
+      (let* ((buf (current-buffer))
+             (point (point))
+             (line (line-number-at-pos))
+             (col (current-column)))
+        (json-encode
+         (list
+          (cons 'buffer_name (buffer-name buf))
+          (cons 'point point)
+          (cons 'line line)
+          (cons 'column col)))))
+    """
+    if (r := send_code(elisp)) is None:
+        return None
+
+    data = json_loads_fixed(r.strip())
+    if data is None:
+        return None
+    try:
+        return Position(**data)
+    except ValidationError as e:
+        print(f"Error validating Emacs position: {e}")
+        return None
+
+
+def goto_position(position: Position) -> None:
+    """Switches to the specified buffer and moves the point to the given position."""
+    elisp = f"""
+    (let ((buf (get-buffer \"{position.buffer_name}\")))
+      (when buf
+        (switch-to-buffer buf)
+        (goto-char {position.point})))
+    """
+    send_code(elisp)
 
 
 class EmacsState(BaseModel):
