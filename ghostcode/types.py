@@ -2171,7 +2171,7 @@ class Project(BaseModel):
         default_factory=lambda: [],
         description="List of interactions that have occurred in the past.",
     )
-
+    
     # --- File names within the .ghostcode directory ---
     _GHOSTCODE_DIR: ClassVar[str] = ".ghostcode"
     _WORKER_CHARACTER_FOLDER: ClassVar[str] = "worker"
@@ -2691,7 +2691,32 @@ You can replace the content of the user's currently active region in Emacs. To d
                 exc_info=True,
             )
             raise
-    
+
+    def save_interaction_history(self, root: Optional[str] = None) -> None:
+        # can be called without root for an intermittent save
+        if root is None:
+            root = self.find_project_root()            
+            if not root:
+                logger.warning(f"Tried to do intermittent save on interaction history, but transient _root is not set.")
+                return
+
+        ghostcode_dir = Project._get_ghostcode_path(root)        
+        interaction_history_path = os.path.join(
+            ghostcode_dir, Project._INTERACTION_HISTORY_FILE
+        )
+        try:
+            with open(interaction_history_path, "w") as f:
+                json.dump(
+                    [history.model_dump() for history in self.interactions], f, indent=4
+                )
+            logger.debug(f"Saved interaction history to {interaction_history_path}")
+        except Exception as e:
+            logger.error(
+                f"Failed to save interaction history to {interaction_history_path}: {e}",
+                exc_info=True,
+            )
+            raise
+        
     def save_to_root(self, root: str) -> None:
         """
         Serializes all the contained types and saves them to the .ghostcode folder
@@ -2787,22 +2812,7 @@ You can replace the content of the user's currently active region in Emacs. To d
             raise
 
         # 7. Save interaction_history.json
-        interaction_history_path = os.path.join(
-            ghostcode_dir, Project._INTERACTION_HISTORY_FILE
-        )
-        try:
-            with open(interaction_history_path, "w") as f:
-                json.dump(
-                    [history.model_dump() for history in self.interactions], f, indent=4
-                )
-            logger.debug(f"Saved interaction history to {interaction_history_path}")
-        except Exception as e:
-            logger.error(
-                f"Failed to save interaction history to {interaction_history_path}: {e}",
-                exc_info=True,
-            )
-            raise
-
+        self.save_interaction_history(root)
         logger.info(f"Ghostcode project saved successfully to {root}.")
 
     def new_interaction_history(self) -> InteractionHistory:
@@ -2811,6 +2821,7 @@ You can replace the content of the user's currently active region in Emacs. To d
         branch_name_gr = git.get_current_branch(root if root is not None else "")
         interaction_history = InteractionHistory(branch_name = branch_name_gr.value) 
         self.interactions.append(interaction_history)
+        self.save_interaction_history(root)        
         return interaction_history
 
     def get_interaction_history(
@@ -2853,7 +2864,7 @@ You can replace the content of the user's currently active region in Emacs. To d
             raise IndexError(msg)
 
         interaction_history.contents.append(item)
-
+        self.save_interaction_history()
     def get_style(self) -> str:
         """Return contents of the style file. If the file is not found or unreadable, returns an empty string."""
         try:
