@@ -11,7 +11,7 @@ import logging
 import asyncio
 import os # Added for os.devnull
 
-from .ipc_message import IPCMessage, IPCMessageAdapter, IPCResponse, IPCResponseAdapter
+from .ipc_message import IPCMessage, IPCMessageAdapter, IPCResponse, IPCResponseAdapter, IPCROk
 
 # --- Logging Setup ---
 logger = logging.getLogger("ghostcode.ipc")
@@ -38,7 +38,8 @@ class IPCServer:
             ipc_message = IPCMessageAdapter.validate_python(body)
             logger.debug(f"Received IPC message: {ipc_message.type}")
             handle_message(ipc_message)
-            return JSONResponse({"status": "ok"})
+            return JSONResponse(IPCROk().model_dump_json())
+
         except Exception as e:
             logger.error(f"Error processing IPC message: {e}", exc_info=True)
             return JSONResponse({"status": "error", "detail": str(e)}, status_code=400)
@@ -93,7 +94,9 @@ class IPCServer:
                 # This assumes Uvicorn has started at least one server instance and socket
                 if self._server.servers and self._server.servers[0].sockets:
                     sock = self._server.servers[0].sockets[0]
-                    self._actual_host, self._actual_port = sock.getsockname()
+                    # getsockname returns pair for ipv4 and 4 tuple for ipv6 so don't change the below
+                    address_info = sock.getsockname()
+                    self._actual_host, self._actual_port = address_info[0], address_info[1]
                     # If host is '0.0.0.0' (listen on all interfaces), report '127.0.0.1' for local clients
                     if self._actual_host == '0.0.0.0':
                         self._actual_host = '127.0.0.1'

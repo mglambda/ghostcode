@@ -1,5 +1,4 @@
 * work-in-progress (WIP, limit 5)
-Make nag send requests using magic trigger words.
 Fix levenshtein distance calculation (wtf)
 Addd FileRequestParts or something (ghost is starting to request files on its own).
 Emacs context file overview buffer
@@ -148,3 +147,4 @@ Make it so that last request in interact session is automatically put into emacs
 Emacs region as a source in prompts.
 Emacs region as an action target.
 Make project and prog.read_lock only source of truth about current interaction.
+Make nag send requests using magic trigger words.

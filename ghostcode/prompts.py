@@ -308,7 +308,8 @@ A user prompt counts as a request if
  - it asks for architectural planning
  - it otherwise requires broader perspective or a higher degree of intelligence
 
-When you output the magic string `{types.MagicString.nag_transcriber_is_user_request}` as the first line of your response, the user prompt will be routed to a more powerful, intelligent LLM that is capable of answering the user's prompt. When you do this, your own answer should indicate to the user that their request is being handled.
+When you output the magic string `{types.MagicString.nag_transcriber_is_user_request}` as the first line of your response, the user prompt will be routed to a more powerful, intelligent LLM that is capable of answering the user's prompt.
+After outputing a line with the special magic string, you should continue with a normal response, which will be read out via TTS like your other responses.
 """
  
 def llm_personality_instruction(
