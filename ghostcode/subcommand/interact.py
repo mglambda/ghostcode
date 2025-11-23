@@ -155,7 +155,8 @@ class InteractCommand(CommandInterface):
             context_files="full",
             recent_interaction_summaries="full",
             problematic_source_reports = True,
-            text_only_nudge = not(self.actions)
+            text_only_nudge = not(self.actions),
+            emacs_active_region = True
             # could add shell here?
         )
 

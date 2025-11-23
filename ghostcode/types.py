@@ -131,6 +131,12 @@ class PromptConfig(BaseModel):
         default = False,
         description = "Include a small additional instruction nudging the LLM to generate text only, as opposed to code or shell commands."
     )
+
+    emacs_active_region: bool = Field(
+        default = True,
+        description = "Include the actively selected region, if one is actively selected while the prompt is being made. Requires emacs integration, and will silently be disabled if emacs integration is disabled."
+    )
+    
     @staticmethod
     def maximal(**kwargs: Any) -> "PromptConfig":
         """Create a default PromptConfig with maximum erbosity."""

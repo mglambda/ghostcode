@@ -115,6 +115,20 @@ def make_prompt(
         text_only_nudge_str = f"# Text-Only Notice\nThe user wants to keep the interaction conversational and has requested that you generate only 'TextResponseParts'. If you need to generate code, please inline it into your textual response.\n"
     else:
         text_only_nudge_str = ""
+
+    if (prompt_config.emacs_active_region and prog.user_config.emacs_integration
+        and ((region_content := emacs.get_region_content()) is not None and region_content != "")):
+        emacs_active_region_str = f"""# Emacs Active Region
+The user is using emacs as a code editor and has currently selected the following content in their active region.
+
+```
+{region_content}
+```
+
+Please take this into account in your response, as the user's prompt will likely refer to the above region content directly.
+"""
+    else:
+        emacs_active_region_str = ""
         
     return f"""{system_str}
     # Project Context
@@ -122,7 +136,7 @@ def make_prompt(
 {project_metadata_str}{style_file_str}{context_files_str}{recent_interaction_summaries_str}    
 # Ghostcode Context
 
-{history_str}    {problematic_source_reports_str}{shell_str}{log_excerpt_str}{text_only_nudge_str}
+{history_str}    {problematic_source_reports_str}{shell_str}{log_excerpt_str}{text_only_nudge_str}{emacs_active_region_str}
 {user_prompt_str}    
 
 """
