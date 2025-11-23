@@ -205,7 +205,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         
         def transcription_callback(w: str) -> str:
             nonlocal last_user_transcription
-            last_transcription = w
+            last_user_transcription = w
             if prog.user_config.nag_audio_transcription_user_subtitles:
                 prog.print(f"  `{w}`")
             return w
@@ -220,9 +220,9 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
                     speaker_box.text_stream(
                         "Please inform the user that they must run `ghostcode interact` within the same project to start an itneraction, otherwise their request cannot be fulfilled."
                     )
-                    
                     return
-                
+
+                logger.info(f"Sending user voice request for interaction {interaction_id}")
                 prog.send_ipc_message(
                     IPCActions(
                         client = "nag",

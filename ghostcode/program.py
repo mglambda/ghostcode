@@ -939,7 +939,6 @@ class Program:
 
             # Parse and validate the response
             response_data = response.json()
-            print(f"debug: {response_data}")
             ipc_response = IPCResponseAdapter.validate_python(response_data)
             logger.debug(f"Received IPC response: {ipc_response.type}")
             return ipc_response

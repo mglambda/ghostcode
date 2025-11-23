@@ -517,7 +517,7 @@ def apply_edit_file(
 
 
 def user_voice_query(
-    prog: Program, voice_query_action: types.ActionUserVoiceQuery
+        prog: Program, voice_query_action: types.ActionUserVoiceQuery, headless: bool = False
 ) -> types.ActionResult:
     """Handles a user voice query by preparing and forwarding it to the Coder LLM."""
     logger.info(
@@ -543,7 +543,9 @@ def user_voice_query(
         )
     else:
         logger.warning(f"Incoming voice query has null interaction ID. Will be discarded: `{voice_query_action.prompt[:25]}`")
-        
+
+        if not headless:
+            prog.print("\n" + voice_query_action.prompt)
     # FIXME: we do not respect --skip-to-coder here
     return types.ActionResultMoreActions(
         actions=[
