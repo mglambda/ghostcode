@@ -305,7 +305,12 @@ class UserConfirmation(Enum):
     def is_confirmation(value: "UserConfirmation") -> bool:
         return value in [UserConfirmation.YES, UserConfirmation.ALL]
 
-
+class MagicString(StrEnum):
+    """Magic strings with special semantics that are used in various places throughout the codebase."""
+    preamble_injection = "preamble_injection"
+    emacs_active_region_filepath = "<emacs-active-region>"
+    nag_transcriber_is_user_request = "<USER-REQUEST>"
+    
 class AIAgent(StrEnum):
     WORKER = "worker"
     CODER = "coder"
@@ -1871,7 +1876,14 @@ class ActionUserVoiceQuery(BaseModel):
         description="ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history.",
     )
 
-
+    preamble_config: PromptConfig = Field(
+        description = "Describes how the prompt preamble should be constructed."
+    )
+    
+    llm_response_profile: LLMResponseProfile = Field(
+        default_factory = LLMResponseProfile,
+        description = "The type of responses expected for this voice request."
+    )
 class ActionQueryCoder(BaseModel):
     """Query the ghostcoder backend for something.
     The purpose of the  query is left intentionally broad. Executing this action will usually result in 1 or more ActionHandleResponsePart being pushed onto the action queue, unless the query fails, in which worker recovery is invoked pushed.
@@ -2227,11 +2239,11 @@ If a request is ambiguous, incomplete, or if you lack sufficient information (e.
     )
 
     _CODER_SYSTEM_MSG_EMACS_INTEGRATION: ClassVar[str] = (
-"""
+f"""
 ## Emacs Integration
 
 ### Replacing Active Region
-You can replace the content of the user's currently active region in Emacs. To do this, generate a `CodeResponsePart` with the `filepath` set to the special value `"<emacs-active-region>"`. The `new_code` field should contain the text that will replace the region. No `original_code` is needed.
+You can replace the content of the user's currently active region in Emacs. To do this, generate a `CodeResponsePart` with the `filepath` set to the special value `"{MagicString.emacs_active_region_filepath}"`. The `new_code` field should contain the text that will replace the region. No `original_code` is needed.
 """
     )
 

@@ -40,7 +40,7 @@ class IPCActions(IPCMessageBase):
 
     text: str = Field(
         default = "",
-        description = "Additional text accompanying the acions. This will be displayed to the user to explain what is happening."
+        description = "Additional text accompanying the actions. This will be displayed to the user to explain what is happening."
     )
     
     actions: List[types.Action] = Field(

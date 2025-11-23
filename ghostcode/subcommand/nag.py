@@ -24,7 +24,7 @@ from ..nag_sources import (
     NagSourceEmacsActiveBuffer,
     NagCheckResult,
 )
-from ..ipc_message import IPCNag, ProblematicSourceReport
+from ..ipc_message import IPCNag, ProblematicSourceReport, IPCActions
 from ..program import     CommandInterface, Program
 import logging
 logger = logging.getLogger("ghostcode.subcommand.nag")
@@ -200,18 +200,51 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
 
     def _start_audio_input(self, prog: Program, speaker_box: Ghostbox) -> None:
         """Starts a new thread on which we listen for audio input's by the user."""
-
+        # this is used to briefly store the users input so we can send it to the backend.
+        last_user_transcription = ""
+        
         def transcription_callback(w: str) -> str:
+            nonlocal last_user_transcription
+            last_transcription = w
             if prog.user_config.nag_audio_transcription_user_subtitles:
                 prog.print(f"  `{w}`")
             return w
 
+        def generation_callback(generation: str) -> None:
+            nonlocal last_user_transcription
+            
+            if generation.startswith(types.MagicString.nag_transcriber_is_user_request):
+                # we need to see if an interaction is in progress
+                # if not we must inform that the request has no chance of being fulfilled.
+                if (interaction_id := prog.lock_read()) is None:
+                    speaker_box.text_stream(
+                        "Please inform the user that they must run `ghostcode interact` within the same project to start an itneraction, otherwise their request cannot be fulfilled."
+                    )
+                    
+                    return
+                
+                prog.send_ipc_message(
+                    IPCActions(
+                        client = "nag",
+                        actions = [
+                            types.ActionUserVoiceQuery(
+                                prompt = last_user_transcription,
+                                llm_response_profile = types.LLMResponseProfile.allow_all(),
+                                interaction_history_id = interaction_id,
+                                # the config will be modified by the action handler to include an audio nudge
+                                preamble_config = prompts.make_default_coder_config()
+                            )
+                        ]
+                    )
+                )
+            
         speaker_box.audio_on_transcription(transcription_callback)
+        speaker_box.audio_on_generation(generation_callback)
         speaker_box.audio = True
         prog.print(
             f"Enabled audio input. Speak into your microphone to have ghostcode react."
         )
-
+        
     def _process_source(
         self, prog: Program, nag_source: NagSource, speaker_box: Ghostbox
     ) -> str:
@@ -261,7 +294,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         def capture_generation(w: str) -> None:
             nonlocal output_text
             nonlocal done
-            output_text = w
+            output_text = w.replace(types.MagicString.nag_transcriber_is_user_request, "")
             done.set()
 
             # print a heading
@@ -423,7 +456,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
         if prog.user_config.nag_audio_input:
             self._start_audio_input(prog, speaker_box)
 
-            # start the actual nag loof on a seperate threadp
+            # start the actual nag loop on a seperate threadp
         self._start_nag_loop(
             prog=prog, nag_sources=nag_sources, speaker_box=speaker_box
         )

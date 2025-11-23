@@ -532,8 +532,6 @@ def user_voice_query(
     config = prompts.make_default_coder_config()
     config.voice_input_nudge = True
 
-    # this part is tricky. we only got here becuase the nag process sent an IPC message to an interact sesssion
-    # so there is 100% an active interaction going, we just have to find it so we can add ourselves to the history.
     if (interaction_id := voice_query_action.interaction_history_id) is not None:
         logger.info(f"Voice query assumed to be part of interaction {interaction_id}")
         prog.project.append_interaction_history_item(
@@ -543,9 +541,8 @@ def user_voice_query(
                 context = prog.project.context_files
             )
         )
-
-    # one more problem
-    # what if this is the very first turn in the interaction?
+    else:
+        logger.warning(f"Incoming voice query has null interaction ID. Will be discarded: `{voice_query_action.prompt[:25]}`")
         
     # FIXME: we do not respect --skip-to-coder here
     return types.ActionResultMoreActions(
@@ -553,7 +550,7 @@ def user_voice_query(
             types.ActionPrepareRequest(
                 prompt=voice_query_action.prompt,
                 preamble_config=config,
-                llm_response_profile=types.LLMResponseProfile.allow_all(),
+                llm_response_profile=voice_query_action.llm_response_profile,
                 hidden=False,
                 interaction_history_id=voice_query_action.interaction_history_id
             )]
@@ -673,7 +670,7 @@ def handle_code_part(
     filepath = code_action.content.filepath
 
     # special case: emacs magic string
-    if prog.user_config.emacs_integration and filepath == "<emacs-active-region>":
+    if prog.user_config.emacs_integration and filepath == types.MagicString.emacs_active_region_filepath:
         logger.info("Handling code part for emacs active region.")
         return types.ActionResultMoreActions(
             actions=[
