@@ -3,7 +3,13 @@ from pydantic import BaseModel, Field
 from . import types
 from .types import LLMPersonality, PromptConfig
 import random
-from .utility import quoted_if_nonempty, show_model_nt, timestamp_now_iso8601, language_from_extension
+from .utility import (
+    quoted_if_nonempty,
+    show_model_nt,
+    timestamp_now_iso8601,
+    language_from_extension,
+)
+from . import types
 from .program import Program
 import logging
 from . import emacs
@@ -12,6 +18,15 @@ from . import emacs
 logger = logging.getLogger("ghostcode.prompts")
 
 
+def make_default_coder_config() -> types.PromptConfig:
+    return types.PromptConfig.minimal(
+        project_metadata=True,
+        style_file=True,
+        context_files="full",
+        recent_interaction_summaries="full",
+        problematic_source_reports = True,
+        emacs_active_region = True
+    )
 
 
 def make_prompt(
@@ -93,10 +108,10 @@ def make_prompt(
         problematic_source_reports_str = f"""## Problematic Source Reports
 {make_blocks_problematic_source_reports(prog, subheading_level=3)}
 """
-        
+
     else:
         problematic_source_reports_str = ""
-        
+
     if prompt_config.logs:
         log_excerpt_str = quoted_if_nonempty(
             text=prog.show_log(tail=config.prompt_log_lines),
@@ -116,8 +131,14 @@ def make_prompt(
     else:
         text_only_nudge_str = ""
 
-    if (prompt_config.emacs_active_region and prog.user_config.emacs_integration
-        and ((region_content := emacs.get_region_content()) is not None and region_content != "")):
+    if (
+        prompt_config.emacs_active_region
+        and prog.user_config.emacs_integration
+        and (
+            (region_content := emacs.get_region_content()) is not None
+            and region_content != ""
+        )
+    ):
         emacs_active_region_str = f"""# Emacs Active Region
 The user is using emacs as a code editor and has currently selected the following content in their active region.
 
@@ -129,7 +150,7 @@ Please take this into account in your response, as the user's prompt will likely
 """
     else:
         emacs_active_region_str = ""
-        
+
     return f"""{system_str}
     # Project Context
 
@@ -168,7 +189,9 @@ def make_prompt_worker_recover(
     # FIXME: where to get this from: possibilities are 1. file (requires I/O), 2. prog (requires us to add a new attribute like _current_interaction_history), 3. use ghostbox history, which is automatically saved
     # Currently we pick (3), since its easiest.
     history_strs = [
-        show_model_nt(msg) for msg in prog.coder_box.get_history() if msg.role != "system"
+        show_model_nt(msg)
+        for msg in prog.coder_box.get_history()
+        if msg.role != "system"
     ]
     prompt += f"""## Interaction History
 
@@ -246,6 +269,7 @@ Please determine the state of the latest interaction in the above shell interact
 Provide a short, descriptive reason for your assesment along with your response. In the case of giving a process more time to finish, provide a reasonable amount of time to wait. Once this time has completed, you will be asked to reassess the state of the shell interaction.
 """
 
+
 def make_tts_instruction() -> str:
     """Returns generic system instructions for a model that produces TTS output."""
     return """You produce text that will be output to a TTS (text-to-speech) program. Because of this, pleace
@@ -256,7 +280,10 @@ def make_tts_instruction() -> str:
 
 If the user ever asks you to be quiet, stop speaking, just says 'Ok', or otherwise signifies that they are winding down the conversation, you will return an empty string or a one word reply at most."""
 
-def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersonality, str]:
+
+def llm_personality_instruction(
+    personality: LLMPersonality,
+) -> Tuple[LLMPersonality, str]:
     """Returns an LLMPersonality, instruction string pair for a system prompt based on a given LLM personality."""
 
     # this is the block that comes before the actual content of trhe personality.
@@ -342,7 +369,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersona
  - Maintain a professional, polished tone
  - Structure responses clearly and logically
  - Reference business objectives and ROI where relevant"""
-                                )
+            )
         case LLMPersonality.strict:
             return personality, personality_preamble(
                 """You are a meticulous and disciplined coding expert. You:
@@ -352,7 +379,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersona
  - Expect clear, well-formulated questions
  - Correct misunderstandings firmly but politely
  - Prioritize correctness and robustness over convenience"""
-                                )
+            )
 
         case LLMPersonality.fabulous:
             return personality, personality_preamble(
@@ -363,7 +390,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersona
  - Sprinkle in occasional fashion and pop culture references
  - Make even mundane technical topics feel glamorous
  - Maintain an upbeat, celebratory tone about coding"""
-                                )
+            )
 
         case LLMPersonality.protoss:
             return personality, personality_preamble(
@@ -375,7 +402,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersona
  - View bugs and errors as "chaos" that must be purged
  - Refer to users as "young templar" or "initiate"
  - Maintain an aura of ancient, advanced technological mastery"""
-                                )
+            )
 
         case LLMPersonality.unix_haters_manual:
             return personality, personality_preamble(
@@ -388,7 +415,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersona
  - Treat every bug as an expected feature of the "UNIX philosophy"
  - Use the phrase "This is not a bug, it's a feature" ironically"""
             )
-        
+
         case LLMPersonality.gen_z:
             return personality, personality_preamble(
                 """ I would like you to talk to me in a noticeable, relaxed and humorous way and also be a bit gen-z-like. But don't be too verbose and be precise. Be snotty and bitchy. Be pessimistic. You are of the opinion that everything is pointless and express this in your answers. You are arrogant, mean-spirited, unfavorable and provocative. You don't forget the gen-z slang. You use strong sarcasm in your replies."""
@@ -425,7 +452,7 @@ def llm_personality_instruction(personality: LLMPersonality) -> Tuple[LLMPersona
  - Treat debugging as "editing for clarity and rhythm"
  - Encourage writing code that tells a clear, beautiful story
  - Focus on the aesthetic and human aspects of programming"""
-                                        )
+            )
         case _ as unreachable:
             assert_never(unreachable)
 
@@ -613,30 +640,39 @@ def make_blocks_recent_interaction_summaries(
 
     return "\n".join(output_blocks)
 
+
 def make_blocks_problematic_source_reports(prog: Program, subheading_level: int) -> str:
     """Returns a text block describing various sources and problems that were reported about them, such as a type checking script with type errors."""
     if not (reports := prog.get_problematic_source_reports()):
         return ""
 
-    # blocks do not include their own heading, however we have subheading for the various sources, so we construct it based on parameter 
+    # blocks do not include their own heading, however we have subheading for the various sources, so we construct it based on parameter
     subheading = "#" * subheading_level
     subsubheading = subheading + "#"
     intro_str = f"""Various information sources, such as log files, test scripts, type-checkers, compilers, or emacs buffers were used to monitor the project. Below are various reports from sources that have been deemed to be problematic in some way."""
-    report_blocks: List[str] = [] 
+    report_blocks: List[str] = []
     for report in reports:
-        report_blocks.append(f"""{subheading} {report.source.display_name}
+        report_blocks.append(
+            f"""{subheading} {report.source.display_name}
 {report.show(subheading_level = subheading_level + 1)}
-""")
-        
+"""
+        )
+
     return f"""{intro_str}
         
 {"\n\n".join(report_blocks)}
 """
-    
 
-def make_prompt_nag_emacs_active_buffer(prog: Program, *, active_buffer_info: emacs.ActiveBufferContent, buffer_content: str, region_size: Optional[int] = None) -> str:
+
+def make_prompt_nag_emacs_active_buffer(
+    prog: Program,
+    *,
+    active_buffer_info: emacs.ActiveBufferContent,
+    buffer_content: str,
+    region_size: Optional[int] = None,
+) -> str:
     buffer_metadata_json = active_buffer_info.model_dump_json(indent=2)
-    
+
     intro_str = f"The following is the content of the active Emacs buffer region (buffer: '{active_buffer_info.buffer_name}', file: '{active_buffer_info.file_name}'):"
     metadata_str = f"""Additionally, here is its metadata:
 ```json
@@ -649,8 +685,8 @@ def make_prompt_nag_emacs_active_buffer(prog: Program, *, active_buffer_info: em
         _region_size_str = f" Please note that you are only seeing a small portion of the entire buffer, spanning {region_size} lines around the point, so take this into account when you assess whether there is a problem. Do not raise issues that might be resolved by something just outside the region, or in a completely different part of the buffer. "
     else:
         _region_size_str = ""
-    task_str = f"Please consider the buffer's major mode and content. If it appears to be programming language code, indicate a problem if there are obvious code mistakes, syntax errors, or anything else that looks erroneous or confused. This is a heuristic, Please only classify this as a problem if you are certain there is a problem. {_region_size_str}If you detect an issue, respond with has_problem: true, and false otherwise. If you state a reason, it should be extremely brief. If you cannot identify the content as programming related, simply classify it as problem-free."    
-    #+ "Please inspect the buffer content and metadata and determine if it indicates any problems (e.g., syntax errors, warnings, uncommitted changes, or specific keywords indicating an issue). Respond with `has_problem: true` if there's an issue, `false` otherwise, and a brief `reason`."
+    task_str = f"Please consider the buffer's major mode and content. If it appears to be programming language code, indicate a problem if there are obvious code mistakes, syntax errors, or anything else that looks erroneous or confused. This is a heuristic, Please only classify this as a problem if you are certain there is a problem. {_region_size_str}If you detect an issue, respond with has_problem: true, and false otherwise. If you state a reason, it should be extremely brief. If you cannot identify the content as programming related, simply classify it as problem-free."
+    # + "Please inspect the buffer content and metadata and determine if it indicates any problems (e.g., syntax errors, warnings, uncommitted changes, or specific keywords indicating an issue). Respond with `has_problem: true` if there's an issue, `false` otherwise, and a brief `reason`."
 
     return f"""{intro_str}
 {metadata_str}
@@ -819,41 +855,50 @@ Please generate a concise, one-paragraph summary for the above interaction. It s
 Generate only the summary. Do not generate additional output except for the summary that has been requested.
 """
 
-def make_prompt_context_file_summary(prog: Program, context_file: types.ContextFile) -> Optional[str]:
+
+def make_prompt_context_file_summary(
+    prog: Program, context_file: types.ContextFile
+) -> Optional[str]:
     try:
         filepath = context_file.get_abs_filepath()
         with open(filepath, "r") as f:
             content = f.read()
     except Exception as e:
-        logger.exception(f"Couldn't read file {context_file.filepath} while trying to create summary prompt. Reason: {e}")
+        logger.exception(
+            f"Couldn't read file {context_file.filepath} while trying to create summary prompt. Reason: {e}"
+        )
         return None
 
     content_str = quoted_if_nonempty(
-        text = content,
+        text=content,
         heading=context_file.filepath,
-        type_tag = language_from_extension(context_file.filepath),
-        heading_level = 1
+        type_tag=language_from_extension(context_file.filepath),
+        heading_level=1,
     )
-    
+
     return f"""Please generate summarizing information for the following file.
 
 {content_str}
 
 The information you generate will be used in the future to decide whether the file should be included as part of a prompt that may be sent to a coding LLM backend, so generate your summar yaccordingly. The summary is intended to help with reducing token-count, so keep that in mind and try to be reasonably brief.
-"""    
+"""
+
 
 def make_prompt_code_file_relevance_evaluation(
-        prog: Program, context_file: types.ContextFile, prompt: str, file_verbosity: Literal["full", "summary"] = "summary"
-        ) -> str:
+    prog: Program,
+    context_file: types.ContextFile,
+    prompt: str,
+    file_verbosity: Literal["full", "summary"] = "summary",
+) -> str:
     """Returns a string prompting an LLM to evaluate a given code file for relevance to a given user prompt.
     The relevance rating is supposed to be between 0 and 10."""
     # include some context
     preamble_str = PromptConfig.minimal(
-        project_metadata = True,
-        recent_interaction_summaries = "full",
-        problematic_source_reports = True,
+        project_metadata=True,
+        recent_interaction_summaries="full",
+        problematic_source_reports=True,
     )
-    
+
     if file_verbosity == "summary":
         heading_str = f"# {context_file.filepath} (metadata and summary only)"
         if context_file.config.summary is None:
@@ -864,11 +909,13 @@ def make_prompt_code_file_relevance_evaluation(
         heading_str = "# {context_file.filepath}"
         try:
             with open(context_file.get_abs_filepath(), "r") as f:
-                file_str = quoted_if_nonempty(text = f.read()) 
+                file_str = quoted_if_nonempty(text=f.read())
         except Exception as e:
-            logger.warning(f"Could not read file {context_file.filepath} while making an relevance evaluation prompt. Reason: {e}")
+            logger.warning(
+                f"Could not read file {context_file.filepath} while making an relevance evaluation prompt. Reason: {e}"
+            )
             file_str = "error: Could not read file. Please default to a rating of 0.0"
-            
+
     return f"""{preamble_str}
     
 # Instructions
@@ -887,4 +934,4 @@ Your task is not to fulfill this prompt. Instead, you must evaluate the followin
 # Final Instructions
     
 Based on your assesment, the above file will either be included in the context for another LLM who will actually fulfill the user's request, or it will not be included. You must rate the files relevance to the user prompt from 0.0 (not relevant at all) to 10.0 (absolutely relevant to the prompt).
-"""    
+"""

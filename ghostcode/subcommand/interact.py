@@ -149,17 +149,9 @@ class InteractCommand(CommandInterface):
 
     def _make_preamble_config(self, prog: Program) -> types.PromptConfig:
         """Plaintext context that is inserted before the user prompt - though only once."""
-        return types.PromptConfig.minimal(
-            project_metadata=True,
-            style_file=True,
-            context_files="full",
-            recent_interaction_summaries="full",
-            problematic_source_reports = True,
-            text_only_nudge = not(self.actions),
-            emacs_active_region = True
-            # could add shell here?
-        )
-
+        config = prompts.make_default_coder_config()
+        config.text_only_nudge = not(self.actions)
+        return config
 
     def _prefix_preamble_string(self, prompt: str) -> str:
         """

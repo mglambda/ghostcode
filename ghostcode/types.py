@@ -116,12 +116,12 @@ class PromptConfig(BaseModel):
     # ghostcode program context
     interaction_history_id: str = Field(
         default="",
-        description="The unique ID of the interaction history you want to display in the prompt. This must be provided if you set interaction_history to anything other than 'none'.",
+        description="The unique ID of the interaction history you want to display in the prompt. This must be provided if you set interaction_history to anything other than 'none'. Note that this is generally **not** intended for use with the coder_box.",
     )
 
     interaction_history: Literal["full", "split", "none"] = Field(
         default="full",
-        description="How to display the history. Requires interaction_history_id to be provided. full means entire history is sent. split means the entire history except the last message is sent, and the last message is appended to the user prompt. none means no history is sent.",
+        description="How to display the history. Requires interaction_history_id to be provided. full means entire history is sent. split means the entire history except the last message is sent, and the last message is appended to the user prompt. none means no history is sent. Note that this is generally **not** intended for use with the coder_box, as it gets its history setdirectly on the ghostbox, which improves performance.",
     )
 
     problematic_source_reports: bool = True
@@ -130,6 +130,11 @@ class PromptConfig(BaseModel):
     text_only_nudge: bool = Field(
         default = False,
         description = "Include a small additional instruction nudging the LLM to generate text only, as opposed to code or shell commands."
+    )
+
+    voice_input_nudge: bool = Field(
+        default = False,
+        description = "Include a block of text explaining that the user query is transcribed from voice, and may contain errors etc. This is the only block that is configured to be False by default even on a maximal prompt config."
     )
 
     emacs_active_region: bool = Field(
@@ -1481,12 +1486,6 @@ class UserInteractionHistoryItem(BaseModel):
         description="The context that was current at the time the interaction was made."
     )
 
-    # FIXME: preamble should probably be removed here and tracked in some different way (on the entire chat history for example)
-    #preamble: str = Field(
-        #default="",
-        #description="The plaintext of the context that was added automatically before the user prompt. This is usually long and not present in every interaction",
-    #)
-
     prompt: str = Field(
         description="The actual user prompt. This includes only the plain text created directly by the user at the time of the interaction."
     )
@@ -1856,6 +1855,21 @@ class ActionAlterContext(BaseModel):
     context_alteration: ContextAlteration
 
 
+class ActionUserVoiceQuery(BaseModel):
+    """Represents a request that originated from a user's voice command during a nag session."""
+
+    clearance_required: ClassVar[ClearanceRequirement] = ClearanceRequirement.INFORM
+
+    prompt: str = Field(
+        description="The raw, transcribed text from the user's voice command."
+    )
+
+    interaction_history_id: Optional[str] = Field(
+        default=None,
+        description="ID of an interaction history that is associated with this query. If provided, the response to the query will be appended to this history.",
+    )
+
+
 class ActionQueryCoder(BaseModel):
     """Query the ghostcoder backend for something.
     The purpose of the  query is left intentionally broad. Executing this action will usually result in 1 or more ActionHandleResponsePart being pushed onto the action queue, unless the query fails, in which worker recovery is invoked pushed.
@@ -1985,7 +1999,7 @@ class ActionPrepareRequest(BaseModel):
     )
     
 
-type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionQueryCoder | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest | ActionPrepareRequest | ActionEmacsReplaceRegion
+type Action = ActionHandleCodeResponsePart | ActionFileCreate | ActionFileEdit | ActionDoNothing | ActionHaltExecution | ActionShellCommand | ActionWaitOnShellCommand | ActionAlterContext | ActionUserVoiceQuery | ActionQueryCoder | ActionQueryWorker | ActionRouteRequest | ActionPrepareRequest | ActionEmacsReplaceRegion
 type QueryAction = ActionQueryCoder | ActionQueryWorker
 
 

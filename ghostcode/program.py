@@ -81,6 +81,7 @@ class Program:
     current_nag_message: Optional["IPCNag"] = field(
         default=None,
     )
+    
     _DEBUG_DIR: ClassVar[str] = ".ghostcode/debug"
     _LOCKFILE: ClassVar[str] = "interaction.lock"
     _IPC_SERVER_FILE: ClassVar[str] = "ipc_server"

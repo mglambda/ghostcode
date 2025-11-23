@@ -200,30 +200,6 @@ def run_action_queue(prog: Program) -> None:
         )
         return
 
-
-def apply_emacs_replace_region(prog: Program, action: types.ActionEmacsReplaceRegion) -> types.ActionResult:
-    """Replaces the content of the active region in Emacs."""
-    logger.info("Replacing Emacs active region.")
-    if not prog.user_config.emacs_integration:
-        msg = "Cannot replace Emacs region because Emacs integration is disabled in user config."
-        logger.warning(msg)
-        prog.print(f"Warning: {msg}")
-        # Consider this a success because there's nothing to do, avoiding recovery for a config issue.
-        return types.ActionResultOk(success_message=msg)
-
-    from . import emacs
-    try:
-        emacs.replace_region_content(action.content)
-        return types.ActionResultOk(success_message="Replaced content of active Emacs region.")
-    except Exception as e:
-        msg = f"Failed to replace Emacs region content: {e}"
-        logger.error(msg, exc_info=True)
-        return types.ActionResultFailure(
-            original_action = action,
-            failure_reason=msg
-        )
-
-
 def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
     # small helper for this context
     def fail(
@@ -316,6 +292,9 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
             case types.ActionFileCreate() as create_action:
                 logger.info("Create File Action")
                 return apply_create_file(prog, create_action)
+            case types.ActionUserVoiceQuery() as voice_query_action:
+                logger.info("Handling user voice query.")
+                return user_voice_query(prog, voice_query_action)
             case types.ActionDoNothing():
                 # No operation needed for ActionDoNothing
                 logger.info("Action: Do Nothing")
@@ -367,6 +346,28 @@ def execute_action(prog: Program, action: types.Action) -> types.ActionResult:
         )
 
 
+def apply_emacs_replace_region(prog: Program, action: types.ActionEmacsReplaceRegion) -> types.ActionResult:
+    """Replaces the content of the active region in Emacs."""
+    logger.info("Replacing Emacs active region.")
+    if not prog.user_config.emacs_integration:
+        msg = "Cannot replace Emacs region because Emacs integration is disabled in user config."
+        logger.warning(msg)
+        prog.print(f"Warning: {msg}")
+        # Consider this a success because there's nothing to do, avoiding recovery for a config issue.
+        return types.ActionResultOk(success_message=msg)
+
+    from . import emacs
+    try:
+        emacs.replace_region_content(action.content)
+        return types.ActionResultOk(success_message="Replaced content of active Emacs region.")
+    except Exception as e:
+        msg = f"Failed to replace Emacs region content: {e}"
+        logger.error(msg, exc_info=True)
+        return types.ActionResultFailure(
+            original_action = action,
+            failure_reason=msg
+        )
+    
 def apply_alter_context(
     prog: Program, alter_context_action: types.ActionAlterContext
 ) -> types.ActionResult:
@@ -513,6 +514,50 @@ def apply_edit_file(
     return types.ActionResultOk(
         success_message=f"Applied edit action to file {filepath} for {len(edit_action.insert_text)} characters."
     )
+
+
+def user_voice_query(
+    prog: Program, voice_query_action: types.ActionUserVoiceQuery
+) -> types.ActionResult:
+    """Handles a user voice query by preparing and forwarding it to the Coder LLM."""
+    logger.info(
+        f"Preparing ActionQueryCoder from ActionUserVoiceQuery for prompt: '{voice_query_action.prompt[:50]}...'"
+    )
+    # sanity
+    if prog.project is None:
+        return types.ActionResultFailure(original_action = voice_query_action, failure_reason = f"Null project.")
+
+    # this is our special contribution, it will make it clear that the input might be a bit fulty
+    # we could also repair it here, but I'm afraid that could lead to great user confusion -> better let them see if there are weird transcription errors
+    config = prompts.make_default_coder_config()
+    config.voice_input_nudge = True
+
+    # this part is tricky. we only got here becuase the nag process sent an IPC message to an interact sesssion
+    # so there is 100% an active interaction going, we just have to find it so we can add ourselves to the history.
+    if (interaction_id := voice_query_action.interaction_history_id) is not None:
+        logger.info(f"Voice query assumed to be part of interaction {interaction_id}")
+        prog.project.append_interaction_history_item(
+            unique_id = interaction_id,
+            item = types.UserInteractionHistoryItem(
+                prompt = voice_query_action.prompt,
+                context = prog.project.context_files
+            )
+        )
+                
+    # FIXME: we do not respect --skip-to-coder here
+    return types.ActionResultMoreActions(
+        actions=[
+            types.ActionPrepareRequest(
+                prompt=voice_query_action.prompt,
+                preamble_config=config,
+                llm_response_profile=types.LLMResponseProfile.allow_all(),
+                hidden=False,
+                interaction_history_id=voice_query_action.interaction_history_id
+            )]
+    )
+
+
+
 
 
 def coder_query(
