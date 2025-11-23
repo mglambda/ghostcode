@@ -28,6 +28,8 @@ from .utility import (
 )
 from . import git
 from .nag_sources import NagSource
+import shutil
+import tempfile
 
 
 class LLMResponseProfile(BaseModel):
@@ -2704,11 +2706,15 @@ You can replace the content of the user's currently active region in Emacs. To d
         interaction_history_path = os.path.join(
             ghostcode_dir, Project._INTERACTION_HISTORY_FILE
         )
+        # Use a temporary file for atomic write
+        temp_file_path = None
         try:
-            with open(interaction_history_path, "w") as f:
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8', dir=ghostcode_dir) as temp_f:
                 json.dump(
-                    [history.model_dump() for history in self.interactions], f, indent=4
+                    [history.model_dump() for history in self.interactions], temp_f, indent=4
                 )
+            temp_file_path = temp_f.name
+            shutil.move(temp_file_path, interaction_history_path)
             logger.debug(f"Saved interaction history to {interaction_history_path}")
         except Exception as e:
             logger.error(
@@ -2716,6 +2722,9 @@ You can replace the content of the user's currently active region in Emacs. To d
                 exc_info=True,
             )
             raise
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
         
     def save_to_root(self, root: str) -> None:
         """
