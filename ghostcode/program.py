@@ -90,6 +90,20 @@ class Program:
         import ghostcode
         from .idle_worker import IdleWorker, IdleTask
 
+        # emacs stuff
+        if self.user_config.emacs_integration:
+            # add to the coder system prompt
+            current_sys_msg = self.coder_box.get_var("system_msg")
+            if current_sys_msg and Project._CODER_SYSTEM_MSG_EMACS_INTEGRATION not in current_sys_msg:
+                new_sys_msg = (
+                    current_sys_msg
+                    + "\n"
+                    + Project._CODER_SYSTEM_MSG_EMACS_INTEGRATION
+                )
+                self.coder_box.set_vars({"system_msg": new_sys_msg})
+                logger.info(
+                    "Appended Emacs integration instructions to Coder system prompt."
+                )
         sound_dir = ghostcode.get_ghostcode_data("sounds")
         self.sound_manager = SoundManager(
             sound_directory=sound_dir,

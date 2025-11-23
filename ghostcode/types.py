@@ -2205,6 +2205,15 @@ If a request is ambiguous, incomplete, or if you lack sufficient information (e.
 """
     )
 
+    _CODER_SYSTEM_MSG_EMACS_INTEGRATION: ClassVar[str] = (
+"""
+## Emacs Integration
+
+### Replacing Active Region
+You can replace the content of the user's currently active region in Emacs. To do this, generate a `CodeResponsePart` with the `filepath` set to the special value `"<emacs-active-region>"`. The `new_code` field should contain the text that will replace the region. No `original_code` is needed.
+"""
+    )
+
     @staticmethod
     def _get_ghostcode_path(root: str) -> str:
         """Helper to get the full path to the .ghostcode directory."""
