@@ -309,7 +309,7 @@ A user prompt counts as a request if
  - it otherwise requires broader perspective or a higher degree of intelligence
 
 When you output the magic string `{types.MagicString.nag_transcriber_is_user_request}` as the first line of your response, the user prompt will be routed to a more powerful, intelligent LLM that is capable of answering the user's prompt.
-After outputing a line with the special magic string, you should continue with a normal response, which will be read out via TTS like your other responses.
+After outputing a line with the special magic string, you should give the user a short response indicating that you are processing their request. Do not answer their prompt directly, simply defer.
 """
  
 def llm_personality_instruction(

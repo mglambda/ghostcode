@@ -805,75 +805,73 @@ def handle_code_part(
             ]
         )
 
-    # If exact match fails, proceed with line-by-line matching using Levenshtein distance
+    # If exact match fails, proceed with block-based matching using Levenshtein distance.
+    # This is more robust against missing/extra lines than the old line-by-line approach.
     logger.info(
-        f"Exact substring match failed for original code in {filepath}. Attempting line-by-line matching."
+        f"Exact substring match failed for original code in {filepath}. Attempting block-based fuzzy matching."
     )
 
     original_lines = original_code_block.splitlines()
     file_lines = file_contents.splitlines()
 
-    stripped_lines = [
-        stripped_line
-        for line in original_lines
-        if (stripped_line := line.strip()) != ""
-    ]
+    # It's meaningless to search if the original block is longer than the file itself.
+    if len(original_lines) > len(file_lines):
+        return fail(
+            f"Could not locate original code block in file '{filepath}': The provided code block is longer than the entire file."
+        )
 
     # case 3.3: Original_code had only whitespace -> fail
-    if not (stripped_lines):
+    if not original_code_block.strip():
         logger.warning(
             f"Could not locate original code block in file '{filepath}': Original code appears to be empty or only whitespace. (case 3.3)"
         )
         return fail(
-            "Original code block is empty or contains only whitespace after splitting. Cannot perform replacement."
+            "Original code block is empty or contains only whitespace. Cannot perform replacement."
         )
 
     best_match_start_line = -1
-    min_total_distance = float("inf")
+    min_distance = float("inf")
 
-    # Iterate through file_lines to find a matching block
+    # Iterate through file_lines to find the best matching block
     for i in range(len(file_lines) - len(original_lines) + 1):
+        # Create a string from the current window of lines in the file
         current_block_lines = file_lines[i : i + len(original_lines)]
+        current_block_str = "\n".join(current_block_lines)
 
-        total_distance = 0
-        for j in range(len(original_lines)):
-            # No stripping of whitespace for Levenshtein comparison
-            norm_orig_line = original_lines[j]
-            norm_curr_line = current_block_lines[j]
-            total_distance += levenshtein(norm_orig_line, norm_curr_line)
+        # Calculate Levenshtein distance between the entire AI-provided block and the current file window
+        distance = levenshtein(original_code_block, current_block_str)
 
-        if total_distance < min_total_distance:
-            min_total_distance = total_distance
+        if distance < min_distance:
+            min_distance = distance
             best_match_start_line = i
+            # If we find a perfect match, we can stop early
+            if min_distance == 0:
+                break
 
-    # Define a threshold for what constitutes a "good enough" match
-    # Using the raw length of the original code block for the threshold calculation.
-    raw_original_code_len = len(original_code_block)
-    distance_threshold = max(
-        5, raw_original_code_len // 5
-    )  # At least 5, or 20% of raw length
+    # Define a threshold for what constitutes a "good enough" match.
+    # A threshold of 20% of the original code's length is a reasonable starting point.
+    distance_threshold = max(5, len(original_code_block) // 5)
 
-    if best_match_start_line != -1 and min_total_distance <= distance_threshold:
-        # Calculate character positions for the best match
+    if best_match_start_line != -1 and min_distance <= distance_threshold:
+        # We found a good match. Now, calculate the character positions for the replacement.
+
+        # Calculate the starting character position of the best-matched block
         replace_pos_begin = 0
         for k in range(best_match_start_line):
-            replace_pos_begin += len(file_lines[k]) + 1  # +1 for newline
+            replace_pos_begin += len(file_lines[k]) + 1  # +1 for the newline character
 
-        replace_pos_end = replace_pos_begin
-        for k in range(
-            best_match_start_line, best_match_start_line + len(original_lines)
-        ):
-            replace_pos_end += len(file_lines[k]) + 1  # +1 for newline
+        # Calculate the ending character position. This is based on the length of the
+        # content *in the file*, not the original_code from the AI, to correctly
+        # handle cases with different line counts.
+        matched_block_lines = file_lines[
+            best_match_start_line : best_match_start_line + len(original_lines)
+        ]
+        matched_block_content = "\n".join(matched_block_lines)
+        replace_pos_end = replace_pos_begin + len(matched_block_content)
 
-        # Adjust for the very last newline if the file doesn't end with one
-        if not file_contents.endswith("\n") and (
-            best_match_start_line + len(original_lines) == len(file_lines)
-        ):
-            replace_pos_end -= 1
-
-        # case 3.4: Found levenshtein match
+        # case 3.4: Found a good fuzzy match
         logger.info(
-            f"Line-by-line match found for original code in {filepath} (distance: {min_total_distance}). (case 3.4)"
+            f"Fuzzy block match found for original code in {filepath} at line {best_match_start_line + 1} (distance: {min_distance}, threshold: {distance_threshold}). (case 3.4)"
         )
         return types.ActionResultMoreActions(
             actions=[
@@ -888,11 +886,11 @@ def handle_code_part(
     else:
         # case 3.5: No good match found. Return a failure.
         logger.warning(
-            f"Could not find a sufficiently close match for original code in {filepath} (min distance: {min_total_distance}, threshold: {distance_threshold}). (case 3.5)"
+            f"Could not find a sufficiently close match for original code in {filepath} (min distance: {min_distance}, threshold: {distance_threshold}). (case 3.5)"
         )
         return fail(
             f"Could not locate original code block in file '{filepath}' for partial edit. "
-            f"Minimum Levenshtein distance found: {min_total_distance} (threshold: {distance_threshold}). "
+            f"Minimum Levenshtein distance found: {min_distance} (threshold: {distance_threshold}). "
             f"Original code block:\n---\n{original_code_block}\n---"
         )
 
