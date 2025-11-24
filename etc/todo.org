@@ -1,7 +1,7 @@
 * work-in-progress (WIP, limit 5)
+Investigate prompt_toolkit to fix double input problem.
 Fix input() scheme (we have double input with interact loop and possible voice initiated file edits)
 Fix bonkers hallucinations during speaker handling of user requests.
-Add --last to ghostcode log and ghostcode interact and ghostcode talk to print/resume the latest interaction.
 Addd FileRequestParts or something (ghost is starting to request files on its own).
 Emacs context file overview buffer
 Emacs bootstrap (ghostcode.el which is loaded via emacsclient).
@@ -152,3 +152,4 @@ Make project and prog.read_lock only source of truth about current interaction.
 Make nag send requests using magic trigger words.
 Fix filtering of magic nag_transcribe string.
 Fix levenshtein distance calculation (wtf)
+Add --last to ghostcode log and ghostcode interact and ghostcode talk to print/resume the latest interaction.

@@ -229,7 +229,7 @@ class NagCommand(BaseModel, arbitrary_types_allowed=True):
                         actions = [
                             types.ActionUserVoiceQuery(
                                 prompt = last_user_transcription,
-                                llm_response_profile = types.LLMResponseProfile.allow_all(),
+                                llm_response_profile = types.LLMResponseProfile.text_only(),
                                 interaction_history_id = interaction_id,
                                 # the config will be modified by the action handler to include an audio nudge
                                 preamble_config = prompts.make_default_coder_config()
