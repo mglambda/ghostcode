@@ -169,7 +169,12 @@ class PromptConfig(BaseModel):
         # the above is safe thanks to pydantic having our backs
         return PromptConfig(**(min_config_data | kwargs))
 
-
+class MagicString(StrEnum):
+    """Magic strings with special semantics that are used in various places throughout the codebase."""
+    preamble_injection = "preamble_injection"
+    emacs_active_region_filepath = "<emacs-active-region>"
+    nag_transcriber_is_user_request = "<USER-REQUEST>"
+    
 class InteractionLockError(Exception): pass
 
 # --- Logging Setup ---
@@ -272,6 +277,8 @@ default_tts_options = {
     "stream_flush": "flex",
     # 50 characters to prebuffer at minimum before flushing. this prevents weird speech with e.g. bullet point lists, which LLMs love to do. 
     "stream_flush_flex_value": 50,
+    # these strings will not be spoken
+    "tts_filter": [MagicString.nag_transcriber_is_user_request],
 }
     
 # Default project metadata
@@ -304,12 +311,6 @@ class UserConfirmation(Enum):
     @staticmethod
     def is_confirmation(value: "UserConfirmation") -> bool:
         return value in [UserConfirmation.YES, UserConfirmation.ALL]
-
-class MagicString(StrEnum):
-    """Magic strings with special semantics that are used in various places throughout the codebase."""
-    preamble_injection = "preamble_injection"
-    emacs_active_region_filepath = "<emacs-active-region>"
-    nag_transcriber_is_user_request = "<USER-REQUEST>"
     
 class AIAgent(StrEnum):
     WORKER = "worker"

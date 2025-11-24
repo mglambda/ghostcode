@@ -1,5 +1,7 @@
 * work-in-progress (WIP, limit 5)
 Fix input() scheme (we have double input with interact loop and possible voice initiated file edits)
+Fix bonkers hallucinations during speaker handling of user requests.
+Fix filtering of magic nag_transcribe string.
 Add --last to ghostcode log and ghostcode interact and ghostcode talk to print/resume the latest interaction.
 Fix levenshtein distance calculation (wtf)
 Addd FileRequestParts or something (ghost is starting to request files on its own).
