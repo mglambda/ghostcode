@@ -392,12 +392,18 @@ def _main() -> None:
         action="store_true",
         help="Skip prompt routing and directly query the Worker LLM.",
     )
-    interact_parser.add_argument(
+    interaction_group = interact_parser.add_mutually_exclusive_group()
+    interaction_group.add_argument(
         "-i",
         "--interaction",
         type=str,
         default=None,
         help="Optional unique ID or tag of a past interaction to continue.",
+    )
+    interaction_group.add_argument(
+        "--last",
+        action="store_true",
+        help="Continue the last interaction.",
     )
     interact_parser.add_argument(
         "--force",
@@ -439,12 +445,18 @@ def _main() -> None:
         action="store_true",
         help="Skip prompt routing and directly query the Worker LLM.",
     )
-    talk_parser.add_argument(
+    talk_interaction_group = talk_parser.add_mutually_exclusive_group()
+    talk_interaction_group.add_argument(
         "-i",
         "--interaction",
         type=str,
         default=None,
         help="Optional unique ID or tag of a past interaction to continue.",
+    )
+    talk_interaction_group.add_argument(
+        "--last",
+        action="store_true",
+        help="Continue the last interaction.",
     )
     talk_parser.add_argument(
         "--force",
@@ -552,10 +564,16 @@ def _main() -> None:
 
     # Log command
     log_parser = subparsers.add_parser("log", help="Display past interaction history.")
-    log_parser.add_argument(
+    log_interaction_group = log_parser.add_mutually_exclusive_group()
+    log_interaction_group.add_argument(
         "--interaction",
         type=str,
         help="Display a specific interaction in detail by its unique ID or tag.",
+    )
+    log_interaction_group.add_argument(
+        "--last",
+        action="store_true",
+        help="Display the last interaction in detail.",
     )
     log_parser.add_argument(
         "--all-branches",
@@ -607,12 +625,10 @@ def _main() -> None:
             exc_info=True,
         )
         user_config = types.UserConfig()
-
-    # Instantiate the command object
-    command_obj: CommandInterface = args.func(args)
-
+        
     # Special handling for 'init' command as it doesn't require an existing project
-    if isinstance(command_obj, InitCommand):
+    if args.command == "init":
+        command_obj: CommandInterface = args.func(args)
         # The project_root for init is already determined as current_project_root
         # and logging is configured. Just run the command.
         out = command_obj.run(
@@ -647,6 +663,21 @@ def _main() -> None:
             exc_info=True,
         )
         sys.exit(1)
+
+    # Handle --last argument for commands that support it
+    if hasattr(args, "last") and args.last:
+        if not project.interactions:
+            logger.warning("--last flag used, but no interactions found.")
+        else:
+            # Interactions are appended, so the last one is the most recent.
+            last_interaction = project.interactions[-1]
+            args.interaction = last_interaction.unique_id
+            logger.info(
+                f"--last flag used, setting interaction to most recent: {last_interaction.unique_id}"
+            )
+
+    # Instantiate the command object
+    command_obj = args.func(args)
 
     # Initialize Ghostbox instances using project.config for endpoints and backends
     # the quiet options have to be passed here or we will get a couple of stray messages until the project box configs are read
