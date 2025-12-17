@@ -1,42 +1,34 @@
 * work-in-progress (WIP, limit 5)
-Investigate prompt_toolkit to fix double input problem.
-Fix input() scheme (we have double input with interact loop and possible voice initiated file edits)
-Fix bonkers hallucinations during speaker handling of user requests.
-Addd FileRequestParts or something (ghost is starting to request files on its own).
 Emacs context file overview buffer
 Emacs bootstrap (ghostcode.el which is loaded via emacsclient).
-cached_token_cost on contextfileconfig.
+
+Make it so that pasted interaction IDs cause a rag lookup.
 * todo
 ** general
+Addd FileRequestParts or something (ghost is starting to request files on its own).
+cached_token_cost on contextfileconfig.
 investigate how to use treesitter to build code graphs which we can use to more efficiently build prompt context
+Investigate prompt_toolkit to fix double input problem.
 paranoia: Are the LLMs hallucinating timestamps? (investigate and solve with a model_validator)
 Add take_a_break IdleTask to idle worker.
 Think about implementing a lock around dumping history.
 Yeah, refactor history saving (_dump_interaction_history)
+Probably use sqlite to save state like history, contexte etc.
 find out why sometimes titles aren't being assigned
 Narrow the type of Action in actions_from_response_part (since it's a response it must be a query action)
 Remove branching code in make_prompt_worker_coder_request after original_action type has been narrowed
 Make recovery an action.
 Fix newline on some commands.
 Fix glob patterns when adding/removing context files
-Add simple check script option that worker runs and passes on to coder on fail
-Ability to add server log or other output logs (this is technically already possible but can we make it more explicit).
-Make it so that pasted interaction IDs cause a rag lookup.
-make unique_ids into a newtype (e.g. InteractionID)
 Simulate file edits and show diffs
-Figure out a way to run tests/run the program so AI can get feedback and see errors
 Add doc comment injections to yaml config files.
 refactor init and saving of project
-Audio input support for small queries ("hey ghostcode, what was the parser class called in this project?")
 Investigate proper deployment (conda, docker, getting llama.cpp, downloading models from huggingface).
 More user friendly setup during init for various backends (ask for API keys etc).
-Status command (not sure what it should even do yet).
-git integration.
-More useful CLI commands.
-Keep main command executiong from crashing catastrophically (wrap in try and exit gracefully).
+** interact
 ** nag
+Fix bonkers hallucinations during speaker handling of user requests.
 Workshop active buffer source feedback lol.
-Maybe give nag command more context.
 Fix nag htt psource not being very sensitive to content (needs testing).
 * emacs integration
 Emacs code to query for code completion at point.
@@ -46,10 +38,10 @@ Add opened emacs buffers that are under project root automatically to context (w
 Show diffs in emacs
 function to show arbitrary text to user in a buffer
 special buffer to share extra context
+Use an emacs buffer as a shell for ghostcoder (this is very powerful since shell emulation is hard)
 investigate other uses
 ** CLI
 Redo the entire action_queue printing stuff properly
-Add /help command.
 ** testing
 Properly test worker recovery.
 Test shell command actions.
@@ -57,9 +49,8 @@ Debug/test raw prompts.
 ** coder
 Investigate wether structured output degrades performance.
 ** worker
-Add context expansion/contraction by worker
-** tests
-Write tests for the virtual terminal
+Improve context expansion by worker
+
 * about this file
 Todo list that's structured like a Canban board.
 One line is one todo-item.
@@ -153,3 +144,7 @@ Make nag send requests using magic trigger words.
 Fix filtering of magic nag_transcribe string.
 Fix levenshtein distance calculation (wtf)
 Add --last to ghostcode log and ghostcode interact and ghostcode talk to print/resume the latest interaction.
+Fix input() scheme (we have double input with interact loop and possible voice initiated file edits)
+Audio input support for small queries ("hey ghostcode, what was the parser class called in this project?") (nag)
+Add /help command.
+Add context expansion/contraction by worker
